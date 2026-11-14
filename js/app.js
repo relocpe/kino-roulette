@@ -39,7 +39,7 @@ function chipEl(c, cls = '') {
 GENRES.forEach((c) => { const b = chipEl(c); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
 
 function hint(msg, b) {
-  if (b && !reduce.matches) { b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); }
+  if (b) { b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); setTimeout(() => b.classList.remove('nope'), 900); }
   note(msg);
 }
 function toggle(id, b) {
