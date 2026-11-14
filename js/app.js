@@ -2,6 +2,8 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=9';
 import { findTrailer, ytSearch } from './trailer.js?v=9';
+import * as V from './views.js?v=10';
+import { watchedIds, getLists } from './store.js?v=10';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -151,10 +153,14 @@ rating.addEventListener('input', () => { prefs.rating = Number(rating.value); sh
 // не повторять
 const nr = $('#noRepeat');
 nr.addEventListener('click', () => { prefs.noRepeat = !prefs.noRepeat; changed(); });
+// не показывать просмотренное: по умолчанию включено, как только в «Просмотрено» что-то есть
+const noWatched = () => prefs.noWatched ?? watchedIds().size > 0;
+$('#noWatched').addEventListener('click', () => { prefs.noWatched = !noWatched(); changed(); });
+addEventListener('kr:lists', () => syncUI());
 document.querySelectorAll('#known button').forEach((b) => b.addEventListener('click', () => { prefs.known = b.dataset.known === '1'; changed(); }));
 
 const resetYears = () => Object.assign(prefs, { dec: [], from: '', to: '' });
-const resetRate = () => { Object.assign(prefs, { rating: 0, known: false, noRepeat: true }); rating.value = 0; showRating(); };
+const resetRate = () => { Object.assign(prefs, { rating: 0, known: false, noRepeat: true, noWatched: null }); rating.value = 0; showRating(); };
 const resetGenres = () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; };
 $('#pReset').addEventListener('click', () => {
   const s = picker.dataset.sec;
@@ -199,6 +205,7 @@ function syncUI() {
   document.querySelectorAll('#known button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.known === '1') === !!prefs.known)));
   document.querySelectorAll('#types button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
+  $('#noWatched').setAttribute('aria-checked', String(noWatched()));
   const bad = pairs().filter(([, s]) => (prefs.mode === 'movie' && s?.series) || (prefs.mode === 'series' && s?.movie));
   const warn = bad.length ? bad.map(([g, s]) => (s.id === 'a_movie' ? 'Аниме-фильмы' : s.label)).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
   if (warn) $('#hint').textContent = warn;
@@ -220,7 +227,7 @@ function landFx(t) { const sel = selG(); if (!sel.length) return setGenre('none'
 showRating(); syncUI(); applyFx();
 
 // поповер над полем пульта на десктопе, шторка снизу на мобилке (там — все разделы сразу)
-const DIALOGS = [picker, $('#histPanel')];
+const DIALOGS = [picker];
 const anyOpen = () => DIALOGS.some((d) => d.open && !d.classList.contains('out'));
 const POPW = { type: 300, genre: 560, years: 520, rate: 400 };
 function place(d, from) {
@@ -437,6 +444,8 @@ async function choose() {
   try { res = await getPool(P, f); } catch { res = { pool: [] }; }
   if (res.conflict) return { error: res.conflict };
   const pool = res.pool.filter((x) => !bad.has(x.t.id));
+  const W = noWatched() ? watchedIds() : null;
+  if (W?.size) { const left = pool.filter((x) => !W.has(x.t.id)); if (left.length) pool.splice(0, pool.length, ...left); }
   let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool.slice();
   let reset = false;
   if (!fresh.length && pool.length) { fresh = pool.slice(); reset = true; }
@@ -511,6 +520,7 @@ function showResult(t, chipId, gId, fromRect) {
   curChip = chipId; curG = gId;
   render(t, false);
   open(fromRect);
+  if (V.route.name === 'roulette' || V.route.name === 'title') V.setUrl('title/' + t.id);
   details(t).then((d) => { if (my === token) { render(d, true); patchHistory(d); } }).catch(() => {});
 }
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor"/></svg>';
@@ -551,12 +561,15 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
+        <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
     </div>
   `;
   if (keepPoster) { result.querySelector('.info')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
   else result.innerHTML = posterHTML + infoHTML;
+  V.remember(t); V.syncButtons(result);
+  if (full) loadSimilar(t);
   const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
   if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
   // есть ли трейлер: если не нашёлся ни на одном языке — кнопка «Трейлера нет»
@@ -598,6 +611,7 @@ async function collapse() {
   result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
   result.hidden = true; result.innerHTML = ''; stage.classList.remove('show'); document.body.classList.remove('has-result');
   phase('idle');
+  if (V.route.name === 'roulette') V.setUrl('');
 }
 function whereLinks(t, title) {
   const q = encodeURIComponent(title), qy = encodeURIComponent(`${title} ${t.y || ''}`.trim()), qo = encodeURIComponent(t.t);
@@ -681,24 +695,51 @@ function remember(t, chip, g) {
   save(LS.hist, hist); drawHistory();
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
-function drawHistory() {
-  $('#histCount').textContent = hist.length ? String(Math.min(hist.length, 99)) : ''; $('#histCount').hidden = !hist.length; $('#histBtn').setAttribute('aria-label', hist.length ? `История, ${hist.length}` : 'История');
-  $('#hlist').innerHTML = hist.length ? hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span><b>${esc(h.ru || h.t)}</b><small>${esc([kindOf(h), h.y, h.r ? '★ ' + h.r.toFixed(1) : ''].filter(Boolean).join(' · '))}</small></span></button>`).join('')
-    : '<p class="empty">Здесь появится всё, что выпадет.</p>';
-  $('#histClear').hidden = !hist.length;
+function drawHistory() { dispatchEvent(new CustomEvent('kr:hist')); }
+
+// ---------- разделы ----------
+function resetResult() {
+  result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  result.hidden = true; result.innerHTML = ''; stage.classList.remove('show'); document.body.classList.remove('has-result'); phase('idle'); curT = null;
 }
-$('#hlist').addEventListener('click', (e) => {
-  const b = e.target.closest('.hitem'); if (!b || spinning) return;
-  const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
-  const r = b.querySelector('img').getBoundingClientRect();
-  $('#histPanel').close();
-  landFx(h);
-  result.innerHTML = ''; result.hidden = true;
-  showResult(h, h.chip, h.gc, r);
+let titleReq = 0;
+V.initViews({
+  roulette(prev) { if (prev === 'title') { resetResult(); setSpin('Крутить'); } else if (curT && !result.hidden) V.setUrl('title/' + curT.id); requestAnimationFrame(() => measure()); },
+  async title(id) {
+    if (curT?.id === id && !result.hidden) { phase('result'); return; }
+    const my = ++titleReq; resetResult();
+    try {
+      const t = hist.find((h) => h.id === id) || await V.getTitle(id);
+      if (my !== titleReq) return;
+      landFx(t); showResult(t, null, null, null); phase('result');
+    } catch { if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Не нашли такой тайтл</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
+  },
+  leave() {},
+  spinWith(m) {
+    prefs.sel = [...(m.sel || [])]; prefs.sub = {}; prefs.dec = []; prefs.from = prefs.to = '';
+    prefs.rating = m.rating || 0; prefs.known = !!m.known; rating.value = prefs.rating; showRating();
+    savePrefs(); syncUI(); applyFx();
+    if (curT) resetResult();
+    setTimeout(spin, 120);
+  },
+  recent: () => hist.map((h) => ({ ...h })),
+  clearRecent() { hist = []; seen = new Set(); save(LS.hist, hist); save(LS.seen, []); },
 });
-$('#histClear').addEventListener('click', () => { hist = []; seen = new Set(); save(LS.hist, hist); save(LS.seen, []); drawHistory(); });
-$('#histBtn').addEventListener('click', () => openPanel($('#histPanel')));
-drawHistory();
+$('#searchBtn').addEventListener('click', () => V.openSearch());
+// «Похожее» под разворотом: клик заменяет текущий результат тем же переездом постера
+function loadSimilar(t) {
+  const info = result.querySelector('.info'); if (!info || info.querySelector('.sim')) return;
+  info.insertAdjacentHTML('beforeend', V.simHTML());
+  const sec = info.querySelector('.sim'), my = token;
+  V.similar(t).then((list) => { if (my === token && sec.isConnected) V.fillSim(sec, list, pickSimilar); }).catch(() => sec.remove());
+}
+function pickSimilar(t, rect) {
+  if (spinning) return;
+  landFx(t); result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  result.innerHTML = ''; result.hidden = true; stage.classList.remove('show');
+  scrollTo({ top: 0, behavior: reduce.matches ? 'auto' : 'smooth' });
+  showResult(t, null, null, rect); phase('result');
+}
 
 // для тестов
 window.__kr = {
