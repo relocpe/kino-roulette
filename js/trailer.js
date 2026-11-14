@@ -1,5 +1,5 @@
 // Трейлер без ключей: Wikidata (P1651) → поиск через публичные Piped/Invidious с CORS → ссылка на поиск YouTube.
-import { getJSON } from './api.js?v=5';
+import { getJSON } from './api.js?v=6';
 
 const W = 'https://www.wikidata.org/w/api.php?format=json&origin=*';
 const PIPED = ['https://api.piped.private.coffee'];
@@ -68,12 +68,12 @@ export function findTrailer(t, lang) {
   const p = (async () => {
     try { const s = sessionStorage.getItem('tr:' + key); if (s) return JSON.parse(s); } catch {}
     let out = null;
-    const wd = await wikidataIds(t.id).catch(() => []);
+    const wd = String(t.id).startsWith('tt') ? await wikidataIds(t.id).catch(() => []) : t.yt ? [{ id: t.yt, ru: false }] : [];
     if (lang === 'en' && wd.length) out = { id: (wd.find((x) => !x.ru) || wd[0]).id, src: 'wikidata' };
     if (lang === 'ru' && wd.some((x) => x.ru)) out = { id: wd.find((x) => x.ru).id, src: 'wikidata' };
     if (!out) {
       const names = lang === 'ru' ? [t.ru, t.t, t.o] : [t.o, t.t];
-      const kind = /tvSeries|tvMiniSeries/.test(t.k) ? (lang === 'ru' ? ' сериал' : ' series') : '';
+      const kind = t.src === 'al' ? (lang === 'ru' ? ' аниме' : ' anime') : /tvSeries|tvMiniSeries/.test(t.k) ? (lang === 'ru' ? ' сериал' : ' series') : '';
       const q = lang === 'ru' ? `${t.ru || t.t} ${y}${kind} трейлер на русском` : `${t.o || t.t} ${y}${kind} official trailer`;
       let v = best(await search(q), names, t.y, lang === 'ru');
       if (!v && kind) v = best(await search(q.replace(kind, '')), names, t.y, lang === 'ru');

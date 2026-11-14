@@ -1,8 +1,7 @@
-import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=5';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=5';
-import { setFx, burst, glInfo, setMotion } from './fx.js?v=5';
-import { findTrailer, ytSearch } from './trailer.js?v=5';
-import './sound.js?v=5';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=6';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=6';
+import { setFx, burst, glInfo, setMotion } from './fx.js?v=6';
+import { findTrailer, ytSearch } from './trailer.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -13,11 +12,14 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MAX = 3;
-const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime', 'romance'];
+const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime', 'anime'];
 
-const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 6.5, noRepeat: true, fx: null }, load(LS.prefs, {}));
+const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null }, load(LS.prefs, {}));
+// v6: весь каталог по умолчанию — рейтинг «любой», «Всё подряд»
+if (!prefs.v6) { prefs.rating = 0; prefs.known = false; prefs.v6 = true; }
 prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id)).slice(0, MAX);
 prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
+save(LS.prefs, prefs);
 delete prefs.multi;
 let hist = load(LS.hist, []);
 let seen = new Set(load(LS.seen, []));
@@ -52,9 +54,12 @@ function chipEl(c, cls = '') {
   return b;
 }
 const ordered = [...MAIN.map((id) => byId[id]), ...GENRES.filter((g) => !MAIN.includes(g.id))];
+{
+  const any = chipEl({ id: '', label: 'Любой' }, ' any'); any.addEventListener('click', () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; changed(); }); $('#genres').append(any);
+}
 ordered.forEach((c) => { const b = chipEl(c, MAIN.includes(c.id) ? '' : ' extra'); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
-const moreG = $('#moreG');
-function showAll(on) { $('#genres').classList.toggle('all', on); moreG.setAttribute('aria-expanded', String(on)); moreG.textContent = on ? 'Свернуть' : 'Все жанры'; }
+const moreG = chipEl({ id: 'more', label: 'Ещё' }, ' gmore'); moreG.removeAttribute('data-id'); moreG.setAttribute('aria-expanded', 'false'); $('#genres').append(moreG);
+function showAll(on) { $('#genres').classList.toggle('all', on); moreG.setAttribute('aria-expanded', String(on)); moreG.textContent = on ? 'Меньше' : 'Ещё'; }
 moreG.addEventListener('click', () => showAll(moreG.getAttribute('aria-expanded') !== 'true'));
 showAll(prefs.sel.some((id) => !MAIN.includes(id)));
 
@@ -78,8 +83,8 @@ function pickSub(g, s) {
 function changed() { syncUI(); savePrefs(); applyFx(); }
 
 function syncChips() {
-  document.querySelectorAll('#genres .chip').forEach((b) => b.setAttribute('aria-pressed', String(prefs.sel.includes(b.dataset.id))));
-  $('#gCount').textContent = prefs.sel.length ? `${prefs.sel.length}/${MAX}` : '';
+  document.querySelectorAll('#genres .chip[data-id]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === '' ? !prefs.sel.length : prefs.sel.includes(b.dataset.id))));
+  $('#gCount').textContent = prefs.sel.length ? `Жанров ${prefs.sel.length}/${MAX}` : '';
   $('#genres').classList.toggle('full', prefs.sel.length >= MAX);
   const box = $('#subs');
   const want = prefs.sel.filter((g) => SUBS[g]);
@@ -90,8 +95,8 @@ function syncChips() {
       row = document.createElement('div'); row.className = 'subrow'; row.dataset.g = g;
       row.innerHTML = `<div class="subin"><span class="sublbl">${esc(byId[g].label)}:</span></div>`;
       const inner = row.firstChild;
-      const any = chipEl({ id: '', label: 'Любые' }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
-      for (const sid of SUBS[g]) { const c = byId[sid]; const b = chipEl({ ...c, label: c.label.replace('Психологический триллер', 'Психологический') }, ' sub'); b.addEventListener('click', () => pickSub(g, sid)); inner.append(b); }
+      const any = chipEl({ id: '', label: 'Любой' }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
+      for (const sid of SUBS[g]) { const c = byId[sid]; const b = chipEl({ ...c, label: c.label.replace('Психологический триллер', 'Психологический').replace('С неожиданной развязкой', 'С твистом') }, ' sub'); b.addEventListener('click', () => pickSub(g, sid)); inner.append(b); }
       box.append(row);
       requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add('open')));
     }
@@ -101,7 +106,7 @@ function syncChips() {
 }
 
 // режим
-document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); }));
+document.querySelectorAll('.seg button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); }));
 
 // десятилетия: одно или диапазон
 const NOW = new Date().getFullYear();
@@ -136,29 +141,26 @@ function showRating() {
   rating.style.setProperty('--k', k);
   $('#ratingOut').style.setProperty('--k', k);
 }
-rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncQuery(); });
+rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncFilterDot(); });
 
 // не повторять
 const nr = $('#noRepeat');
 nr.addEventListener('click', () => { prefs.noRepeat = !prefs.noRepeat; changed(); });
 
-$('#resetBtn').addEventListener('click', () => { Object.assign(prefs, { mode: 'all', sel: [], sub: {}, dec: [], from: '', to: '', rating: 6.5 }); rating.value = 6.5; showRating(); changed(); });
+document.querySelectorAll('#known button').forEach((b) => b.addEventListener('click', () => { prefs.known = b.dataset.known === '1'; changed(); }));
+$('#resetBtn').addEventListener('click', () => { Object.assign(prefs, { dec: [], from: '', to: '', rating: 0, known: false, noRepeat: true }); rating.value = 0; showRating(); changed(); });
 
 const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-function queryText() {
-  const P = pairs();
-  const mode = { movie: 'Фильмы', series: 'Сериалы', all: 'Фильмы и сериалы' }[prefs.mode];
-  const g = P.length ? cap(P.map(([g, s]) => s ? `${g.label.toLowerCase()}, ${s.label.toLowerCase()}` : g.label.toLowerCase()).join(' или ')) : 'Любой жанр';
-  const r = decRange();
-  const y = r ? (r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])} – ${decLabel(r[1])}`) : (prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : '');
-  const rt = Number(prefs.rating) ? `IMDb ${Number(prefs.rating).toFixed(1)}+` : '';
-  return [mode, g, y, rt].filter(Boolean).join(' · ');
+// сколько фильтров отличается от умолчания — точка-счётчик на кнопке «Фильтры»
+function syncFilterDot() {
+  const n = (decRange() ? 1 : 0) + (Number(prefs.rating) ? 1 : 0) + (prefs.known ? 1 : 0) + (prefs.noRepeat ? 0 : 1);
+  const el = $('#fCount'); el.hidden = !n; el.textContent = n ? String(n) : '';
+  $('#filtersBtn').setAttribute('aria-label', n ? `Фильтры, изменено: ${n}` : 'Фильтры');
 }
-function syncQuery() { $('#qtext').textContent = queryText(); }
 function syncUI() {
-  syncChips(); syncDec(); syncQuery();
-  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
+  syncChips(); syncDec(); syncFilterDot();
+  document.querySelectorAll('#known button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.known === '1') === !!prefs.known)));
+  document.querySelectorAll('.seg button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
   const warn = prefs.mode === 'movie' && pairs().some(([, s]) => s?.series);
   if (warn) $('#hint').textContent = pairs().filter(([, s]) => s?.series).map(([, s]) => s.label).join(' и ') + ' бывают только среди сериалов.';
@@ -184,15 +186,15 @@ for (const d of [panel, $('#histPanel')]) {
   d.addEventListener('cancel', (e) => { e.preventDefault(); closePanel(d); });
   d.addEventListener('close', () => { if (!panel.open && !$('#histPanel').open) document.documentElement.classList.remove('locked'); });
 }
-$('#editBtn').addEventListener('click', () => openPanel(panel));
+$('#filtersBtn').addEventListener('click', () => openPanel(panel));
 
 function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
   let from = y(prefs.from), to = y(prefs.to);
   if (from && to && from > to) [from, to] = [to, from];
-  const ids = [...prefs.sel, ...Object.values(prefs.sub)];
-  const niche = ids.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary', 'detective', 'dystopia', 'psycho', 'sitcom', 'mini'].includes(id));
-  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, minVotes: niche ? 1500 : 4000 };
+  // порог голосов отсекает пустые заглушки: фильмы от 1000, сериалы от 500; «Только известные» — от 25k/10k
+  const known = !!prefs.known;
+  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 1000, vs: known ? 10000 : 500, known };
 }
 
 // ---------- барабан ----------
@@ -318,23 +320,24 @@ async function choose() {
   const P = pairs(), f = filters();
   let res;
   try { res = await getPool(P, f); } catch { res = { pool: [] }; }
-  if (res.conflict) return { error: 'Мини-сериалы и ситкомы бывают только среди сериалов. Переключи на «Сериалы» или «Всё».' };
+  if (res.conflict) return { error: res.conflict };
   const pool = res.pool.filter((x) => !bad.has(x.t.id));
   let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool.slice();
   let reset = false;
   if (!fresh.length && pool.length) { fresh = pool.slice(); reset = true; }
   fresh.sort(() => Math.random() - 0.5);
   for (const c of fresh.slice(0, 6)) {
+    const g = byId[c.g], s = byId[c.s];
+    if (c.t.src === 'al') { if (matchLocal(c.t, g, s, f)) return { win: c, pool, offline: res.offline, reset }; continue; }
     let d = null;
     for (let k = 0; k < 2 && !d; k++) { try { d = await core(c.t.id); } catch {} }
-    const g = byId[c.g], s = byId[c.s];
     if (!d) { if (matchLocal(c.t, g, s, f) && (c.snap || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
     d.i = d.i || c.t.i;
     if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
     bad.add(c.t.id);
   }
   const want = P.map(([g, s]) => (s ? `${g.label}, ${s.label}` : g.label).toLowerCase()).join(' или ');
-  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Нажми «Изменить» и ослабь фильтры.` };
+  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими фильтрами. Ослабь годы или рейтинг в «Фильтрах».` };
 }
 async function settle(v) {
   if (reduce.matches) return;
@@ -347,7 +350,8 @@ function finish() {
 }
 $('#spin').addEventListener('click', spin);
 addEventListener('keydown', (e) => {
-  if (e.code !== 'Space' || e.repeat) return;
+  if (!(e.code === 'Space' || e.key === 'Enter') || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (document.querySelector('dialog[open]')) return;
   if (e.target.closest('a,button,input,textarea,select,dialog,[contenteditable]')) return;
   e.preventDefault(); spin();
 });
@@ -359,6 +363,7 @@ const ico = {
   redo: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 const KIND_RU = { movie: 'Фильм', tvMovie: 'Телефильм', tvSeries: 'Сериал', tvMiniSeries: 'Мини-сериал' };
+const kindOf = (t) => (t.src === 'al' ? (t.k === 'movie' ? 'Аниме-фильм' : 'Аниме-сериал') : KIND_RU[t.k] || 'Тайтл');
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
 // чистим вики-мусор: транскрипции, произношения, скобки с иероглифами, сноски
@@ -383,9 +388,10 @@ function render(t, full) {
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
-  const meta = [KIND_RU[t.k] || 'Тайтл', years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : '') : runtime(t.s), t.r ? `★\u00a0${t.r.toFixed(1)}` : ''].filter(Boolean);
-  const genres = (t.g || []).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
-  const dir = t.directors?.length ? `Режиссёр: ${t.directors.slice(0, 2).join(', ')}` : '';
+  const meta = [kindOf(t), years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s), t.r ? `★\u00a0${t.r.toFixed(1)}` : ''].filter(Boolean);
+  const wantG = [].concat(byId[curG]?.q?.genres || []);
+  const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
+  const dir = t.src === 'al' ? '' : t.directors?.length ? `Режиссёр: ${t.directors.slice(0, 2).join(', ')}` : '';
   const txt = t.wiki ? cleanWiki(t.wiki) : t.p || '';
   const desc = txt ? `<p class="desc${t.wiki ? '' : ' en'}" id="desc"${t.wiki ? '' : ' lang="en"'}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
@@ -402,7 +408,6 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer">${ico.play}Трейлер</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn icon" type="button" data-act="again" aria-label="Ещё раз" title="Ещё раз">${ico.redo}<span>Ещё раз</span></button>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
     </div>
@@ -449,7 +454,7 @@ function whereLinks(t, title) {
     ['Okko', `https://okko.tv/search/${q}`],
     ['Иви', `https://www.ivi.ru/search/?q=${q}`],
     ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`],
-    ['IMDb', `https://www.imdb.com/title/${t.id}/`],
+    ...(t.src === 'al' ? [['AniList', `https://anilist.co/anime/${t.al}`], ...(t.mal ? [['MyAnimeList', `https://myanimelist.net/anime/${t.mal}`]] : [])] : [['IMDb', `https://www.imdb.com/title/${t.id}/`]]),
   ];
   return L.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}${ico.ext}</a>`).join('');
 }
@@ -504,14 +509,14 @@ tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', ()
 
 // ---------- история ----------
 function remember(t, chip, g) {
-  seen.add(t.id); save(LS.seen, [...seen].slice(-600));
-  hist = [{ id: t.id, t: t.t, k: t.k, y: t.y, e: t.e, r: t.r, v: t.v, g: t.g, i: t.i, s: t.s, chip, gc: g, ts: Date.now() }, ...hist.filter((h) => h.id !== t.id)].slice(0, 30);
+  seen.add(t.id); save(LS.seen, [...seen].slice(-3000));
+  hist = [{ id: t.id, t: t.t, o: t.o, k: t.k, y: t.y, e: t.e, r: t.r, v: t.v, g: t.g, i: t.i, s: t.s, src: t.src, al: t.al, mal: t.mal, fmt: t.fmt, ep: t.ep, yt: t.yt, p: t.src === 'al' ? t.p : undefined, chip, gc: g, ts: Date.now() }, ...hist.filter((h) => h.id !== t.id)].slice(0, 30);
   save(LS.hist, hist); drawHistory();
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
 function drawHistory() {
   $('#histCount').textContent = hist.length ? String(hist.length) : '';
-  $('#hlist').innerHTML = hist.length ? hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span><b>${esc(h.ru || h.t)}</b><small>${esc([KIND_RU[h.k], h.y, h.r ? '★ ' + h.r.toFixed(1) : ''].filter(Boolean).join(' · '))}</small></span></button>`).join('')
+  $('#hlist').innerHTML = hist.length ? hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span><b>${esc(h.ru || h.t)}</b><small>${esc([kindOf(h), h.y, h.r ? '★ ' + h.r.toFixed(1) : ''].filter(Boolean).join(' · '))}</small></span></button>`).join('')
     : '<p class="empty">Здесь появится всё, что выпадет.</p>';
   $('#histClear').hidden = !hist.length;
 }
@@ -534,7 +539,7 @@ window.__kr = {
   // sel: ['horror', 'comedy'], extra: {sub: {horror: 'slasher'}, from, to, rating, noRepeat}
   set(sel, mode = 'all', extra = {}) {
     prefs.sel = sel; prefs.sub = extra.sub || {}; prefs.mode = mode; prefs.dec = []; Object.assign(prefs, extra);
-    rating.value = prefs.rating ?? 6.5; showRating();
+    rating.value = prefs.rating ?? 0; showRating();
     savePrefs(); syncUI(); applyFx();
   },
   prefs, details, trailer: (t, l) => findTrailer(t, l),
