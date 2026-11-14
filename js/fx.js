@@ -1,5 +1,5 @@
 // Фоновые эффекты жанров: WebGL-сцена (gl.js) снизу, 2D-детали поверх, верхний слой над интерфейсом.
-import * as G from './gl.js?v=4';
+import * as G from './gl.js?v=5';
 const R = Math.random;
 const rr = (a, b) => a + R() * (b - a);
 const TAU = Math.PI * 2;
@@ -862,7 +862,11 @@ let topDirty = false;
 const layers = [];
 let raf = 0, last = 0;
 const T0 = performance.now();
-const loopOn = () => !reduce.matches && !document.hidden;
+let motionOn = true;
+const loopOn = () => motionOn && !reduce.matches && !document.hidden;
+export function setMotion(on) { motionOn = !!on; document.body.classList.toggle('fx-still', !on); kick(); }
+const NOADAPT2 = /[?&]noadapt/.test(location.search);
+let slowAcc = 0, slowN = 0, lowSent = false;
 
 function resize() {
   DPR = Math.min(coarse ? 1.25 : 1.75, devicePixelRatio || 1);
@@ -898,6 +902,10 @@ function frame(now, still) {
   }
   for (let i = layers.length - 1; i >= 0; i--) if (layers[i].target === 0 && layers[i].a < 0.02) { FX[layers[i].id].end?.(); layers.splice(i, 1); }
   ctx.globalAlpha = 1;
+  if (!still && !NOADAPT2 && !lowSent) {
+    slowAcc += dt; slowN++;
+    if (slowN >= 180) { if (slowAcc / slowN > 0.045) { lowSent = true; dispatchEvent(new Event('kr:lowfps')); } slowAcc = 0; slowN = 0; }
+  }
   if (loopOn()) raf = requestAnimationFrame(frame);
 }
 function renderStatic() {
@@ -919,6 +927,10 @@ export function setFx(id, accent, second) {
   document.body.dataset.fx2 = second || '';
   if (accent) root.style.setProperty('--accent', accent);
   else root.style.removeProperty('--accent');
+  // текст на кнопке: тёмный на светлом акценте, светлый на тёмном
+  const hex = (accent || '#e8b04a').replace('#', ''), ch = [0, 2, 4].map((i) => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  const L = 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  root.style.setProperty('--on-accent', (L + 0.05) / 0.054 >= 1.05 / (L + 0.05) ? '#0c0b0a' : '#ffffff');
   if (current === id && secondary === second) return;
   current = id; secondary = second;
   const want = { [id]: 1 };

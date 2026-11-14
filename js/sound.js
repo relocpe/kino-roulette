@@ -7,7 +7,7 @@ const SCENES = {
   psycho: { drone: 0.22, wind: 0, heart: 0, whisper: 0.5 },
   mystery: { drone: 0.2, wind: 0.35, heart: 0, whisper: 0 },
 };
-let on = localStorage.getItem(KEY) !== '0';
+let on = localStorage.getItem(KEY) === '1';
 let ac = null, nodes = null, scene = null, beatTimer = 0, whisperTimer = 0, nextBeat = 0;
 const btn = document.getElementById('soundBtn');
 
@@ -92,7 +92,7 @@ addEventListener('kr:sfx', (e) => { if (!ac || !on) return; if (e.detail === 'sl
 addEventListener('kr:trailer', (e) => { if (!ac) return; e.detail ? ac.suspend() : (on && !document.hidden && ac.resume()); });
 document.addEventListener('visibilitychange', () => { if (!ac) return; document.hidden ? ac.suspend() : (on && ac.resume()); apply(); });
 
-function label() { btn.setAttribute('aria-pressed', on); btn.querySelector('span').textContent = on ? 'Звук вкл' : 'Звук выкл'; }
+function label() { btn.setAttribute('aria-pressed', on); btn.querySelector('span').textContent = 'Звук'; }
 btn.addEventListener('click', () => { on = !on; localStorage.setItem(KEY, on ? '1' : '0'); label(); if (on) gesture(); else apply(); });
 label();
 export const sound = { get on() { return on; } };

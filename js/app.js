@@ -1,20 +1,24 @@
-import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=4';
-import { findTrailer, ytSearch } from './trailer.js?v=4';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=4';
-import { setFx, burst, glInfo } from './fx.js?v=4';
-import './sound.js?v=4';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=5';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=5';
+import { setFx, burst, glInfo, setMotion } from './fx.js?v=5';
+import { findTrailer, ytSearch } from './trailer.js?v=5';
+import './sound.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const coarse = matchMedia('(pointer: coarse)').matches;
+const mobile = () => matchMedia('(max-width: 760px)').matches;
 const LS = { prefs: 'kr:prefs', hist: 'kr:hist', seen: 'kr:seen' };
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, multi: false, from: '', to: '', rating: 6.5, noRepeat: true }, load(LS.prefs, {}));
-prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id)).slice(0, prefs.multi ? 3 : 1);
-prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
 const MAX = 3;
+const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime', 'romance'];
+
+const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 6.5, noRepeat: true, fx: null }, load(LS.prefs, {}));
+prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id)).slice(0, MAX);
+prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
+delete prefs.multi;
 let hist = load(LS.hist, []);
 let seen = new Set(load(LS.seen, []));
 const savePrefs = () => save(LS.prefs, prefs);
@@ -28,45 +32,55 @@ const savePrefs = () => save(LS.prefs, prefs);
   document.documentElement.style.setProperty('--grain', `url(${c.toDataURL()})`);
 }
 
+// ---------- эффекты: вкл / статичный кадр ----------
+const fxBtn = $('#fxBtn');
+let fxAuto = prefs.fx == null;
+function motion(on, user) {
+  if (user) { prefs.fx = on; fxAuto = false; savePrefs(); }
+  fxBtn.setAttribute('aria-pressed', String(on));
+  setMotion(on);
+}
+motion(prefs.fx ?? !coarse);
+fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-pressed') !== 'true', true));
+addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
+
 // ---------- фильтры ----------
-// Жанр: один (как радио) или до трёх. Под выбранным жанром раскрываются его уточнения, максимум одно.
+const panel = $('#filters');
 function chipEl(c, cls = '') {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'chip' + cls; b.dataset.id = c.id; b.textContent = c.label;
-  b.style.setProperty('--c', c.accent);
   return b;
 }
-GENRES.forEach((c) => { const b = chipEl(c); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
+const ordered = [...MAIN.map((id) => byId[id]), ...GENRES.filter((g) => !MAIN.includes(g.id))];
+ordered.forEach((c) => { const b = chipEl(c, MAIN.includes(c.id) ? '' : ' extra'); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
+const moreG = $('#moreG');
+function showAll(on) { $('#genres').classList.toggle('all', on); moreG.setAttribute('aria-expanded', String(on)); moreG.textContent = on ? 'Свернуть' : 'Все жанры'; }
+moreG.addEventListener('click', () => showAll(moreG.getAttribute('aria-expanded') !== 'true'));
+showAll(prefs.sel.some((id) => !MAIN.includes(id)));
 
+let hintT = 0;
 function hint(msg, b) {
   if (b) { b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); setTimeout(() => b.classList.remove('nope'), 900); }
-  note(msg);
+  $('#hint').textContent = msg; clearTimeout(hintT); hintT = setTimeout(() => ($('#hint').textContent = ''), 3500);
 }
 function toggle(id, b) {
   const on = !prefs.sel.includes(id);
   if (!on) { prefs.sel = prefs.sel.filter((x) => x !== id); delete prefs.sub[id]; }
-  else if (!prefs.multi) { prefs.sel = [id]; prefs.sub = {}; }
   else if (prefs.sel.length >= MAX) return hint(`Максимум ${MAX} жанра. Сними один, чтобы добавить «${byId[id].label}».`, b);
   else prefs.sel = [...prefs.sel, id];
-  syncChips(); savePrefs(); note(); applyFx();
-  if (on) burst(0.5);
+  $('#hint').textContent = '';
+  changed(); if (on) burst(0.5);
 }
 function pickSub(g, s) {
   if (s && prefs.sub[g] !== s) prefs.sub[g] = s; else delete prefs.sub[g];
-  syncChips(); savePrefs(); note(); applyFx();
-  if (s) burst(0.5);
+  changed(); if (s) burst(0.5);
 }
-function setMulti(m) {
-  prefs.multi = m;
-  if (!m && prefs.sel.length > 1) { prefs.sel = prefs.sel.slice(0, 1); prefs.sub = prefs.sub[prefs.sel[0]] ? { [prefs.sel[0]]: prefs.sub[prefs.sel[0]] } : {}; }
-  syncChips(); savePrefs(); note(); applyFx();
-}
-document.querySelectorAll('.count-seg button').forEach((b) => b.addEventListener('click', () => setMulti(b.dataset.multi === '1')));
+function changed() { syncUI(); savePrefs(); applyFx(); }
 
-// ряды уточнений: один на каждый выбранный жанр, у которого они есть
 function syncChips() {
-  document.querySelectorAll('#genres .chip').forEach((b) => b.setAttribute('aria-pressed', prefs.sel.includes(b.dataset.id)));
-  document.querySelectorAll('.count-seg button').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.multi === '1') === !!prefs.multi)));
+  document.querySelectorAll('#genres .chip').forEach((b) => b.setAttribute('aria-pressed', String(prefs.sel.includes(b.dataset.id))));
+  $('#gCount').textContent = prefs.sel.length ? `${prefs.sel.length}/${MAX}` : '';
+  $('#genres').classList.toggle('full', prefs.sel.length >= MAX);
   const box = $('#subs');
   const want = prefs.sel.filter((g) => SUBS[g]);
   for (const row of [...box.children]) if (!want.includes(row.dataset.g)) { row.classList.remove('open'); row.classList.add('closing'); setTimeout(() => row.remove(), reduce.matches ? 0 : 260); }
@@ -74,22 +88,81 @@ function syncChips() {
     let row = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`);
     if (!row) {
       row = document.createElement('div'); row.className = 'subrow'; row.dataset.g = g;
-      row.innerHTML = `<div class="subin"><span class="sublbl">${esc(byId[g].label)}</span></div>`;
+      row.innerHTML = `<div class="subin"><span class="sublbl">${esc(byId[g].label)}:</span></div>`;
       const inner = row.firstChild;
-      const any = chipEl({ id: '', label: 'Любые', accent: byId[g].accent }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
+      const any = chipEl({ id: '', label: 'Любые' }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
       for (const sid of SUBS[g]) { const c = byId[sid]; const b = chipEl({ ...c, label: c.label.replace('Психологический триллер', 'Психологический') }, ' sub'); b.addEventListener('click', () => pickSub(g, sid)); inner.append(b); }
       box.append(row);
       requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add('open')));
     }
     row.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.id || null) === (prefs.sub[g] || null))));
   }
-  // порядок рядов = порядок выбора
   for (const g of want) { const r = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`); if (r) box.append(r); }
 }
-syncChips();
+
+// режим
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); }));
+
+// десятилетия: одно или диапазон
+const NOW = new Date().getFullYear();
+const DECS = [[1900, 'до 70-х'], [1970, '70-е'], [1980, '80-е'], [1990, '90-е'], [2000, '00-е'], [2010, '10-е'], [2020, '20-е']];
+const decLabel = (d) => DECS.find((x) => x[0] === d)[1];
+DECS.forEach(([d, l]) => { const b = chipEl({ id: String(d), label: l }); b.addEventListener('click', () => pickDec(d)); $('#decades').append(b); });
+function decRange() { const D = prefs.dec || []; return D.length ? [Math.min(...D), Math.max(...D)] : null; }
+function pickDec(d) {
+  const D = prefs.dec || [];
+  if (D.length === 1 && D[0] === d) prefs.dec = [];
+  else if (D.length === 1) prefs.dec = [D[0], d].sort((a, b) => a - b);
+  else prefs.dec = [d];
+  const r = decRange();
+  prefs.from = r ? (r[0] === 1900 ? '' : r[0]) : '';
+  prefs.to = r ? (r[1] === 1900 ? 1969 : r[1] >= 2020 ? '' : r[1] + 9) : '';
+  changed();
+}
+function syncDec() {
+  const r = decRange();
+  document.querySelectorAll('#decades .chip').forEach((b) => {
+    const d = +b.dataset.id; const inr = r && d >= r[0] && d <= r[1];
+    b.setAttribute('aria-pressed', String(!!inr)); b.classList.toggle('mid', !!(inr && r[0] !== r[1] && d !== r[0] && d !== r[1]));
+  });
+}
+
+// рейтинг
+const rating = $('#rating');
+rating.value = prefs.rating;
+function showRating() {
+  const v = Number(rating.value), k = v / 9;
+  $('#ratingOut').textContent = v ? v.toFixed(1) : 'любой';
+  rating.style.setProperty('--k', k);
+  $('#ratingOut').style.setProperty('--k', k);
+}
+rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncQuery(); });
+
+// не повторять
+const nr = $('#noRepeat');
+nr.addEventListener('click', () => { prefs.noRepeat = !prefs.noRepeat; changed(); });
+
+$('#resetBtn').addEventListener('click', () => { Object.assign(prefs, { mode: 'all', sel: [], sub: {}, dec: [], from: '', to: '', rating: 6.5 }); rating.value = 6.5; showRating(); changed(); });
 
 const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
-const label = ([g, s]) => s ? `${g.label.toLowerCase()} · ${s.label.toLowerCase()}` : g.label.toLowerCase();
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+function queryText() {
+  const P = pairs();
+  const mode = { movie: 'Фильмы', series: 'Сериалы', all: 'Фильмы и сериалы' }[prefs.mode];
+  const g = P.length ? cap(P.map(([g, s]) => s ? `${g.label.toLowerCase()}, ${s.label.toLowerCase()}` : g.label.toLowerCase()).join(' или ')) : 'Любой жанр';
+  const r = decRange();
+  const y = r ? (r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])} – ${decLabel(r[1])}`) : (prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : '');
+  const rt = Number(prefs.rating) ? `IMDb ${Number(prefs.rating).toFixed(1)}+` : '';
+  return [mode, g, y, rt].filter(Boolean).join(' · ');
+}
+function syncQuery() { $('#qtext').textContent = queryText(); }
+function syncUI() {
+  syncChips(); syncDec(); syncQuery();
+  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
+  nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
+  const warn = prefs.mode === 'movie' && pairs().some(([, s]) => s?.series);
+  if (warn) $('#hint').textContent = pairs().filter(([, s]) => s?.series).map(([, s]) => s.label).join(' и ') + ' бывают только среди сериалов.';
+}
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 function applyFx(gId, sId) {
   let g = byId[gId], s = byId[sId];
@@ -97,61 +170,48 @@ function applyFx(gId, sId) {
   const main = s || g;
   setFx(main ? main.fx : 'idle', main?.accent, s && g ? g.fx : null);
 }
-function note(extra) {
-  const P = pairs();
-  let html = !P.length ? 'Жанр не выбран, крутим всё подряд.' : `Ищем: ${P.map((p) => `<b>${esc(label(p))}</b>`).join(' или ')}`;
-  if (prefs.mode === 'movie' && P.some(([, s]) => s?.series)) html += `<br><span class="warn">${P.filter(([, s]) => s?.series).map(([, s]) => s.label).join(' и ')}: только среди сериалов.</span>`;
-  if (extra) html += `<br><span class="warn">${esc(extra)}</span>`;
-  $('#selnote').innerHTML = html;
-  $('#clearSel').hidden = !prefs.sel.length;
-}
-$('#clearSel').addEventListener('click', () => {
-  prefs.sel = []; prefs.sub = {}; savePrefs(); syncChips(); note();
-  applyFx();
-});
+showRating(); syncUI(); applyFx();
 
-document.querySelectorAll('.seg button').forEach((b) => {
-  b.setAttribute('aria-checked', b.dataset.mode === prefs.mode);
-  b.addEventListener('click', () => {
-    prefs.mode = b.dataset.mode; savePrefs(); note();
-    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x === b));
-  });
-});
-const yFrom = $('#yFrom'), yTo = $('#yTo'), rating = $('#rating');
-yFrom.value = prefs.from; yTo.value = prefs.to; rating.value = prefs.rating;
-const showRating = () => ($('#ratingOut').textContent = Number(rating.value) ? Number(rating.value).toFixed(1) : 'любой');
-showRating();
-rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); });
-for (const el of [yFrom, yTo]) el.addEventListener('change', () => { prefs.from = yFrom.value; prefs.to = yTo.value; savePrefs(); });
-$('#noRepeat').checked = prefs.noRepeat;
-$('#noRepeat').addEventListener('change', (e) => { prefs.noRepeat = e.target.checked; savePrefs(); });
-note();
-applyFx();
+// панели: сверху на десктопе, снизу на мобилке
+function openPanel(d) { d.showModal(); document.documentElement.classList.add('locked'); }
+function closePanel(d) {
+  if (!d.open) return;
+  if (reduce.matches) { d.close(); return; }
+  d.classList.add('out'); setTimeout(() => { d.classList.remove('out'); d.close(); }, 220);
+}
+for (const d of [panel, $('#histPanel')]) {
+  d.addEventListener('click', (e) => { if (e.target === d || e.target.closest('[data-close]')) closePanel(d); });
+  d.addEventListener('cancel', (e) => { e.preventDefault(); closePanel(d); });
+  d.addEventListener('close', () => { if (!panel.open && !$('#histPanel').open) document.documentElement.classList.remove('locked'); });
+}
+$('#editBtn').addEventListener('click', () => openPanel(panel));
 
 function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
-  let from = y(yFrom.value), to = y(yTo.value);
+  let from = y(prefs.from), to = y(prefs.to);
   if (from && to && from > to) [from, to] = [to, from];
   const ids = [...prefs.sel, ...Object.values(prefs.sub)];
   const niche = ids.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary', 'detective', 'dystopia', 'psycho', 'sitcom', 'mini'].includes(id));
-  return { mode: prefs.mode, from, to, minRating: Number(rating.value) || 0, minVotes: niche ? 1500 : 4000 };
+  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, minVotes: niche ? 1500 : 4000 };
 }
 
 // ---------- барабан ----------
-const reel = $('#reel'), strip = $('#strip');
+const stage = $('#stage'), reel = $('#reel'), strip = $('#strip'), result = $('#result');
 let CW = 0, P = 0, CX = 0, K = 0, cards = [];
 let pos = 0, items = new Map(), display = [];
 function measure() {
   const r = reel.getBoundingClientRect();
-  CW = parseFloat(getComputedStyle(reel).getPropertyValue('--cw')) || strip.querySelector('.card')?.offsetWidth || 160;
-  const probe = document.createElement('div'); probe.style.width = 'var(--cw)'; reel.append(probe); CW = probe.offsetWidth || CW; probe.remove();
-  P = CW + 14; CX = r.width / 2 - CW / 2;
+  const probe = document.createElement('div'); probe.style.width = 'var(--cw)'; reel.append(probe); CW = probe.offsetWidth || 160; probe.remove();
+  P = CW + Math.round(CW * 0.09); CX = r.width / 2 - CW / 2;
   const need = Math.ceil(r.width / P) + 4;
   if (need !== K) {
     K = need; strip.textContent = '';
     cards = Array.from({ length: K }, () => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = '<img alt="" decoding="async"><span></span>'; strip.append(d); d.vi = null; const img = d.firstChild; img.onerror = () => d.classList.add('miss'); return d; });
   }
   paint(true);
+  // эффекты живут только в сцене барабана: маска заканчивается под ним
+  const b = reel.getBoundingClientRect().bottom + scrollY;
+  document.documentElement.style.setProperty('--fxEnd', `${Math.round(b)}px`);
 }
 const mod = (a, n) => ((a % n) + n) % n;
 function itemAt(v) {
@@ -167,19 +227,18 @@ function paint(force) {
       const t = itemAt(v);
       el.classList.remove('miss');
       const img = el.firstChild;
-      const src = t?.i ? poster(t.i, 300) : '';
+      const src = t?.i ? poster(t.i, CW > 200 ? 400 : 300) : '';
       if (img.getAttribute('src') !== src) { if (src) img.src = src; else { img.removeAttribute('src'); el.classList.add('miss'); } }
       el.lastChild.textContent = t ? t.t : '';
     }
     const x = v * P - pos + CX;
-    const d = Math.min(1, Math.abs(x - CX) / (P * 2.2));
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * 0.1).toFixed(3)})`;
-    el.style.opacity = (1 - d * 0.45).toFixed(3);
+    const d = Math.min(1, Math.abs(x - CX) / (P * 2.4));
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * 0.12).toFixed(3)})`;
+    el.style.opacity = (1 - d * 0.5).toFixed(3);
   }
   reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
 }
 addEventListener('resize', () => measure(), { passive: true });
-
 seedPosters().then((s) => { display = s; items.clear(); measure(); }).catch(() => measure());
 measure();
 
@@ -188,16 +247,16 @@ const preload = (t, w = 300, ms = 2500) => new Promise((res) => {
   const im = new Image(); const done = () => res(); im.onload = done; im.onerror = done; setTimeout(done, ms); im.src = poster(t.i, w);
 });
 
-let spinning = false;
+let spinning = false, landedAt = null;
 async function spin() {
   if (spinning) return;
   spinning = true;
   const btn = $('#spin'); btn.disabled = true; btn.firstChild.textContent = 'Крутим…';
   $('#status').textContent = '';
+  if (!result.hidden) await collapse();
   reel.classList.remove('landed');
-  if (matchMedia('(max-width: 900px)').matches) reel.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'center' });
+  if (mobile()) reel.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'center' });
 
-  // разгон начинается сразу, данные догоняют
   let v = 0, last = performance.now(), cruising = !reduce.matches;
   const vmax = Math.max(1800, P * 16);
   const cruise = (now) => {
@@ -211,28 +270,26 @@ async function spin() {
   const ch = await choose();
   if (ch.error) {
     cruising = false; await settle(v);
-    finish(); $('#status').textContent = ''; note(ch.error);
-    $('#selnote').scrollIntoView?.({ block: 'nearest' });
+    finish(); $('#status').textContent = ch.error;
     return;
   }
-  note();
-  const win = ch.win, res = ch;
+  const win = ch.win;
   display = ch.pool.map((x) => x.t);
-  await Promise.all([preload(win.t, 300), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
+  await Promise.all([preload(win.t, 400), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
   const resetNote = ch.reset ? 'Всё подходящее уже выпадало, начинаю круг заново. ' : '';
 
   cruising = false;
+  let T;
   if (reduce.matches) {
-    const T = Math.round(pos / P) + 1;
+    T = Math.round(pos / P) + 1;
     for (let i = -4; i <= 4; i++) items.delete(T + i);
     items.set(T, win.t); pos = T * P; paint(true);
   } else {
     const vNow = Math.max(v, vmax * 0.6);
     const dist0 = vNow * 3.3 / 4;
-    const T = Math.round((pos + dist0) / P);
+    T = Math.round((pos + dist0) / P);
     for (let i = -6; i <= 4; i++) if (i) items.set(T + i, display[Math.floor(Math.random() * display.length)]);
     items.set(T, win.t);
-    // подменяем уже отрисованные карточки у финиша
     cards.forEach((c) => { if (Math.abs(c.vi - T) <= 6) c.vi = null; });
     const p0 = pos, dist = T * P - p0, D = (4 * dist) / vNow * 1000;
     await new Promise((done) => {
@@ -249,8 +306,10 @@ async function spin() {
   applyFx(win.g, win.s);
   burst(1);
   remember(win.t, win.s || win.g, win.g);
-  $('#status').textContent = resetNote + (res.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
-  showResult(win.t, win.s || win.g, win.g);
+  $('#status').textContent = resetNote + (ch.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
+  const center = cards.find((c) => c.vi === T);
+  await new Promise((r) => setTimeout(r, reduce.matches ? 0 : 260));
+  showResult(win.t, win.s || win.g, win.g, center?.getBoundingClientRect());
   finish();
 }
 const bad = new Set();
@@ -269,14 +328,13 @@ async function choose() {
     let d = null;
     for (let k = 0; k < 2 && !d; k++) { try { d = await core(c.t.id); } catch {} }
     const g = byId[c.g], s = byId[c.s];
-    // без карточки принимаем только то, что не требует проверки интересов, или офлайн-подборку (она проверена заранее)
     if (!d) { if (matchLocal(c.t, g, s, f) && (c.snap || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
     d.i = d.i || c.t.i;
     if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
     bad.add(c.t.id);
   }
-  const want = P.map(label).join(' или ');
-  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Снизь рейтинг, расширь годы или выбери «Любые».` };
+  const want = P.map(([g, s]) => (s ? `${g.label}, ${s.label}` : g.label).toLowerCase()).join(' или ');
+  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Нажми «Изменить» и ослабь фильтры.` };
 }
 async function settle(v) {
   if (reduce.matches) return;
@@ -285,86 +343,127 @@ async function settle(v) {
 }
 function finish() {
   spinning = false;
-  const btn = $('#spin'); btn.disabled = false; btn.firstChild.textContent = 'Ещё раз';
+  const btn = $('#spin'); btn.disabled = false; btn.firstChild.textContent = 'Крутить';
 }
 $('#spin').addEventListener('click', spin);
 addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || e.repeat) return;
-  if (e.target.closest('a,button,input,textarea,select,[contenteditable]')) return;
+  if (e.target.closest('a,button,input,textarea,select,dialog,[contenteditable]')) return;
   e.preventDefault(); spin();
 });
 
-// ---------- результат ----------
+// ---------- результат: кадр барабана вырастает в карточку ----------
 const ico = {
   play: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
-  eye: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8s2.6-5 7-5 7 5 7 5-2.6 5-7 5-7-5-7-5z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>',
+  ext: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5H7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   redo: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 const KIND_RU = { movie: 'Фильм', tvMovie: 'Телефильм', tvSeries: 'Сериал', tvMiniSeries: 'Мини-сериал' };
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
-let token = 0;
-
-function showResult(t, chipId, gId) {
-  const my = ++token;
-  render(t, chipId, false, gId);
-  details(t).then((d) => { if (my === token) { render(d, chipId, true, gId); patchHistory(d); } }).catch(() => {});
+// чистим вики-мусор: транскрипции, произношения, скобки с иероглифами, сноски
+export function cleanWiki(s) {
+  let out = String(s || '').replace(/\u0301/g, '');
+  const junk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0590-\u06ff\u0e00-\u0e7f]|(?:^|[\s(;,])(?:англ|яп|кор|кит|фр|нем|исп|итал|лат|порт|тур|хинди|произн|МФА|ромадзи|букв|транслит|рус)\.|произношение|[ˈˌəɪʊʃʒθðŋ]/i;
+  for (let k = 0; k < 3; k++) out = out.replace(/\s*\(([^()]*)\)/g, (m, inner) => (junk.test(inner) ? '' : m));
+  return out.replace(/\[[^\]]*\]/g, '').replace(/\s+([,.;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
 }
-let curT = null;
-function render(t, chipId, full, gId) {
-  const el = $('#result');
+let token = 0, curT = null, curChip = null, curG = null;
+function showResult(t, chipId, gId, fromRect) {
+  const my = ++token;
+  curChip = chipId; curG = gId;
+  render(t, false);
+  open(fromRect);
+  details(t).then((d) => { if (my === token) { render(d, true); patchHistory(d); } }).catch(() => {});
+}
+function render(t, full) {
   curT = t;
   if (full) findTrailer(t, prefs.tlang || 'ru').catch(() => {});
   const title = t.ru || t.t;
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
-  const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : ''}` : t.y || '';
-  const facts = [];
-  if (t.r) facts.push(`<li><span class="star">★</span> <b>${t.r.toFixed(1)}</b>${t.v ? ` <span>(${t.v.toLocaleString('ru-RU')})</span>` : ''}</li>`);
-  if (isSeries && t.seasons) facts.push(`<li>${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}</li>`);
-  else if (t.s) facts.push(`<li>${runtime(t.s)}</li>`);
-  if (t.g?.length) facts.push(`<li>${t.g.map((g) => GENRE_RU[g] || g).join(', ')}</li>`);
-  if (t.directors?.length) facts.push(`<li>Режиссёр: ${esc(t.directors.slice(0, 2).join(', '))}</li>`);
-  const desc = t.wiki ? `<p class="desc">${esc(trim(t.wiki))}</p><p class="src">Из <a href="${esc(t.wikiUrl)}" target="_blank" rel="noopener">Википедии</a></p>`
-    : t.p ? `<p class="desc en" lang="en">${esc(t.p)}</p><p class="src">Описание IMDb, на английском</p>` : full ? '' : '<p class="src">Загружаю описание…</p>';
-  const chip = byId[chipId], gch = gId && gId !== chipId ? byId[gId] : null;
-  const tag = [gch?.label, chip?.label].filter(Boolean).join(' + ');
-  el.innerHTML = `
-    <div class="poster">${t.i ? `<img src="${poster(t.i, 600)}" alt="Постер: ${esc(title)}">` : ''}</div>
+  const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
+  const meta = [KIND_RU[t.k] || 'Тайтл', years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : '') : runtime(t.s), t.r ? `★\u00a0${t.r.toFixed(1)}` : ''].filter(Boolean);
+  const genres = (t.g || []).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
+  const dir = t.directors?.length ? `Режиссёр: ${t.directors.slice(0, 2).join(', ')}` : '';
+  const txt = t.wiki ? cleanWiki(t.wiki) : t.p || '';
+  const desc = txt ? `<p class="desc${t.wiki ? '' : ' en'}" id="desc"${t.wiki ? '' : ' lang="en"'}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
+    : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
+  const rec = hist.filter((h) => h.id !== t.id).slice(0, 6);
+  const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
+  const posterHTML = `<div class="poster" id="rposter">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}">` : ''}</div>`;
+  const infoHTML = `
     <div class="info">
-      <p class="kicker">${KIND_RU[t.k] || 'Тайтл'}${years ? `, ${years}` : ''}${tag ? `. ${esc(tag)}` : ''}</p>
+      <p class="meta">${meta.map(esc).join(' · ')}</p>
       <h2>${esc(title)}</h2>
-      ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : '<p class="orig"></p>'}
-      <ul class="facts">${facts.join('')}</ul>
+      ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : ''}
+      ${genres || dir ? `<p class="sub">${esc([genres, dir].filter(Boolean).join(' · '))}</p>` : ''}
       ${desc}
       <div class="actions">
-        <button class="btn primary" type="button" data-act="again">${ico.redo}Ещё раз</button>
-        <button class="btn" type="button" data-act="trailer">${ico.play}Трейлер</button>
-        <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">${ico.eye}Где посмотреть</button>
+        <button class="btn primary" type="button" data-act="trailer">${ico.play}Трейлер</button>
+        <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
+        <button class="btn icon" type="button" data-act="again" aria-label="Ещё раз" title="Ещё раз">${ico.redo}<span>Ещё раз</span></button>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
-    </div>`;
-  if (!full) { el.hidden = false; el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
+    </div>
+    ${rec.length ? `<div class="recent"><p class="flabel">Недавно</p><div class="rrow">${rec.map((h) => `<button class="rmini" type="button" data-id="${h.id}" title="${esc(h.ru || h.t)}"><img loading="lazy" alt="${esc(h.ru || h.t)}" src="${poster(h.i, 200)}"></button>`).join('')}</div></div>` : ''}`;
+  if (keepPoster) { result.querySelector('.info')?.remove(); result.querySelector('.recent')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
+  else result.innerHTML = posterHTML + infoHTML;
+  const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
+  if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
 }
-function trim(s) { const parts = s.split(/(?<=[.!?])\s+/); let out = ''; for (const p of parts) { if ((out + p).length > 420 && out) break; out += (out ? ' ' : '') + p; } return out; }
+const SPRING = 'cubic-bezier(.2, 1.25, .35, 1)';
+function open(fromRect) {
+  const was = !result.hidden;
+  result.hidden = false; stage.classList.add('show'); document.body.classList.add('has-result');
+  $('#where')?.setAttribute('hidden', '');
+  const img = result.querySelector('.poster');
+  if (!was && fromRect && img && !reduce.matches) {
+    const to = img.getBoundingClientRect();
+    const dx = fromRect.left - to.left, dy = fromRect.top - to.top, sx = fromRect.width / to.width, sy = fromRect.height / to.height;
+    img.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '6px' }, { transform: 'none' }], { duration: 520, easing: SPRING });
+    result.querySelectorAll('.info, .recent').forEach((el, i) => el.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 160 + i * 80, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' }));
+    result.animate([{ backgroundColor: 'rgb(12 11 10 / 0)', borderColor: 'transparent' }, {}], { duration: 420, easing: 'ease-out' });
+  }
+  if (mobile()) stage.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' });
+}
+// «Ещё раз»: карточка сворачивается обратно в кадр плёнки
+async function collapse() {
+  const img = result.querySelector('.poster');
+  if (img && !reduce.matches) {
+    const from = img.getBoundingClientRect(), gate = $('#gate').getBoundingClientRect();
+    const to = { left: gate.left + 6, top: gate.top + 6, width: CW, height: CW * 1.5 };
+    const dx = to.left - from.left, dy = to.top - from.top, sx = to.width / from.width, sy = to.height / from.height;
+    const a = img.animate([{ transform: 'none' }, { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '6px' }], { duration: 380, easing: 'cubic-bezier(.5,0,.2,1)', fill: 'forwards' });
+    result.querySelectorAll('.info, .recent').forEach((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }));
+    result.animate([{}, { backgroundColor: 'rgb(12 11 10 / 0)', borderColor: 'transparent' }], { duration: 300, fill: 'forwards' });
+    await a.finished.catch(() => {});
+  }
+  result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  result.hidden = true; result.innerHTML = ''; stage.classList.remove('show'); document.body.classList.remove('has-result');
+}
 function whereLinks(t, title) {
   const q = encodeURIComponent(title), qy = encodeURIComponent(`${title} ${t.y || ''}`.trim()), qo = encodeURIComponent(t.t);
   const L = [
-    ['Кинопоиск', `https://www.kinopoisk.ru/index.php?kp_query=${qy}`, 'поиск'],
-    ['Okko', `https://okko.tv/search/${q}`, 'поиск'],
-    ['Иви', `https://www.ivi.ru/search/?q=${q}`, 'поиск'],
-    ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`, 'где идёт'],
-    ['IMDb', `https://www.imdb.com/title/${t.id}/`, 'страница'],
+    ['Кинопоиск', `https://www.kinopoisk.ru/index.php?kp_query=${qy}`],
+    ['Okko', `https://okko.tv/search/${q}`],
+    ['Иви', `https://www.ivi.ru/search/?q=${q}`],
+    ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`],
+    ['IMDb', `https://www.imdb.com/title/${t.id}/`],
   ];
-  return L.map(([n, u, s]) => `<a href="${u}" target="_blank" rel="noopener">${n} <small>${s}</small></a>`).join('');
+  return L.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}${ico.ext}</a>`).join('');
 }
-$('#result').addEventListener('click', (e) => {
+result.addEventListener('click', (e) => {
+  const mini = e.target.closest('.rmini');
+  if (mini) { const h = hist.find((x) => x.id === mini.dataset.id); if (h) { applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null); result.innerHTML = ''; result.hidden = true; showResult(h, h.chip, h.gc, mini.getBoundingClientRect()); } return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
-  if (b.dataset.act === 'trailer') openTrailer(curT, b);
-  if (b.dataset.act === 'again') { $('#where')?.setAttribute('hidden', ''); spin(); }
-  if (b.dataset.act === 'where') {
-    const w = $('#where'), open = w.hidden; w.hidden = !open; b.setAttribute('aria-expanded', open);
-    if (open) w.querySelector('a')?.focus();
+  const act = b.dataset.act;
+  if (act === 'trailer') openTrailer(curT, b);
+  if (act === 'again') spin();
+  if (act === 'more') { $('#desc').classList.add('open'); b.remove(); }
+  if (act === 'where') {
+    const w = $('#where'), op = w.hidden; w.hidden = !op; b.setAttribute('aria-expanded', op);
+    if (op) w.querySelector('a')?.focus();
   }
 });
 document.addEventListener('click', (e) => { const w = $('#where'); if (w && !w.hidden && !e.target.closest('.actions')) { w.hidden = true; $('[data-act="where"]')?.setAttribute('aria-expanded', 'false'); } });
@@ -381,7 +480,7 @@ async function openTrailer(t, from) {
   $('#tmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу трейлер…</div>';
   $('#tmYt').href = ytSearch(t);
   tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === (prefs.tlang || 'ru'))));
-  if (!tm.open) { tm.showModal(); document.documentElement.classList.add('tm-on'); window.dispatchEvent(new CustomEvent('kr:trailer', { detail: true })); }
+  if (!tm.open) { tm.showModal(); document.documentElement.classList.add('locked'); window.dispatchEvent(new CustomEvent('kr:trailer', { detail: true })); }
   let lang = prefs.tlang || 'ru';
   let r = await findTrailer(t, lang).catch(() => null);
   if (!r && my === tReq) { const alt = lang === 'ru' ? 'en' : 'ru'; r = await findTrailer(t, alt).catch(() => null); if (r) lang = alt; }
@@ -395,7 +494,7 @@ async function openTrailer(t, from) {
 function closeTrailer() {
   if (!tm.open) return;
   tReq++; $('#tmFrame').innerHTML = ''; delete $('#tmFrame').dataset.vid;
-  tm.close(); document.documentElement.classList.remove('tm-on');
+  tm.close(); document.documentElement.classList.remove('locked');
   window.dispatchEvent(new CustomEvent('kr:trailer', { detail: false }));
   tBack?.focus();
 }
@@ -411,31 +510,32 @@ function remember(t, chip, g) {
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
 function drawHistory() {
-  $('#histCount').textContent = hist.length ? hist.length : '';
-  $('#history').hidden = !hist.length;
-  $('#hrow').innerHTML = hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span>${esc(h.ru || h.t)}${h.y ? `, ${h.y}` : ''}</span></button>`).join('');
+  $('#histCount').textContent = hist.length ? String(hist.length) : '';
+  $('#hlist').innerHTML = hist.length ? hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span><b>${esc(h.ru || h.t)}</b><small>${esc([KIND_RU[h.k], h.y, h.r ? '★ ' + h.r.toFixed(1) : ''].filter(Boolean).join(' · '))}</small></span></button>`).join('')
+    : '<p class="empty">Здесь появится всё, что выпадет.</p>';
+  $('#histClear').hidden = !hist.length;
 }
-$('#hrow').addEventListener('click', (e) => {
+$('#hlist').addEventListener('click', (e) => {
   const b = e.target.closest('.hitem'); if (!b) return;
   const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
+  const r = b.querySelector('img').getBoundingClientRect();
+  $('#histPanel').close();
   applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null);
-  showResult(h, h.chip, h.gc);
-  $('#result').scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' });
+  result.innerHTML = ''; result.hidden = true;
+  showResult(h, h.chip, h.gc, r);
 });
 $('#histClear').addEventListener('click', () => { hist = []; seen = new Set(); save(LS.hist, hist); save(LS.seen, []); drawHistory(); });
-$('#histBtn').addEventListener('click', () => { if (!hist.length) { $('#status').textContent = 'История пока пустая.'; return; } $('#history').scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' }); });
+$('#histBtn').addEventListener('click', () => openPanel($('#histPanel')));
 drawHistory();
 
 // для тестов
 window.__kr = {
-  spin, setFx, burst, choose, gl: () => glInfo(),
-  // sel: ['horror', 'comedy'], sub: {horror: 'slasher'}
+  spin, setFx, burst, choose, gl: () => glInfo(), cleanWiki,
+  // sel: ['horror', 'comedy'], extra: {sub: {horror: 'slasher'}, from, to, rating, noRepeat}
   set(sel, mode = 'all', extra = {}) {
-    prefs.sel = sel; prefs.sub = extra.sub || {}; prefs.multi = sel.length > 1; prefs.mode = mode; Object.assign(prefs, extra);
-    yFrom.value = prefs.from || ''; yTo.value = prefs.to || ''; rating.value = prefs.rating ?? 6.5; showRating();
-    syncChips();
-    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x.dataset.mode === mode));
-    savePrefs(); note(); applyFx();
+    prefs.sel = sel; prefs.sub = extra.sub || {}; prefs.mode = mode; prefs.dec = []; Object.assign(prefs, extra);
+    rating.value = prefs.rating ?? 6.5; showRating();
+    savePrefs(); syncUI(); applyFx();
   },
   prefs, details, trailer: (t, l) => findTrailer(t, l),
   async pick() { const r = await choose(); if (r.win) { seen.add(r.win.t.id); } return r.error ? { error: r.error } : { t: r.win.t, g: r.win.g, s: r.win.s, offline: !!r.offline }; },

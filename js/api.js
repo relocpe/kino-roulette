@@ -1,4 +1,4 @@
-import { LISTS } from './chips.js?v=4';
+import { LISTS } from './chips.js?v=5';
 
 const B = 'https://api.tiffara.com';
 const IMG = 'https://m.media-amazon.com/images/M/';
