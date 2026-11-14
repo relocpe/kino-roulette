@@ -5,7 +5,7 @@ import { findTrailer, ytSearch } from './trailer.js?v=10';
 import * as V from './views.js?v=12';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
 import { storyBlob, shareLink, shareImage } from './share.js?v=1';
-import { watchedIds, getLists } from './store.js?v=10';
+import { watchedIds, getLists } from './store.js?v=11';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');

@@ -1,7 +1,7 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU } from './chips.js?v=9';
 import { getJSON, norm, normAnime, poster } from './api.js?v=9';
-import * as S from './store.js?v=10';
+import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
