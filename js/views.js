@@ -292,8 +292,8 @@ const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 &
 function renderMood(slug) {
   const m = MOODS.find((x) => x.slug === slug); if (!m) return navigate('catalog', { replace: true });
   document.title = `${m.title} · Кинорулетка`;
-  view.innerHTML = `<div class="wrap"><header class="mhead"><div class="mcol big"></div><div class="mtxt"><a class="back" href="catalog" data-nav>${IC.l}Каталог</a><h1>${esc(m.title)}</h1><p>${esc(m.sub)}</p></div><button class="mspin" type="button">Крутить по подборке</button></header><div class="grid" id="grid"></div></div>`;
-  moodPosters(m).then((u) => { const c = view.querySelector('.mcol.big'); if (c) c.innerHTML = collHTML(u, 5); });
+  view.innerHTML = `<div class="wrap"><header class="mhead"><div class="mcol mc5"></div><div class="mtxt"><a class="back" href="catalog" data-nav>${IC.l}Каталог</a><h1>${esc(m.title)}</h1><p>${esc(m.sub)}</p></div><button class="mspin" type="button">Крутить по подборке</button></header><div class="grid" id="grid"></div></div>`;
+  moodPosters(m).then((u) => { const c = view.querySelector('.mcol.mc5'); if (c) c.innerHTML = collHTML(u, 5); });
   view.querySelector('.mspin').onclick = () => { navigate(''); H.spinWith?.(m.spin); };
   const stop = grid($('#grid'), { mode: 'all', ...m.f });
   cleanup = stop;

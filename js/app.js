@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=9';
 import { findTrailer, ytSearch } from './trailer.js?v=9';
-import * as V from './views.js?v=10';
+import * as V from './views.js?v=11';
 import { watchedIds, getLists } from './store.js?v=10';
 
 const $ = (s) => document.querySelector(s);

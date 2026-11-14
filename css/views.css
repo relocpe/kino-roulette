@@ -292,3 +292,12 @@ body.inroom .view { min-height: 100dvh; }
   .rcode { font-size: 48px; }
   .tog { padding-top: 6dvh; }
 }
+.lacts { display: inline-flex; gap: 8px; }
+.mtxt { min-width: 0; max-width: 100%; }
+.mhead p { white-space: normal; }
+@media (max-width: 760px) {
+  .actions { flex-wrap: wrap; }
+  .actions .btn { flex: 1 1 calc(50% - 4px); }
+  .lacts { flex: 1 0 100%; }
+  .lacts .ib2 { flex: 1 1 0; height: 44px; }
+}
