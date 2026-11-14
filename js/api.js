@@ -1,4 +1,4 @@
-import { LISTS, byId } from './chips.js?v=6';
+import { LISTS, byId } from './chips.js?v=8';
 const ANIME = byId.anime;
 
 const B = 'https://api.tiffara.com';
@@ -11,7 +11,7 @@ const qs = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== n
 // офлайн-каталог грузится лениво — только если API не ответил
 let snapshot = null;
 async function snap() {
-  if (!snapshot) snapshot = fetch('data/catalog.json?v=6').then((r) => r.json()).then((d) => {
+  if (!snapshot) snapshot = fetch('data/catalog.json?v=8').then((r) => r.json()).then((d) => {
     const T = {};
     for (const row of d.titles) {
       const [id, t, o, k, y, e, r10, v, g, i, sec, tg, ep] = row;
@@ -24,20 +24,30 @@ async function snap() {
 }
 let seeds = null;
 export async function seedPosters() {
-  if (!seeds) seeds = fetch('data/seed.json?v=6').then((r) => r.json());
+  if (!seeds) seeds = fetch('data/seed.json?v=8').then((r) => r.json());
   return seeds;
 }
 
+// кэш ответов: память (до 400 записей) + sessionStorage только для маленьких ответов; при переполнении чистим старое
+const mem = new Map();
+function remember(key, d, txt) {
+  mem.set(key, d); if (mem.size > 400) mem.delete(mem.keys().next().value);
+  if (txt.length > 24000) return;
+  try { sessionStorage.setItem(key, txt); } catch {
+    try { const ks = []; for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k.startsWith('k:')) ks.push(k); } ks.slice(0, Math.ceil(ks.length / 2)).forEach((k) => sessionStorage.removeItem(k)); sessionStorage.setItem(key, txt); } catch {}
+  }
+}
 export async function getJSON(url, ms = 9000) {
   const key = 'k:' + url;
+  if (mem.has(key)) return mem.get(key);
   try { const c = sessionStorage.getItem(key); if (c) return JSON.parse(c); } catch {}
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
   try {
     const r = await fetch(url, { signal: ctl.signal });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    try { sessionStorage.setItem(key, JSON.stringify(d)); } catch {}
+    const txt = await r.text(), d = JSON.parse(txt);
+    remember(key, d, txt);
     return d;
   } finally { clearTimeout(timer); }
 }
@@ -256,7 +266,9 @@ export async function getPool(P, f) {
     const parts = await Promise.all(batch.map(async ([g, s]) => {
       const isA = g?.src === 'anilist';
       let list, snapF = !!s?.list;
-      try { list = isA ? await queryAnime(s, f) : await queryPair(g, s, f); } catch { offline = true; snapF = true; list = await fallbackPair(g, s); }
+      // общий дедлайн 8 с: дальше — встроенный каталог, а не бесконечное «Крутим…»
+      const deadline = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6500));
+      try { list = await Promise.race([isA ? queryAnime(s, f) : queryPair(g, s, f), deadline]); } catch { offline = true; snapF = true; list = await fallbackPair(g, s); }
       const bk = `${g?.id}|${s?.id}|${fk}`;
       if (!banks.has(bk)) banks.set(bk, new Map());
       const bank = banks.get(bk);
@@ -275,7 +287,7 @@ export async function getPool(P, f) {
 
 export async function core(id) {
   if (String(id).startsWith('al')) return null;
-  const full = await getJSON(`${B}/titles/${id}`, 6000);
+  const full = await getJSON(`${B}/titles/${id}`, 4500);
   return Object.assign(norm(full), {
     interests: (full.interests || []).map((x) => x.id),
     countries: (full.originCountries || []).map((x) => x.code),
@@ -289,7 +301,7 @@ export async function details(t) {
   if (t.src === 'al') {
     const w = await wiki('P8729', t.al).catch(() => null);
     const cyr = (x) => /[а-яё]/i.test(x || '');
-    return { ...t, ru: cyr(w?.label) ? w.label : null, wiki: w?.extract || null, wikiUrl: w?.url || null };
+    return { ...t, ru: cyr(w?.label) ? w.label : null, wiki: w?.extract || null, plotRu: w?.plot || null, wikiUrl: w?.url || null };
   }
   const [full, akas, seasons, w] = await Promise.all([
     t.interests ? t : core(t.id).catch(() => null),
@@ -304,6 +316,7 @@ export async function details(t) {
   out.ru = ru?.text || (cyr({ text: w?.label }) ? w.label : null) || null;
   if (seasons?.seasons) out.seasons = seasons.seasons.filter((s) => /^\d+$/.test(s.season)).length;
   out.wiki = w?.extract || null;
+  out.plotRu = w?.plot || null;
   out.wikiUrl = w?.url || null;
   return out;
 }
@@ -318,6 +331,20 @@ async function wiki(prop, val) {
   const label = ent?.labels?.ru?.value || null;
   const page = ent?.sitelinks?.ruwiki?.title;
   if (!page) return { label };
-  const sum = await getJSON(`https://ru.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.replace(/ /g, '_'))}`, 6000);
-  return { label, extract: sum?.extract || null, url: sum?.content_urls?.desktop?.page || null };
+  const [sum, plot] = await Promise.all([
+    getJSON(`https://ru.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.replace(/ /g, '_'))}`, 6000),
+    wikiPlot(page).catch(() => null),
+  ]);
+  return { label, extract: sum?.extract || null, plot, url: sum?.content_urls?.desktop?.page || null };
+}
+// раздел «Сюжет» из ру-вики: первые абзацы, до ~700 знаков по границе предложения
+async function wikiPlot(page) {
+  const d = await getJSON(`https://ru.wikipedia.org/w/api.php?format=json&origin=*&action=query&prop=extracts&explaintext=1&exsectionformat=wiki&redirects=1&titles=${encodeURIComponent(page)}`, 6000);
+  const txt = Object.values(d?.query?.pages || {})[0]?.extract || '';
+  const m = txt.match(/\n==\s*(Сюжет|Синопсис|Содержание|Фабула)\s*==\s*\n([\s\S]*?)(?=\n==[^=]|$)/);
+  if (!m) return null;
+  let body = m[2].replace(/\n===[^\n]*===\n/g, '\n').replace(/\n{2,}/g, '\n').trim();
+  if (body.length < 60) return null;
+  if (body.length > 700) { const cut = body.slice(0, 700); const i = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? ')); body = i > 200 ? cut.slice(0, i + 1) : cut + '…'; }
+  return body.replace(/\n/g, ' ');
 }

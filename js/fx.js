@@ -1,5 +1,5 @@
 // Фоновые эффекты жанров: WebGL-сцена (gl.js) снизу, 2D-детали поверх, верхний слой над интерфейсом.
-import * as G from './gl.js?v=6';
+import * as G from './gl.js?v=8';
 const R = Math.random;
 const rr = (a, b) => a + R() * (b - a);
 const TAU = Math.PI * 2;

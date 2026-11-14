@@ -1,7 +1,7 @@
-import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=6';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=6';
-import { setFx, burst, glInfo, setMotion } from './fx.js?v=6';
-import { findTrailer, ytSearch } from './trailer.js?v=6';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=8';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=8';
+import { setFx, burst, glInfo, setMotion } from './fx.js?v=8';
+import { findTrailer, ytSearch } from './trailer.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -12,6 +12,7 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MAX = 3;
+let spinning = false;
 const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime', 'anime'];
 
 const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null }, load(LS.prefs, {}));
@@ -39,11 +40,11 @@ const fxBtn = $('#fxBtn');
 let fxAuto = prefs.fx == null;
 function motion(on, user) {
   if (user) { prefs.fx = on; fxAuto = false; savePrefs(); }
-  fxBtn.setAttribute('aria-pressed', String(on));
+  fxBtn.setAttribute('aria-checked', String(on));
   setMotion(on);
 }
 motion(prefs.fx ?? !coarse);
-fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-pressed') !== 'true', true));
+fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') !== 'true', true));
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 
 // ---------- фильтры ----------
@@ -54,14 +55,8 @@ function chipEl(c, cls = '') {
   return b;
 }
 const ordered = [...MAIN.map((id) => byId[id]), ...GENRES.filter((g) => !MAIN.includes(g.id))];
-{
-  const any = chipEl({ id: '', label: 'Любой' }, ' any'); any.addEventListener('click', () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; changed(); }); $('#genres').append(any);
-}
-ordered.forEach((c) => { const b = chipEl(c, MAIN.includes(c.id) ? '' : ' extra'); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
-const moreG = chipEl({ id: 'more', label: 'Ещё' }, ' gmore'); moreG.removeAttribute('data-id'); moreG.setAttribute('aria-expanded', 'false'); $('#genres').append(moreG);
-function showAll(on) { $('#genres').classList.toggle('all', on); moreG.setAttribute('aria-expanded', String(on)); moreG.textContent = on ? 'Меньше' : 'Ещё'; }
-moreG.addEventListener('click', () => showAll(moreG.getAttribute('aria-expanded') !== 'true'));
-showAll(prefs.sel.some((id) => !MAIN.includes(id)));
+ordered.forEach((c) => { const b = chipEl(c); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
+$('#gClear').addEventListener('click', () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; changed(); });
 
 let hintT = 0;
 function hint(msg, b) {
@@ -83,8 +78,10 @@ function pickSub(g, s) {
 function changed() { syncUI(); savePrefs(); applyFx(); }
 
 function syncChips() {
-  document.querySelectorAll('#genres .chip[data-id]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === '' ? !prefs.sel.length : prefs.sel.includes(b.dataset.id))));
-  $('#gCount').textContent = prefs.sel.length ? `Жанров ${prefs.sel.length}/${MAX}` : '';
+  document.querySelectorAll('#genres .chip[data-id]').forEach((b) => b.setAttribute('aria-pressed', String(prefs.sel.includes(b.dataset.id))));
+  // счётчик нужен только когда упёрлись в лимит
+  $('#gCount').textContent = prefs.sel.length >= MAX ? `${MAX}/${MAX}` : '';
+  $('#gClear').disabled = !prefs.sel.length;
   $('#genres').classList.toggle('full', prefs.sel.length >= MAX);
   const box = $('#subs');
   const want = prefs.sel.filter((g) => SUBS[g]);
@@ -106,7 +103,7 @@ function syncChips() {
 }
 
 // режим
-document.querySelectorAll('.seg button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); }));
+document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); closePanel($('#pType')); }));
 
 // десятилетия: одно или диапазон
 const NOW = new Date().getFullYear();
@@ -151,19 +148,35 @@ document.querySelectorAll('#known button').forEach((b) => b.addEventListener('cl
 $('#resetBtn').addEventListener('click', () => { Object.assign(prefs, { dec: [], from: '', to: '', rating: 0, known: false, noRepeat: true }); rating.value = 0; showRating(); changed(); });
 
 const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
-// сколько фильтров отличается от умолчания — точка-счётчик на кнопке «Фильтры»
+// фраза-запрос: «Хочу [фильм] · [ужасы, психологический] · [любые годы]»
+const TYPE_W = { movie: 'фильм', series: 'сериал', all: 'фильм или сериал' };
+const low = (x) => x.label.toLowerCase().replace('психологический триллер', 'психологический').replace('с неожиданной развязкой', 'с твистом');
+const genreText = () => { const P = pairs(); return P.length ? P.map(([g, s]) => (s ? `${low(g)}, ${low(s)}` : low(g))).join(' или ') : 'любой жанр'; };
+function filtText() {
+  const r = decRange();
+  const y = r ? (r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])}–${decLabel(r[1])}`) : (prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : '');
+  const parts = [y, Number(prefs.rating) ? `от ${Number(prefs.rating).toFixed(Number(prefs.rating) % 1 ? 1 : 0)}★` : '', prefs.known ? 'известные' : '', prefs.noRepeat ? '' : 'с повторами'].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'любые годы';
+}
 function syncFilterDot() {
-  const n = (decRange() ? 1 : 0) + (Number(prefs.rating) ? 1 : 0) + (prefs.known ? 1 : 0) + (prefs.noRepeat ? 0 : 1);
-  const el = $('#fCount'); el.hidden = !n; el.textContent = n ? String(n) : '';
-  $('#filtersBtn').setAttribute('aria-label', n ? `Фильтры, изменено: ${n}` : 'Фильтры');
+  $('#tType').textContent = TYPE_W[prefs.mode];
+  $('#tGenre').textContent = genreText();
+  $('#tFilt').textContent = filtText();
+  $('#tFilt').setAttribute('aria-label', 'Годы и рейтинг: ' + filtText());
+  $('#tGenre').setAttribute('aria-label', 'Жанр: ' + genreText());
+  $('#tType').setAttribute('aria-label', 'Что крутим: ' + TYPE_W[prefs.mode]);
+  $('#tGenre').classList.toggle('on', !!prefs.sel.length);
+  $('#tFilt').classList.toggle('on', filtText() !== 'любые годы');
 }
 function syncUI() {
   syncChips(); syncDec(); syncFilterDot();
   document.querySelectorAll('#known button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.known === '1') === !!prefs.known)));
-  document.querySelectorAll('.seg button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
+  document.querySelectorAll('#types button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
-  const warn = prefs.mode === 'movie' && pairs().some(([, s]) => s?.series);
-  if (warn) $('#hint').textContent = pairs().filter(([, s]) => s?.series).map(([, s]) => s.label).join(' и ') + ' бывают только среди сериалов.';
+  const bad = pairs().filter(([, s]) => (prefs.mode === 'movie' && s?.series) || (prefs.mode === 'series' && s?.movie));
+  const warn = bad.length ? bad.map(([g, s]) => (s.id === 'a_movie' ? 'Аниме-фильмы' : s.label)).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
+  if (warn) $('#hint').textContent = warn;
+  if (!spinning) $('#status').textContent = warn;
 }
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 function applyFx(gId, sId) {
@@ -174,19 +187,43 @@ function applyFx(gId, sId) {
 }
 showRating(); syncUI(); applyFx();
 
-// панели: сверху на десктопе, снизу на мобилке
-function openPanel(d) { d.showModal(); document.documentElement.classList.add('locked'); }
+// листы выбора: поповер у токена на десктопе, шторка снизу на мобилке
+const DIALOGS = ['#pType', '#pGenre', '#filters', '#histPanel'].map((x) => $(x));
+const anyOpen = () => DIALOGS.some((d) => d.open && !d.classList.contains('out'));
+function place(d, from) {
+  d.classList.toggle('pop', !!from && !mobile());
+  if (!from || mobile()) { d.style.left = d.style.top = d.style.maxHeight = ''; return; }
+  const r = from.getBoundingClientRect(), w = Math.min(d.offsetWidth || 440, innerWidth - 24);
+  const left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+  // сторона, где больше места; высота поповера не больше этого места — токен никогда не перекрыт
+  const spB = innerHeight - r.bottom - 22, spA = r.top - 22, h = d.scrollHeight || 300;
+  const down = h <= spB || spB >= spA, maxH = Math.max(160, Math.min(down ? spB : spA, innerHeight * 0.8));
+  d.style.maxHeight = `${Math.round(maxH)}px`; d.style.left = `${Math.round(left)}px`;
+  d.style.top = `${Math.round(down ? r.bottom + 10 : r.top - 10 - Math.min(h, maxH))}px`;
+}
+const ro = new ResizeObserver((es) => es.forEach((e) => { const d = e.target.closest('dialog'); if (d?.open && d._from) place(d, d._from); }));
+DIALOGS.forEach((d) => d.firstElementChild && ro.observe(d.firstElementChild));
+function openPanel(d, from) {
+  clearTimeout(d._t); d.classList.remove('out');
+  if (!d.open) d.showModal();
+  d._from = from || null; from?.setAttribute('aria-expanded', 'true'); place(d, from); requestAnimationFrame(() => place(d, from));
+  document.documentElement.classList.add('locked');
+}
 function closePanel(d) {
   if (!d.open) return;
   if (reduce.matches) { d.close(); return; }
-  d.classList.add('out'); setTimeout(() => { d.classList.remove('out'); d.close(); }, 220);
+  d.classList.add('out'); clearTimeout(d._t);
+  d._t = setTimeout(() => { if (d.classList.contains('out')) { d.classList.remove('out'); d.close(); } }, 200);
 }
-for (const d of [panel, $('#histPanel')]) {
+for (const d of DIALOGS) {
   d.addEventListener('click', (e) => { if (e.target === d || e.target.closest('[data-close]')) closePanel(d); });
   d.addEventListener('cancel', (e) => { e.preventDefault(); closePanel(d); });
-  d.addEventListener('close', () => { if (!panel.open && !$('#histPanel').open) document.documentElement.classList.remove('locked'); });
+  d.addEventListener('close', () => { d._from?.setAttribute('aria-expanded', 'false'); if (!anyOpen() && !tm.open) document.documentElement.classList.remove('locked'); d._from?.focus?.(); });
 }
-$('#filtersBtn').addEventListener('click', () => openPanel(panel));
+addEventListener('resize', () => DIALOGS.forEach((d) => d.open && place(d, d._from)), { passive: true });
+$('#tType').addEventListener('click', (e) => openPanel($('#pType'), e.currentTarget));
+$('#tGenre').addEventListener('click', (e) => openPanel($('#pGenre'), e.currentTarget));
+$('#tFilt').addEventListener('click', (e) => openPanel(panel, e.currentTarget));
 
 function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
@@ -208,7 +245,7 @@ function measure() {
   const need = Math.ceil(r.width / P) + 4;
   if (need !== K) {
     K = need; strip.textContent = '';
-    cards = Array.from({ length: K }, () => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = '<img alt="" decoding="async"><span></span>'; strip.append(d); d.vi = null; const img = d.firstChild; img.onerror = () => d.classList.add('miss'); return d; });
+    cards = Array.from({ length: K }, () => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = '<img alt="" decoding="async"><span></span>'; strip.append(d); d.vi = null; const img = d.firstChild; img.onerror = () => d.classList.add('miss'); img.onload = () => d.classList.add('ok'); return d; });
   }
   paint(true);
   // эффекты живут только в сцене барабана: маска заканчивается под ним
@@ -230,7 +267,8 @@ function paint(force) {
       el.classList.remove('miss');
       const img = el.firstChild;
       const src = t?.i ? poster(t.i, CW > 200 ? 400 : 300) : '';
-      if (img.getAttribute('src') !== src) { if (src) img.src = src; else { img.removeAttribute('src'); el.classList.add('miss'); } }
+      if (img.getAttribute('src') !== src) { el.classList.remove('ok'); if (src) img.src = src; else { img.removeAttribute('src'); el.classList.add('miss'); } }
+      if (img.complete && img.naturalWidth) el.classList.add('ok');
       el.lastChild.textContent = t ? t.t : '';
     }
     const x = v * P - pos + CX;
@@ -249,7 +287,7 @@ const preload = (t, w = 300, ms = 2500) => new Promise((res) => {
   const im = new Image(); const done = () => res(); im.onload = done; im.onerror = done; setTimeout(done, ms); im.src = poster(t.i, w);
 });
 
-let spinning = false, landedAt = null;
+let landedAt = null;
 async function spin() {
   if (spinning) return;
   spinning = true;
@@ -330,7 +368,8 @@ async function choose() {
     const g = byId[c.g], s = byId[c.s];
     if (c.t.src === 'al') { if (matchLocal(c.t, g, s, f)) return { win: c, pool, offline: res.offline, reset }; continue; }
     let d = null;
-    for (let k = 0; k < 2 && !d; k++) { try { d = await core(c.t.id); } catch {} }
+    // офлайн-записи уже проверены при сборке каталога — не ждём таймаутов API
+    if (!c.snap) for (let k = 0; k < (res.offline ? 1 : 2) && !d; k++) { try { d = await core(c.t.id); } catch {} }
     if (!d) { if (matchLocal(c.t, g, s, f) && (c.snap || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
     d.i = d.i || c.t.i;
     if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
@@ -373,6 +412,22 @@ export function cleanWiki(s) {
   for (let k = 0; k < 3; k++) out = out.replace(/\s*\(([^()]*)\)/g, (m, inner) => (junk.test(inner) ? '' : m));
   return out.replace(/\[[^\]]*\]/g, '').replace(/\s+([,.;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
 }
+// фразы о происхождении фильма — не сюжет
+const ORIGIN = /(по мотивам|экранизаци|снят[аоы]? по|основан[аоы]? на|по одноим|адаптаци|по роману|по пьесе|по повести|по комиксу|по манге|по ранобэ|по рассказу|ремейк|премьер|кассов|номинир|премии|«Оскар|Оскар»|сборы)/i;
+function stripOrigin(s) {
+  const parts = String(s || '').match(/[^.!?…]+[.!?…]+(?:\s|$)|[^.!?…]+$/g) || [];
+  if (parts.length < 2) return s;
+  const keep = parts.filter((x, i) => i === 0 ? !ORIGIN.test(x.replace(/^[^—–-]*[—–-]/, '')) : !ORIGIN.test(x));
+  return (keep.length ? keep : parts.slice(0, 1)).join('').trim();
+}
+// из вводной вики оставляем только сюжетные предложения (без «— американский фильм», режиссёров, сезонов, премьер)
+const META = /(\s[—–-]\s[^.]*?(фильм|сериал|аниме|мультфильм|мультсериал|драма|комедия|триллер|боевик|мини-сериал)|режисс|снят[аоы]?\b|вышел|вышла|выход|сезон|эпизод|сери[ия]|в ролях|главных ролях|студи[ия]|продюсер|сценари|прокат|рейтинг|фестивал|релиз|транслир|канал|телеканал|стриминг|платформ)/i;
+function plotFromLead(s) {
+  const parts = String(s || '').match(/[^.!?…]+[.!?…]+(?:\s|$)|[^.!?…]+$/g) || [];
+  const keep = parts.filter((x) => !ORIGIN.test(x) && !META.test(x)).join('').trim();
+  return keep.length >= 70 ? keep : '';
+}
+const crumbText = () => { const P = pairs(); return P.length ? P.map(([g, s]) => (s ? `${g.label} · ${low(s)}` : g.label)).join(' + ') : 'Любой жанр'; };
 let token = 0, curT = null, curChip = null, curG = null;
 function showResult(t, chipId, gId, fromRect) {
   const my = ++token;
@@ -388,32 +443,35 @@ function render(t, full) {
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
-  const meta = [kindOf(t), years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s), t.r ? `★\u00a0${t.r.toFixed(1)}` : ''].filter(Boolean);
+  const meta = [kindOf(t), years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s)].filter(Boolean);
   const wantG = [].concat(byId[curG]?.q?.genres || []);
   const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
-  const dir = t.src === 'al' ? '' : t.directors?.length ? `Режиссёр: ${t.directors.slice(0, 2).join(', ')}` : '';
-  const txt = t.wiki ? cleanWiki(t.wiki) : t.p || '';
-  const desc = txt ? `<p class="desc${t.wiki ? '' : ' en'}" id="desc"${t.wiki ? '' : ' lang="en"'}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
+  const dir = t.src === 'al' ? '' : t.directors?.length ? `реж. ${t.directors.slice(0, 2).join(', ')}` : '';
+  // описание — сюжет: раздел «Сюжет» ру-вики → сюжет IMDb/AniList → вводная вики без фраз о происхождении
+  const ruPlot = (t.plotRu ? cleanWiki(t.plotRu) : '') || plotFromLead(cleanWiki(t.wiki || '')), lead = t.wiki ? stripOrigin(cleanWiki(t.wiki)) : '';
+  const txt = ruPlot || t.p || lead, isEn = !ruPlot && !!t.p;
+  const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
-  const rec = hist.filter((h) => h.id !== t.id).slice(0, 6);
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
-  const posterHTML = `<div class="poster" id="rposter">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}">` : ''}</div>`;
+  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
   const infoHTML = `
     <div class="info">
-      <p class="meta">${meta.map(esc).join(' · ')}</p>
-      <h2>${esc(title)}</h2>
+      <div class="trow"><h2>${esc(title)}</h2>${t.r ? `<span class="score" aria-label="Рейтинг ${t.r.toFixed(1)}"><b aria-hidden="true">★</b> ${t.r.toFixed(1)}</span>` : ''}</div>
       ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : ''}
-      ${genres || dir ? `<p class="sub">${esc([genres, dir].filter(Boolean).join(' · '))}</p>` : ''}
+      <p class="meta">${esc([...meta, genres, dir].filter(Boolean).join(' · '))}</p>
       ${desc}
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer">${ico.play}Трейлер</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
+        <button class="btn" type="button" data-act="again">${ico.redo}Другой</button>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
     </div>
-    ${rec.length ? `<div class="recent"><p class="flabel">Недавно</p><div class="rrow">${rec.map((h) => `<button class="rmini" type="button" data-id="${h.id}" title="${esc(h.ru || h.t)}"><img loading="lazy" alt="${esc(h.ru || h.t)}" src="${poster(h.i, 200)}"></button>`).join('')}</div></div>` : ''}`;
+  `;
   if (keepPoster) { result.querySelector('.info')?.remove(); result.querySelector('.recent')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
   else result.innerHTML = posterHTML + infoHTML;
+  result.querySelector('.crumb')?.remove();
+  result.insertAdjacentHTML('afterbegin', `<button class="crumb" type="button" data-act="edit">${esc(crumbText())}<span class="dot" aria-hidden="true"> · </span><u>Изменить</u></button>`);
   const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
   if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
 }
@@ -460,17 +518,32 @@ function whereLinks(t, title) {
 }
 result.addEventListener('click', (e) => {
   const mini = e.target.closest('.rmini');
+  if (mini && spinning) return;
   if (mini) { const h = hist.find((x) => x.id === mini.dataset.id); if (h) { applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null); result.innerHTML = ''; result.hidden = true; showResult(h, h.chip, h.gc, mini.getBoundingClientRect()); } return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act;
   if (act === 'trailer') openTrailer(curT, b);
   if (act === 'again') spin();
+  if (act === 'edit') { if (!spinning) collapse().then(() => $('#tGenre').focus()); }
   if (act === 'more') { $('#desc').classList.add('open'); b.remove(); }
   if (act === 'where') {
     const w = $('#where'), op = w.hidden; w.hidden = !op; b.setAttribute('aria-expanded', op);
-    if (op) w.querySelector('a')?.focus();
+    if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
   }
 });
+// мобилка: свайп карточки влево — «Другой»
+{
+  let sx = 0, sy = 0, st = 0, drag = false;
+  result.addEventListener('touchstart', (e) => { if (e.touches.length !== 1 || e.target.closest('.where, .desc.open')) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); drag = true; }, { passive: true });
+  result.addEventListener('touchmove', (e) => { if (!drag) return; const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy; if (Math.abs(dy) > Math.abs(dx)) { drag = false; result.style.transform = ''; return; } if (dx < 0) result.style.transform = `translateX(${Math.max(dx, -140) * 0.6}px)`; }, { passive: true });
+  result.addEventListener('touchend', (e) => {
+    if (!drag) return; drag = false;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    result.style.transition = 'transform .25s cubic-bezier(.2,.8,.2,1)'; result.style.transform = '';
+    setTimeout(() => (result.style.transition = ''), 260);
+    if (dx < -70 && Math.abs(dy) < 60 && Date.now() - st < 900 && !spinning) spin();
+  });
+}
 document.addEventListener('click', (e) => { const w = $('#where'); if (w && !w.hidden && !e.target.closest('.actions')) { w.hidden = true; $('[data-act="where"]')?.setAttribute('aria-expanded', 'false'); } });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const w = $('#where'); if (w && !w.hidden) { w.hidden = true; $('[data-act="where"]')?.focus(); } } });
 
@@ -515,13 +588,13 @@ function remember(t, chip, g) {
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
 function drawHistory() {
-  $('#histCount').textContent = hist.length ? String(hist.length) : '';
+  $('#histCount').textContent = hist.length ? String(Math.min(hist.length, 99)) : ''; $('#histCount').hidden = !hist.length; $('#histBtn').setAttribute('aria-label', hist.length ? `История, ${hist.length}` : 'История');
   $('#hlist').innerHTML = hist.length ? hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span><b>${esc(h.ru || h.t)}</b><small>${esc([kindOf(h), h.y, h.r ? '★ ' + h.r.toFixed(1) : ''].filter(Boolean).join(' · '))}</small></span></button>`).join('')
     : '<p class="empty">Здесь появится всё, что выпадет.</p>';
   $('#histClear').hidden = !hist.length;
 }
 $('#hlist').addEventListener('click', (e) => {
-  const b = e.target.closest('.hitem'); if (!b) return;
+  const b = e.target.closest('.hitem'); if (!b || spinning) return;
   const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
   const r = b.querySelector('img').getBoundingClientRect();
   $('#histPanel').close();

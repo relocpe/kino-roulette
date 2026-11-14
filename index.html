@@ -15,7 +15,7 @@
 
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
-<link rel="stylesheet" href="css/app.css?v=6">
+<link rel="stylesheet" href="css/app.css?v=8">
 </head>
 <body data-fx="idle">
 <div class="fxwrap" aria-hidden="true">
@@ -32,8 +32,8 @@
     <span>Кинорулетка</span>
   </a>
   <nav class="tools">
-    <button class="tool" id="fxBtn" type="button" aria-pressed="true">Эффекты</button>
-    <button class="tool" id="histBtn" type="button" aria-haspopup="dialog" aria-controls="histPanel">История<span id="histCount" class="count"></span></button>
+    <button class="tool fxsw" id="fxBtn" type="button" role="switch" aria-checked="true" aria-label="Эффекты"><span class="mini" aria-hidden="true"><span></span></span><span class="lbl">Эффекты</span></button>
+    <button class="tool hist" id="histBtn" type="button" aria-haspopup="dialog" aria-controls="histPanel" aria-label="История" title="История"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4.3l2.8 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="histCount" class="hdot" hidden></span></button>
   </nav>
 </header>
 
@@ -46,29 +46,37 @@
     <article class="result" id="result" hidden tabindex="-1" aria-live="polite"></article>
   </section>
 
-  <div class="controls" id="controls">
-    <div class="seg" role="radiogroup" aria-label="Что крутим">
-      <button type="button" role="radio" data-mode="movie">Фильмы</button>
-      <button type="button" role="radio" data-mode="series">Сериалы</button>
-      <button type="button" role="radio" data-mode="all">Всё</button>
-    </div>
-    <div class="gwrap"><div class="chips row" id="genres" role="group" aria-label="Жанр"></div></div>
-    <div class="subs" id="subs"></div>
-    <p class="hint" id="hint" aria-live="polite"></p>
-    <div class="aux">
-      <button class="fbtn" id="filtersBtn" type="button" aria-haspopup="dialog" aria-controls="filters"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Фильтры<span class="fdot" id="fCount" hidden></span></button>
-      <span class="cnt" id="gCount" aria-live="polite"></span>
-    </div>
-  </div>
-  <div class="bar" id="bar">
+  <div class="ask" id="ask">
+    <p class="phrase" id="phrase">Хочу <button class="tok" id="tType" type="button" aria-haspopup="dialog" aria-controls="pType"></button><span class="dot" aria-hidden="true">·</span><button class="tok" id="tGenre" type="button" aria-haspopup="dialog" aria-controls="pGenre"></button><span class="dot" aria-hidden="true">·</span><button class="tok" id="tFilt" type="button" aria-haspopup="dialog" aria-controls="filters"></button></p>
     <button class="spin" id="spin" type="button"><span>Крутить</span></button>
     <p class="status" id="status" role="status" aria-live="polite"></p>
   </div>
 </main>
 
-<dialog class="panel" id="filters" aria-labelledby="fTitle">
+<dialog class="panel pick" id="pType" aria-labelledby="ptTitle">
   <div class="panel-in">
-    <div class="phead"><h2 id="fTitle">Фильтры</h2><button class="px" type="button" data-close aria-label="Закрыть">✕</button></div>
+    <div class="phead"><h2 id="ptTitle">Что крутим</h2><button class="px" type="button" data-close aria-label="Закрыть">✕</button></div>
+    <div class="opts" id="types" role="radiogroup" aria-labelledby="ptTitle">
+      <button type="button" role="radio" data-mode="movie">Фильмы</button>
+      <button type="button" role="radio" data-mode="series">Сериалы</button>
+      <button type="button" role="radio" data-mode="all">Фильмы и сериалы</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="panel pick" id="pGenre" aria-labelledby="pgTitle">
+  <div class="panel-in">
+    <div class="phead"><h2 id="pgTitle">Жанр <span class="cnt" id="gCount" aria-live="polite"></span></h2><button class="px" type="button" data-close aria-label="Закрыть">✕</button></div>
+    <div class="chips" id="genres" role="group" aria-labelledby="pgTitle"></div>
+    <div class="subs" id="subs"></div>
+    <p class="hint" id="hint" aria-live="polite"></p>
+    <div class="pfoot"><button class="btn ghost" id="gClear" type="button">Любой жанр</button><button class="btn primary" type="button" data-close>Готово</button></div>
+  </div>
+</dialog>
+
+<dialog class="panel pick" id="filters" aria-labelledby="fTitle">
+  <div class="panel-in">
+    <div class="phead"><h2 id="fTitle">Годы и рейтинг</h2><button class="px" type="button" data-close aria-label="Закрыть">✕</button></div>
 
     <section class="fsec">
       <h3 class="flabel" id="dLbl">Годы</h3>
@@ -82,7 +90,7 @@
 
     <section class="fsec">
       <h3 class="flabel" id="kLbl">Что попадает в барабан</h3>
-      <div class="seg wide" id="known" role="radiogroup" aria-labelledby="kLbl">
+      <div class="opts row" id="known" role="radiogroup" aria-labelledby="kLbl">
         <button type="button" role="radio" data-known="0">Всё подряд</button>
         <button type="button" role="radio" data-known="1">Только известные</button>
       </div>
@@ -118,6 +126,6 @@
 </dialog>
 
 
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=8"></script>
 </body>
 </html>
