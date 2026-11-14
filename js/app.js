@@ -1,0 +1,315 @@
+import { GENRES, MOODS, byId, GENRE_RU } from './chips.js';
+import { getPool, details, poster, seedPosters } from './api.js';
+import { setFx, burst } from './fx.js';
+
+const $ = (s) => document.querySelector(s);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+const LS = { prefs: 'kr:prefs', hist: 'kr:hist', seen: 'kr:seen' };
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const prefs = Object.assign({ mode: 'all', sel: [], from: '', to: '', rating: 6.5, noRepeat: true }, load(LS.prefs, {}));
+let hist = load(LS.hist, []);
+let seen = new Set(load(LS.seen, []));
+const savePrefs = () => save(LS.prefs, prefs);
+
+// зерно для шума плёнки
+{
+  const c = document.createElement('canvas'); c.width = c.height = 160;
+  const g = c.getContext('2d'), d = g.createImageData(160, 160);
+  for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 60; }
+  g.putImageData(d, 0, 0);
+  document.documentElement.style.setProperty('--grain', `url(${c.toDataURL()})`);
+}
+
+// ---------- фильтры ----------
+function chipEl(c) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.dataset.id = c.id; b.textContent = c.label;
+  b.style.setProperty('--c', c.accent);
+  b.setAttribute('aria-pressed', prefs.sel.includes(c.id));
+  b.addEventListener('click', () => toggle(c.id, b));
+  return b;
+}
+GENRES.forEach((c) => $('#genres').append(chipEl(c)));
+MOODS.forEach((c) => $('#moods').append(chipEl(c)));
+
+function toggle(id, b) {
+  const on = !prefs.sel.includes(id);
+  prefs.sel = on ? [...prefs.sel, id] : prefs.sel.filter((x) => x !== id);
+  b.setAttribute('aria-pressed', on);
+  savePrefs(); note();
+  const lastId = prefs.sel[prefs.sel.length - 1];
+  const c = byId[lastId];
+  setFx(c ? c.fx : 'idle', c?.accent);
+  if (on) burst(0.5);
+}
+function note() {
+  const n = prefs.sel.length;
+  $('#selnote').textContent = n === 0 ? 'Ничего не отмечено, крутим всё подряд.' : n === 1 ? `Выбрано: ${byId[prefs.sel[0]].label.toLowerCase()}.` : `Отмечено ${n}, выпадет любой из них.`;
+  $('#clearSel').hidden = n === 0;
+}
+$('#clearSel').addEventListener('click', () => {
+  prefs.sel = []; savePrefs(); note();
+  document.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+  setFx('idle');
+});
+
+document.querySelectorAll('.seg button').forEach((b) => {
+  b.setAttribute('aria-checked', b.dataset.mode === prefs.mode);
+  b.addEventListener('click', () => {
+    prefs.mode = b.dataset.mode; savePrefs();
+    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x === b));
+  });
+});
+const yFrom = $('#yFrom'), yTo = $('#yTo'), rating = $('#rating');
+yFrom.value = prefs.from; yTo.value = prefs.to; rating.value = prefs.rating;
+const showRating = () => ($('#ratingOut').textContent = Number(rating.value) ? Number(rating.value).toFixed(1) : 'любой');
+showRating();
+rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); });
+for (const el of [yFrom, yTo]) el.addEventListener('change', () => { prefs.from = yFrom.value; prefs.to = yTo.value; savePrefs(); });
+$('#noRepeat').checked = prefs.noRepeat;
+$('#noRepeat').addEventListener('change', (e) => { prefs.noRepeat = e.target.checked; savePrefs(); });
+note();
+{ const c = byId[prefs.sel[prefs.sel.length - 1]]; setFx(c ? c.fx : 'idle', c?.accent); }
+
+function filters() {
+  const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
+  let from = y(yFrom.value), to = y(yTo.value);
+  if (from && to && from > to) [from, to] = [to, from];
+  const niche = prefs.sel.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary'].includes(id));
+  return { mode: prefs.mode, from, to, minRating: Number(rating.value) || 0, minVotes: niche ? 1500 : 4000 };
+}
+
+// ---------- барабан ----------
+const reel = $('#reel'), strip = $('#strip');
+let CW = 0, P = 0, CX = 0, K = 0, cards = [];
+let pos = 0, items = new Map(), display = [];
+function measure() {
+  const r = reel.getBoundingClientRect();
+  CW = parseFloat(getComputedStyle(reel).getPropertyValue('--cw')) || strip.querySelector('.card')?.offsetWidth || 160;
+  const probe = document.createElement('div'); probe.style.width = 'var(--cw)'; reel.append(probe); CW = probe.offsetWidth || CW; probe.remove();
+  P = CW + 14; CX = r.width / 2 - CW / 2;
+  const need = Math.ceil(r.width / P) + 4;
+  if (need !== K) {
+    K = need; strip.textContent = '';
+    cards = Array.from({ length: K }, () => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = '<img alt="" decoding="async"><span></span>'; strip.append(d); d.vi = null; const img = d.firstChild; img.onerror = () => d.classList.add('miss'); return d; });
+  }
+  paint(true);
+}
+const mod = (a, n) => ((a % n) + n) % n;
+function itemAt(v) {
+  if (!items.has(v)) items.set(v, display.length ? display[Math.floor(Math.random() * display.length)] : null);
+  return items.get(v);
+}
+function paint(force) {
+  const first = Math.floor((pos - CX) / P) - 1;
+  for (let v = first; v < first + K; v++) {
+    const el = cards[mod(v, K)];
+    if (el.vi !== v || force) {
+      el.vi = v;
+      const t = itemAt(v);
+      el.classList.remove('miss');
+      const img = el.firstChild;
+      const src = t?.i ? poster(t.i, 300) : '';
+      if (img.getAttribute('src') !== src) { if (src) img.src = src; else { img.removeAttribute('src'); el.classList.add('miss'); } }
+      el.lastChild.textContent = t ? t.t : '';
+    }
+    const x = v * P - pos + CX;
+    const d = Math.min(1, Math.abs(x - CX) / (P * 2.2));
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * 0.1).toFixed(3)})`;
+    el.style.opacity = (1 - d * 0.45).toFixed(3);
+  }
+  reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
+}
+addEventListener('resize', () => measure(), { passive: true });
+
+seedPosters().then((s) => { display = s; items.clear(); measure(); }).catch(() => measure());
+measure();
+
+const preload = (t, w = 300, ms = 2500) => new Promise((res) => {
+  if (!t?.i) return res();
+  const im = new Image(); const done = () => res(); im.onload = done; im.onerror = done; setTimeout(done, ms); im.src = poster(t.i, w);
+});
+
+let spinning = false;
+async function spin() {
+  if (spinning) return;
+  spinning = true;
+  const btn = $('#spin'); btn.disabled = true; btn.firstChild.textContent = 'Крутим…';
+  $('#status').textContent = '';
+  reel.classList.remove('landed');
+  if (matchMedia('(max-width: 900px)').matches) reel.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'center' });
+
+  // разгон начинается сразу, данные догоняют
+  let v = 0, last = performance.now(), cruising = !reduce.matches;
+  const vmax = Math.max(1800, P * 16);
+  const cruise = (now) => {
+    if (!cruising) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    v = Math.min(vmax, v + vmax * dt * 2.5); pos += v * dt; paint(); requestAnimationFrame(cruise);
+  };
+  requestAnimationFrame(cruise);
+  const t0 = performance.now();
+
+  let res;
+  try { res = await getPool(prefs.sel, filters()); } catch (e) { res = { pool: [], offline: true }; }
+  let pool = res.pool;
+  let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool;
+  let resetNote = '';
+  if (!fresh.length && pool.length) { fresh = pool; resetNote = 'Всё подходящее уже выпадало, начинаю круг заново. '; }
+  if (!fresh.length) {
+    cruising = false; await settle(v);
+    finish(); $('#status').textContent = 'Под такие фильтры ничего не нашлось. Снизь рейтинг или расширь годы.';
+    return;
+  }
+  const win = fresh[Math.floor(Math.random() * fresh.length)];
+  display = pool.map((x) => x.t);
+  await Promise.all([preload(win.t, 300), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
+
+  cruising = false;
+  if (reduce.matches) {
+    const T = Math.round(pos / P) + 1;
+    for (let i = -4; i <= 4; i++) items.delete(T + i);
+    items.set(T, win.t); pos = T * P; paint(true);
+  } else {
+    const vNow = Math.max(v, vmax * 0.6);
+    const dist0 = vNow * 3.3 / 4;
+    const T = Math.round((pos + dist0) / P);
+    for (let i = -6; i <= 4; i++) if (i) items.set(T + i, display[Math.floor(Math.random() * display.length)]);
+    items.set(T, win.t);
+    // подменяем уже отрисованные карточки у финиша
+    cards.forEach((c) => { if (Math.abs(c.vi - T) <= 6) c.vi = null; });
+    const p0 = pos, dist = T * P - p0, D = (4 * dist) / vNow * 1000;
+    await new Promise((done) => {
+      const s = performance.now();
+      const step = (now) => {
+        const u = Math.min(1, (now - s) / D);
+        pos = p0 + dist * (1 - Math.pow(1 - u, 4)); paint();
+        if (u < 1) requestAnimationFrame(step); else done();
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  reel.classList.add('landed');
+  const chip = byId[win.chip];
+  setFx(chip ? chip.fx : 'idle', chip?.accent);
+  burst(1);
+  remember(win.t, win.chip);
+  $('#status').textContent = resetNote + (res.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
+  showResult(win.t, win.chip);
+  finish();
+}
+async function settle(v) {
+  if (reduce.matches) return;
+  const T = Math.ceil((pos + v * 0.3) / P), p0 = pos, dist = T * P - p0;
+  await new Promise((done) => { const s = performance.now(); const st = (n) => { const u = Math.min(1, (n - s) / 600); pos = p0 + dist * (1 - Math.pow(1 - u, 3)); paint(); u < 1 ? requestAnimationFrame(st) : done(); }; requestAnimationFrame(st); });
+}
+function finish() {
+  spinning = false;
+  const btn = $('#spin'); btn.disabled = false; btn.firstChild.textContent = 'Ещё раз';
+}
+$('#spin').addEventListener('click', spin);
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || e.repeat) return;
+  if (e.target.closest('a,button,input,textarea,select,[contenteditable]')) return;
+  e.preventDefault(); spin();
+});
+
+// ---------- результат ----------
+const ico = {
+  play: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
+  eye: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8s2.6-5 7-5 7 5 7 5-2.6 5-7 5-7-5-7-5z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2" fill="currentColor"/></svg>',
+  redo: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+const KIND_RU = { movie: 'Фильм', tvMovie: 'Телефильм', tvSeries: 'Сериал', tvMiniSeries: 'Мини-сериал' };
+const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
+const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
+let token = 0;
+
+function showResult(t, chipId) {
+  const my = ++token;
+  render(t, chipId, false);
+  details(t).then((d) => { if (my === token) { render(d, chipId, true); patchHistory(d); } }).catch(() => {});
+}
+function render(t, chipId, full) {
+  const el = $('#result');
+  const title = t.ru || t.t;
+  const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
+  const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
+  const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : ''}` : t.y || '';
+  const facts = [];
+  if (t.r) facts.push(`<li><span class="star">★</span> <b>${t.r.toFixed(1)}</b>${t.v ? ` <span>(${t.v.toLocaleString('ru-RU')})</span>` : ''}</li>`);
+  if (isSeries && t.seasons) facts.push(`<li>${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}</li>`);
+  else if (t.s) facts.push(`<li>${runtime(t.s)}</li>`);
+  if (t.g?.length) facts.push(`<li>${t.g.map((g) => GENRE_RU[g] || g).join(', ')}</li>`);
+  if (t.directors?.length) facts.push(`<li>Режиссёр: ${esc(t.directors.slice(0, 2).join(', '))}</li>`);
+  const desc = t.wiki ? `<p class="desc">${esc(trim(t.wiki))}</p><p class="src">Из <a href="${esc(t.wikiUrl)}" target="_blank" rel="noopener">Википедии</a></p>`
+    : t.p ? `<p class="desc en" lang="en">${esc(t.p)}</p><p class="src">Описание IMDb, на английском</p>` : full ? '' : '<p class="src">Загружаю описание…</p>';
+  const chip = byId[chipId];
+  el.innerHTML = `
+    <div class="poster">${t.i ? `<img src="${poster(t.i, 600)}" alt="Постер: ${esc(title)}">` : ''}</div>
+    <div class="info">
+      <p class="kicker">${KIND_RU[t.k] || 'Тайтл'}${years ? `, ${years}` : ''}${chip ? `. ${esc(chip.label)}` : ''}</p>
+      <h2>${esc(title)}</h2>
+      ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : '<p class="orig"></p>'}
+      <ul class="facts">${facts.join('')}</ul>
+      ${desc}
+      <div class="actions">
+        <button class="btn primary" type="button" data-act="again">${ico.redo}Ещё раз</button>
+        <a class="btn" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} ${t.y || ''} трейлер`)}">${ico.play}Трейлер</a>
+        <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">${ico.eye}Где посмотреть</button>
+        <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
+      </div>
+    </div>`;
+  if (!full) { el.hidden = false; el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
+}
+function trim(s) { const parts = s.split(/(?<=[.!?])\s+/); let out = ''; for (const p of parts) { if ((out + p).length > 420 && out) break; out += (out ? ' ' : '') + p; } return out; }
+function whereLinks(t, title) {
+  const q = encodeURIComponent(title), qy = encodeURIComponent(`${title} ${t.y || ''}`.trim()), qo = encodeURIComponent(t.t);
+  const L = [
+    ['Кинопоиск', `https://www.kinopoisk.ru/index.php?kp_query=${qy}`, 'поиск'],
+    ['Okko', `https://okko.tv/search/${q}`, 'поиск'],
+    ['Иви', `https://www.ivi.ru/search/?q=${q}`, 'поиск'],
+    ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`, 'где идёт'],
+    ['IMDb', `https://www.imdb.com/title/${t.id}/`, 'страница'],
+  ];
+  return L.map(([n, u, s]) => `<a href="${u}" target="_blank" rel="noopener">${n} <small>${s}</small></a>`).join('');
+}
+$('#result').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'again') { $('#where')?.setAttribute('hidden', ''); spin(); }
+  if (b.dataset.act === 'where') {
+    const w = $('#where'), open = w.hidden; w.hidden = !open; b.setAttribute('aria-expanded', open);
+    if (open) w.querySelector('a')?.focus();
+  }
+});
+document.addEventListener('click', (e) => { const w = $('#where'); if (w && !w.hidden && !e.target.closest('.actions')) { w.hidden = true; $('[data-act="where"]')?.setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const w = $('#where'); if (w && !w.hidden) { w.hidden = true; $('[data-act="where"]')?.focus(); } } });
+
+// ---------- история ----------
+function remember(t, chip) {
+  seen.add(t.id); save(LS.seen, [...seen].slice(-600));
+  hist = [{ id: t.id, t: t.t, k: t.k, y: t.y, e: t.e, r: t.r, v: t.v, g: t.g, i: t.i, s: t.s, chip, ts: Date.now() }, ...hist.filter((h) => h.id !== t.id)].slice(0, 30);
+  save(LS.hist, hist); drawHistory();
+}
+function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
+function drawHistory() {
+  $('#histCount').textContent = hist.length ? hist.length : '';
+  $('#history').hidden = !hist.length;
+  $('#hrow').innerHTML = hist.map((h) => `<button class="hitem" type="button" data-id="${h.id}"><img loading="lazy" alt="" src="${poster(h.i, 200)}"><span>${esc(h.ru || h.t)}${h.y ? `, ${h.y}` : ''}</span></button>`).join('');
+}
+$('#hrow').addEventListener('click', (e) => {
+  const b = e.target.closest('.hitem'); if (!b) return;
+  const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
+  const c = byId[h.chip]; setFx(c ? c.fx : 'idle', c?.accent);
+  showResult(h, h.chip);
+  $('#result').scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' });
+});
+$('#histClear').addEventListener('click', () => { hist = []; seen = new Set(); save(LS.hist, hist); save(LS.seen, []); drawHistory(); });
+$('#histBtn').addEventListener('click', () => { if (!hist.length) { $('#status').textContent = 'История пока пустая.'; return; } $('#history').scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' }); });
+drawHistory();
+
+// для тестов
+window.__kr = { spin, setFx, burst };
