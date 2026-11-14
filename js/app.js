@@ -1,8 +1,10 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
-import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=9';
-import { findTrailer, ytSearch } from './trailer.js?v=9';
-import * as V from './views.js?v=11';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=10';
+import { findTrailer, ytSearch } from './trailer.js?v=10';
+import * as V from './views.js?v=12';
+import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
+import { storyBlob, shareLink, shareImage } from './share.js?v=1';
 import { watchedIds, getLists } from './store.js?v=10';
 
 const $ = (s) => document.querySelector(s);
@@ -279,7 +281,7 @@ document.querySelectorAll('#pult .pf').forEach((b) => b.addEventListener('click'
 // шторка: свайп вниз закрывает
 {
   let y0 = null;
-  picker.addEventListener('touchstart', (e) => { const inner = picker.firstElementChild; y0 = picker.classList.contains('pop') || inner.scrollTop > 0 ? null : e.touches[0].clientY; }, { passive: true });
+  picker.addEventListener('touchstart', (e) => { const inner = picker.firstElementChild; const cy = e.touches[0].clientY, nearTop = cy - picker.getBoundingClientRect().top < 56; y0 = picker.classList.contains('pop') || (inner.scrollTop > 0 && !nearTop) ? null : cy; }, { passive: true });
   picker.addEventListener('touchmove', (e) => { if (y0 == null) return; const dy = e.touches[0].clientY - y0; if (dy > 0) picker.style.transform = `translateY(${dy}px)`; }, { passive: true });
   picker.addEventListener('touchend', (e) => { if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; picker.style.transform = ''; y0 = null; if (dy > 90) closePanel(picker); });
 }
@@ -313,10 +315,38 @@ function measure() {
   document.documentElement.style.setProperty('--fxEnd', `${Math.round(b)}px`);
 }
 const mod = (a, n) => ((a % n) + n) % n;
-function itemAt(v) {
-  if (!items.has(v)) items.set(v, display.length ? display[Math.floor(Math.random() * display.length)] : null);
-  return items.get(v);
+// Лента барабана: заранее загруженные и декодированные постеры. Кадр v всегда показывает tape[v mod N],
+// поэтому src меняется только у карточки, которая переезжает за краем, и только на уже декодированную картинку.
+// items — точечные замены (победитель и соседи), их ставим только за пределами видимой части.
+let tape = [];
+const decoded = new Map();
+const reelSrc = (t) => (t?.i ? poster(t.i, CW > 200 ? 400 : 300) : '');
+function warm(src, ms = 2500) {
+  if (!src) return Promise.resolve(false);
+  let e = decoded.get(src);
+  if (!e) {
+    const im = new Image(); im.decoding = 'async'; im.src = src;
+    e = { im, ok: false };
+    e.p = (im.decode ? im.decode() : new Promise((r, j) => { im.onload = r; im.onerror = j; })).then(() => (e.ok = true), () => false);
+    decoded.set(src, e);
+  }
+  return e.ok ? Promise.resolve(true) : Promise.race([e.p, new Promise((r) => setTimeout(() => r(false), ms))]);
 }
+const isWarm = (t) => !!decoded.get(reelSrc(t))?.ok;
+function visRange() { const first = Math.floor((pos - CX) / P) - 1; return [first, first + K]; }
+async function buildTape(list, n = 24) {
+  const pool = list.filter((t) => t?.i).sort(() => Math.random() - 0.5).slice(0, n);
+  if (!pool.length) return;
+  await Promise.all(pool.map((t) => warm(reelSrc(t), 3000)));
+  const good = pool.filter(isWarm);
+  const next = good.length >= Math.min(6, pool.length) ? good : pool;
+  // видимые кадры закрепляем, чтобы смена ленты ничего не перерисовала на глазах
+  if (tape.length && K) { const [a, b] = visRange(); for (let v = a; v < b; v++) if (!items.has(v)) items.set(v, itemAt(v)); }
+  tape = next;
+  for (const k of items.keys()) if (k < visRange()[0] - 40) items.delete(k);
+  paint();
+}
+function itemAt(v) { return items.has(v) ? items.get(v) : tape.length ? tape[mod(v, tape.length)] : null; }
 function paint(force) {
   const first = Math.floor((pos - CX) / P) - 1;
   for (let v = first; v < first + K; v++) {
@@ -326,9 +356,9 @@ function paint(force) {
       const t = itemAt(v);
       el.classList.remove('miss');
       const img = el.firstChild;
-      const src = t?.i ? poster(t.i, CW > 200 ? 400 : 300) : '';
-      if (img.getAttribute('src') !== src) { el.classList.remove('ok'); if (src) img.src = src; else { img.removeAttribute('src'); el.classList.add('miss'); } }
-      if (img.complete && img.naturalWidth) el.classList.add('ok');
+      const src = reelSrc(t);
+      if (img.getAttribute('src') !== src) { if (src) { img.src = src; el.classList.toggle('ok', isWarm(t) || (img.complete && img.naturalWidth > 0)); } else { img.removeAttribute('src'); el.classList.remove('ok'); el.classList.add('miss'); } }
+      else if (img.complete && img.naturalWidth) el.classList.add('ok');
       el.lastChild.textContent = t ? t.t : '';
     }
     const x = v * P - pos + CX;
@@ -340,8 +370,20 @@ function paint(force) {
   reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
 }
 addEventListener('resize', () => measure(), { passive: true });
-seedPosters().then((s) => { display = s; items.clear(); measure(); }).catch(() => measure());
+let tapeReady = seedPosters().then((s) => { display = s; return buildTape(s); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
+
+// покой: лента медленно дрейфует (только transform), стоит на паузе в фоне, при reduced-motion и во время крутки/результата
+let driftRaf = 0, driftLast = 0;
+const driftOn = () => !spinning && result.hidden && V.route.name === 'roulette' && !document.hidden && !reduce.matches && tape.length > 0 && P > 0;
+function drift(now) {
+  driftRaf = 0; if (!driftOn()) return;
+  const dt = Math.min(0.05, (now - driftLast) / 1000); driftLast = now;
+  pos += (P / 9) * dt; paint(); driftRaf = requestAnimationFrame(drift);
+}
+function kickDrift() { if (!driftRaf && driftOn()) { driftLast = performance.now(); driftRaf = requestAnimationFrame(drift); } }
+document.addEventListener('visibilitychange', kickDrift);
+setInterval(kickDrift, 800);
 
 const preload = (t, w = 300, ms = 2500) => new Promise((res) => {
   if (!t?.i) return res();
@@ -356,6 +398,8 @@ async function spin() {
   if (picker.open) closePanel(picker);
   say('');
   if (!result.hidden) await collapse();
+  cancelAnimationFrame(driftRaf); driftRaf = 0;
+  if (!tape.length) await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
   reel.classList.remove('landed');
   applyFx(); phase('spin');
   const P0 = plan(); let lastQ = -1;
@@ -386,22 +430,25 @@ async function spin() {
   }
   const win = ch.win;
   display = ch.pool.map((x) => x.t);
-  await Promise.all([preload(win.t, 400), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
+  // победитель декодируется до торможения; если не успел за 2.5s — кадр покажет заглушку с названием, без подмены на ходу
+  await Promise.all([warm(reelSrc(win.t), 2500), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
   const resetNote = ch.reset ? 'Всё подходящее уже выпадало, начинаю круг заново. ' : '';
 
   cruising = false;
   let T;
   if (reduce.matches) {
     T = Math.round(pos / P) + 1;
-    for (let i = -4; i <= 4; i++) items.delete(T + i);
     items.set(T, win.t); pos = T * P; paint(true);
   } else {
     const vNow = Math.max(v, vmax * 0.6);
     const dist0 = vNow * 3.3 / 4;
     T = Math.round((pos + dist0) / P);
-    for (let i = -6; i <= 4; i++) if (i) items.set(T + i, display[Math.floor(Math.random() * display.length)]);
-    items.set(T, win.t);
-    cards.forEach((c) => { if (Math.abs(c.vi - T) <= 6) c.vi = null; });
+    // соседи победителя — только из уже декодированной ленты и только за краем видимой части
+    const [va, vb] = visRange();
+    const pickN = () => tape[Math.floor(Math.random() * tape.length)];
+    for (let i = -6; i <= 4; i++) { const vv = T + i; if (vv >= va && vv < vb) continue; if (i) { if (tape.length) items.set(vv, pickN()); } else items.set(vv, win.t); }
+    if (T >= va && T < vb) items.set(T, win.t);
+    cards.forEach((c) => { if (c.vi != null && Math.abs(c.vi - T) <= 6 && !(c.vi >= va && c.vi < vb)) c.vi = null; });
     const p0 = pos, dist = T * P - p0, D = (4 * dist) / vNow * 1000;
     // кривая торможения по жанру: обычная, рапид в конце (мелодрама), почти стоп-кадр + доворот (боевик), перелёт и возврат (комедия)
     const kind = P0.land;
@@ -433,6 +480,7 @@ async function spin() {
   await new Promise((r) => setTimeout(r, reduce.matches ? 0 : hold));
   showResult(win.t, win.s || win.g, win.g, center?.getBoundingClientRect());
   phase('result');
+  tapeReady = buildTape([...display, ...tape]);
   finish(); setSpin('Ещё раз'); say(note);
   if (note) setTimeout(() => { if ($('#status').textContent === note) say(''); }, 6000);
 }
@@ -483,6 +531,7 @@ addEventListener('keydown', (e) => {
 
 // ---------- результат: кадр барабана вырастает в карточку ----------
 const ico = {
+  share: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M5 12.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6.5"/></svg>',
   play: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
   ext: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5H7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   redo: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -527,8 +576,8 @@ const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5
 function render(t, full) {
   curT = t;
   const my = token;
-  const title = t.ru || t.t;
-  const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
+  const title = t.ru || ruCached(t.id) || t.t;
+  const orig = [title !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
@@ -561,6 +610,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
+        <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
@@ -570,6 +620,13 @@ function render(t, full) {
   else result.innerHTML = posterHTML + infoHTML;
   V.remember(t); V.syncButtons(result);
   if (full) loadSimilar(t);
+  // точная ссылка на Кинопоиск (Wikidata P2603) и русское название, если их ещё нет в кэше
+  ruTitles([t.id]).then(() => {
+    if (curT?.id !== t.id) return;
+    const a = result.querySelector('#where a[data-kp]'); if (a) a.href = kpURL(t, title);
+    const ru = ruCached(t.id), h = result.querySelector('.info h2');
+    if (ru && !t.ru && h && h.textContent !== ru) { h.textContent = ru; if (!result.querySelector('.orig')) h.insertAdjacentHTML('afterend', `<p class="orig" lang="en">${esc(t.t)}</p>`); }
+  });
   const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
   if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
   // есть ли трейлер: если не нашёлся ни на одном языке — кнопка «Трейлера нет»
@@ -613,16 +670,21 @@ async function collapse() {
   phase('idle');
   if (V.route.name === 'roulette') V.setUrl('');
 }
+function kpURL(t, title) {
+  const kp = kpCached(t.id);
+  if (kp) return `https://www.kinopoisk.ru/${/tvSeries|tvMiniSeries/.test(t.k || '') ? 'series' : 'film'}/${kp}/`;
+  return `https://www.kinopoisk.ru/index.php?kp_query=${encodeURIComponent(`${title} ${t.y || ''}`.trim())}`;
+}
 function whereLinks(t, title) {
-  const q = encodeURIComponent(title), qy = encodeURIComponent(`${title} ${t.y || ''}`.trim()), qo = encodeURIComponent(t.t);
+  const q = encodeURIComponent(title), qo = encodeURIComponent(t.t);
   const L = [
-    ['Кинопоиск', `https://www.kinopoisk.ru/index.php?kp_query=${qy}`],
+    ['Кинопоиск', kpURL(t, title), 'kp'],
     ['Okko', `https://okko.tv/search/${q}`],
     ['Иви', `https://www.ivi.ru/search/?q=${q}`],
     ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`],
     ...(t.src === 'al' ? [['AniList', `https://anilist.co/anime/${t.al}`], ...(t.mal ? [['MyAnimeList', `https://myanimelist.net/anime/${t.mal}`]] : [])] : [['IMDb', `https://www.imdb.com/title/${t.id}/`]]),
   ];
-  return L.map(([n, u]) => `<a href="${u}" target="_blank" rel="noopener">${n}${ico.ext}</a>`).join('');
+  return L.map(([n, u, k]) => `<a href="${u}"${k ? ` data-${k}` : ''} target="_blank" rel="noopener">${n}${ico.ext}</a>`).join('');
 }
 result.addEventListener('click', (e) => {
   const mini = e.target.closest('.rmini');
@@ -633,12 +695,35 @@ result.addEventListener('click', (e) => {
   if (act === 'trailer') openTrailer(curT, b);
   if (act === 'again') spin();
   if (act === 'edit') { if (!spinning) collapse().then(() => $('#fGenre').focus()); }
+  if (act === 'share') openShare(curT);
   if (act === 'more') { $('#desc').classList.add('open'); b.remove(); }
   if (act === 'where') {
     const w = $('#where'), op = w.hidden; w.hidden = !op; b.setAttribute('aria-expanded', op);
     if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
   }
 });
+// ---------- Поделиться ----------
+async function openShare(t) {
+  if (!t) return;
+  const d = $('#shareDlg'), title = t.ru || ruCached(t.id) || t.t, url = new URL('title/' + t.id, document.baseURI).href;
+  const meta = [kindOf(t), t.y].filter(Boolean).join(' · ');
+  d.innerHTML = `<div class="af shr"><div class="ahead"><h2>Поделиться</h2><button class="px" type="button" data-close aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+    <div class="shprev load" aria-label="Картинка для сторис"><span>Рисую картинку…</span></div>
+    <button class="abtn" type="button" data-s="link"><span>Отправить ссылку</span></button>
+    <button class="btn ghost wide" type="button" data-s="img" disabled>${navigator.canShare ? 'Поделиться картинкой' : 'Скачать картинку'}</button>
+    <p class="anote">Картинка 1080×1920 для сторис: постер, название, рейтинг.</p></div>`;
+  if (!d.open) d.showModal();
+  d.querySelector('[data-close]').onclick = () => d.close();
+  d.onclick = (e) => { if (e.target === d) d.close(); };
+  let blob = null;
+  d.querySelector('[data-s="link"]').onclick = async () => { const r = await shareLink(url, title); if (r === 'copied') V.toast('Ссылка скопирована'); else if (r === 'fail') V.toast(url, null, 5000); };
+  const ib = d.querySelector('[data-s="img"]');
+  ib.onclick = async () => { if (!blob) return; const r = await shareImage(blob, `kinoruletka-${t.id}.jpg`, title); if (r === 'saved') V.toast('Картинка сохранена'); };
+  blob = await storyBlob(t, title, meta).catch(() => null);
+  const pv = d.querySelector('.shprev'); if (!pv) return;
+  if (blob) { pv.classList.remove('load'); pv.innerHTML = ''; const im = new Image(); im.alt = 'Картинка для сторис: ' + title; im.src = URL.createObjectURL(blob); pv.append(im); ib.disabled = false; }
+  else { pv.classList.remove('load'); pv.innerHTML = '<span>Картинку собрать не вышло, но ссылкой поделиться можно.</span>'; }
+}
 // мобилка: свайп карточки влево — «Другой»
 {
   let sx = 0, sy = 0, st = 0, drag = false;
@@ -704,15 +789,24 @@ function resetResult() {
 }
 let titleReq = 0;
 V.initViews({
-  roulette(prev) { if (prev === 'title') { resetResult(); setSpin('Крутить'); } else if (curT && !result.hidden) V.setUrl('title/' + curT.id); requestAnimationFrame(() => measure()); },
+  // логотип и «Рулетка» ведут на чистый барабан; из других разделов результат сохраняется
+  roulette(prev) {
+    if (prev === 'title') { resetResult(); setSpin('Крутить'); }
+    else if (prev === 'roulette') { if (curT && !result.hidden && !spinning) collapse().then(() => { curT = null; setSpin('Крутить'); }); }
+    else if (curT && !result.hidden) V.setUrl('title/' + curT.id);
+    requestAnimationFrame(() => measure());
+  },
   async title(id) {
     if (curT?.id === id && !result.hidden) { phase('result'); return; }
     const my = ++titleReq; resetResult();
+    const cached = hist.find((h) => h.id === id);
+    if (!cached) { stage.classList.add('show'); result.hidden = false; document.body.classList.add('has-result'); result.innerHTML = '<div class="poster sk" aria-hidden="true"></div><div class="info" aria-busy="true"><p class="kick"><span class="skl" style="width:140px"></span></p><h2><span class="skl" style="width:70%;height:.9em"></span></h2><p class="desc muted">Загружаю…</p></div>'; }
     try {
-      const t = hist.find((h) => h.id === id) || await V.getTitle(id);
+      const t = cached || await V.getTitle(id);
       if (my !== titleReq) return;
       landFx(t); showResult(t, null, null, null); phase('result');
-    } catch { if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Не нашли такой тайтл</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
+    } catch (err) { if (my === titleReq && (navigator.onLine === false || err?.name === 'TypeError' || err?.name === 'AbortError')) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Нет связи</h2><p class="desc">Не получилось загрузить тайтл. Проверь интернет.</p><div class="actions"><button class="btn primary" type="button" id="tRetry">Повторить</button></div></div>'; $('#tRetry').onclick = () => V.navigate('title/' + id, { replace: true }); return; }
+      if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Не нашли такой тайтл</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
   },
   leave() {},
   spinWith(m) {

@@ -47,6 +47,9 @@ let tSig = 0, wowK = 0, deSat = 0, focusC = 0;               // время по�
 let vel = 0, whip = 0;
 const T0 = performance.now();
 const NOADAPT = /[?&]noadapt/.test(location.search);
+// телефоны (в том числе встроенный браузер Telegram на iOS): фон в 0.35×, быстрее деградация, карточки без SVG-фильтров
+const LOW = matchMedia('(pointer: coarse)').matches || /iP(hone|ad|od)/.test(navigator.userAgent);
+const RS = LOW ? 0.35 : 0.5, SLOW_N = LOW ? 10 : 30;
 
 // ---------- SVG-фильтры карточек ----------
 const NS = 'http://www.w3.org/2000/svg';
@@ -156,12 +159,15 @@ initGL();
 cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glOk = false; document.body.classList.add('nogl'); });
 cv.addEventListener('webglcontextrestored', () => { initGL(); document.body.classList.remove('nogl'); kick(); });
 if (!glOk) document.body.classList.add('nogl');
-function resize() { cv.width = Math.max(2, Math.round(innerWidth * 0.5)); cv.height = Math.max(2, Math.round(innerHeight * 0.5)); if (glOk) gl.viewport(0, 0, cv.width, cv.height); kick(true); }
+function resize() { reelR = null; cv.width = Math.max(2, Math.round(innerWidth * RS)); cv.height = Math.max(2, Math.round(innerHeight * RS)); if (glOk) gl.viewport(0, 0, cv.width, cv.height); kick(true); }
 addEventListener('resize', resize, { passive: true });
 
 // ---------- кадр ----------
 const fxwrap = $('.fxwrap'), reelEl = $('#reel'), strip = $('#strip'), vig = $('#vig');
-let raf = 0, last = 0, slowN = 0;
+let raf = 0, last = 0, slowN = 0, reelR = null, reelRT = 0, idleT = 0;
+const cssVals = new Map();
+const setVar = (k, v) => { if (cssVals.get(k) !== v) { cssVals.set(k, v); root.style.setProperty(k, v); } };
+addEventListener('scroll', () => (reelR = null), { passive: true });
 const animate = () => on && !still && !reduce.matches && !document.hidden;
 function phaseAmt(now) {
   if (ph === 'land') {
@@ -175,7 +181,7 @@ function frame(now) {
   raf = 0;
   const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
   // деградация: 30 кадров подряд дольше 20ms — подпись выключается, грейд и зерно остаются
-  if (animate() && !NOADAPT) { if (dt > 0.02) { if (++slowN >= 30 && !slow) { slow = true; } } else slowN = 0; }
+  if (animate() && !NOADAPT) { if (dt > 0.02) { if (++slowN >= SLOW_N && !slow) { slow = true; } } else slowN = 0; }
   const t = (now - T0) / 1000;
   // грейд: кроссфейд 600ms ease-in-out
   if (xf0 >= 0) {
@@ -195,8 +201,10 @@ function frame(now) {
   const g = GEN[gid] || GEN.none;
   // карточки: боковые 100%, центральная — грейд не больше 25%
   const kS = 0.6 * clamp(amt * 1.25), satS = 1 + (cur.sat - 1) * clamp(amt * 1.25);
-  setA(F.sm, 'values', matrix(kS, deSat > 0 ? lerp(satS, 0, deSat) : satS));
-  setA(F.cm, 'values', matrix(Math.min(0.25, kS) * 0.6, 1 + (cur.sat - 1) * 0.25));
+  if (!LOW) {
+    setA(F.sm, 'values', matrix(kS, deSat > 0 ? lerp(satS, 0, deSat) : satS));
+    setA(F.cm, 'values', matrix(Math.min(0.25, kS) * 0.6, 1 + (cur.sat - 1) * 0.25));
+  }
   // подписи на карточках
   let sideBlur = 0, cBlur = 0;
   if (sig === 2) { sideBlur = 6 * sA; cBlur = ph === 'spin' ? (1.5 - 1.5 * Math.cos(t * Math.PI * 2 / 1.6)) * sA : 0; }
@@ -225,12 +233,12 @@ function frame(now) {
   if (sig === 2) cv.style.filter = sA > 0 ? `blur(${(5 * sA).toFixed(1)}px)` : ''; else if (cv.style.filter) cv.style.filter = '';
   // виньетка (у ужасов дышит ±0.05 за 4s) и зерно карточек
   const vv = cur.vig + (sig === 1 ? 0.05 * Math.sin(ts * Math.PI * 2 / 4) * sA : 0);
-  root.style.setProperty('--vig', (vv * (0.6 + 0.4 * amt)).toFixed(3));
-  root.style.setProperty('--gA', (cur.gr * 5 * (0.35 + 0.65 * amt)).toFixed(3));
-  root.style.setProperty('--gS', `${Math.round(128 * cur.gs)}px`);
+  setVar('--vig', (vv * (0.6 + 0.4 * amt)).toFixed(2));
+  if (!LOW) { setVar('--gA', (cur.gr * 5 * (0.35 + 0.65 * amt)).toFixed(2)); setVar('--gS', `${Math.round(128 * cur.gs)}px`); }
   // фон
   if (glOk) {
-    const r = reelEl.getBoundingClientRect();
+    if (!reelR || now - reelRT > 1000) { reelR = reelEl.getBoundingClientRect(); reelRT = now; }
+    const r = reelR;
     gl.uniform2f(U.uRes, cv.width, cv.height);
     gl.uniform2f(U.uC, 0.5, 1 - (r.top + r.height / 2) / innerHeight);
     gl.uniform1f(U.uT, t); gl.uniform1f(U.uTs, ts); gl.uniform1f(U.uAmt, amt);
@@ -241,9 +249,16 @@ function frame(now) {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
   const busy = xf0 >= 0 || sig !== sigNext || sigA < 1 || ph === 'land' || Math.abs(amt - target) > 0.002 || whip > 0 || wowK > 0;
-  if (animate() || busy) raf = requestAnimationFrame(frame);
+  // в покое и на результате хватает 24 к/с (зерно и так 24 к/с): не гоняем GPU на 60
+  if (animate() || busy) {
+    if (!busy && (ph === 'idle' || ph === 'result')) { raf = -1; idleT = setTimeout(() => { raf = requestAnimationFrame(frame); }, 1000 / 24 - 4); }
+    else raf = requestAnimationFrame(frame);
+  }
 }
-function kick() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+function kick() {
+  if (raf === -1) { clearTimeout(idleT); raf = 0; }
+  if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
 document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
 reduce.addEventListener?.('change', () => { document.body.classList.toggle('fx-still', !animate()); kick(); });
 const dz = { bg: 1, r: 1 };

@@ -2,6 +2,7 @@
 import { GENRES, GENRE_RU } from './chips.js?v=9';
 import { getJSON, norm, normAnime, poster } from './api.js?v=9';
 import * as S from './store.js?v=10';
+import { ruCached, localize, ruTitles } from './ru.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -107,7 +108,7 @@ export async function getTitle(id) {
 const yr = (t) => (t.y ? String(t.y) : '');
 function tile(t) {
   remember(t);
-  const title = t.ru || t.t || t.title || '';
+  const title = t.ru || ruCached(t.id) || t.t || t.title || '';
   const meta = [yr(t), t.r ? `${Number(t.r).toFixed(1)}★` : ''].filter(Boolean).join(' · ');
   const src = t.i ? poster(t.i, 300) : t.poster || '';
   return `<a class="tile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}<span class="tph">${esc(title)}</span><div class="tacts">${iconBtns(t.id, 'tb')}</div></div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
@@ -126,11 +127,11 @@ function grid(el, f, { onTotal } = {}) {
       if (el.my !== my) return;
       el.querySelectorAll('.sk').forEach((x) => x.remove());
       const add = r.list.filter((t) => t.i && !seenIds.has(t.id)); add.forEach((t) => seenIds.add(t.id));
-      el.insertAdjacentHTML('beforeend', add.map(tile).join(''));
+      el.insertAdjacentHTML('beforeend', add.map(tile).join('')); localize(el);
       if (next === undefined) { onTotal?.(r.total ?? add.length); if (!add.length) el.innerHTML = '<p class="empty">Ничего не нашлось. Попробуй убрать фильтры или поискать иначе.</p>'; }
       next = r.next; done = !next; syncButtons(el);
       if (!done) el.after(sent); else sent.remove();
-    } catch { el.querySelectorAll('.sk').forEach((x) => x.remove()); if (next === undefined) el.innerHTML = '<p class="empty">Сервер с данными не ответил. Попробуй ещё раз чуть позже.</p>'; done = true; }
+    } catch { el.querySelectorAll('.sk').forEach((x) => x.remove()); if (next === undefined) { el.innerHTML = `<div class="empty err"><p>${navigator.onLine === false ? 'Нет интернета. Проверь связь.' : 'Сервер с данными не ответил.'}</p><button class="btn" type="button" data-retry>Повторить</button></div>`; el.querySelector('[data-retry]').onclick = () => { el.innerHTML = skel(mobile() ? 12 : 16); done = false; more(); }; } else { done = false; sent.remove(); el.insertAdjacentHTML('beforeend', '<div class="empty err more"><button class="btn" type="button" data-retry>Не загрузилось. Повторить</button></div>'); el.querySelector('.more [data-retry]').onclick = (e) => { e.currentTarget.parentNode.remove(); el.after(sent); more(); }; } }
     finally { busy = false; el.dataset.state = ''; }
   }
   el.my = my; io.observe(sent); el.after(sent); more();
@@ -175,7 +176,7 @@ function filterRow(f, { onChange, readonly = false, sort = true } = {}) {
   const fld = (k, lbl) => `<button class="cf" type="button" data-k="${k}"${readonly ? ' disabled' : ''}><small>${lbl}</small><span>${esc(v[k])}</span></button>`;
   const wrap = document.createElement('div'); wrap.className = 'crow';
   wrap.innerHTML = `<div class="cfs">${fld('type', 'Что')}${fld('genre', 'Жанр')}${fld('years', 'Годы')}${fld('rate', 'Рейтинг')}</div>
-    <button class="cfsum" type="button"${readonly ? ' disabled' : ''}>${nFilters(f) ? `Фильтры · ${nFilters(f)}` : 'Фильтры'}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+    <button class="cfsum" type="button"${readonly ? ' disabled aria-label="Фильтры задаёт создатель комнаты"' : ''}>${readonly ? esc([v.type, v.genre, v.years, v.rate].join(' · ')) : nFilters(f) ? `Фильтры · ${nFilters(f)}` : 'Фильтры'}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
     ${sort ? `<div class="cmeta"><label class="csort"><span class="sr">Сортировка</span><select><option value="rating">По рейтингу</option><option value="pop">По популярности</option><option value="year">Сначала новые</option></select></label><span class="ccount"></span></div>` : ''}`;
   const sel = wrap.querySelector('select'); if (sel) { sel.value = f.sort; sel.onchange = () => { f.sort = sel.value; onChange(); }; }
   wrap.querySelectorAll('.cf').forEach((b) => (b.onclick = () => pop(b, b.dataset.k)));
@@ -221,6 +222,7 @@ function parse(path) {
   if (p[0] === 'catalog') return p[1] === 'mood' && p[2] ? { name: 'mood', slug: p[2] } : { name: 'catalog' };
   if (p[0] === 'title' && p[1]) return { name: 'title', id: p[1] };
   if (p[0] === 'together') return p[1] ? { name: 'room', code: p[1].toUpperCase().slice(0, 4) } : { name: 'together' };
+  if (p[0] === 'about') return { name: 'about' };
   if (p[0] === 'me') return { name: 'me', tab: ['favorites', 'watched', 'recent'].includes(p[1]) ? p[1] : 'favorites' };
   return { name: 'roulette' };
 }
@@ -251,6 +253,7 @@ function show(r, keepScroll) {
   else if (r.name === 'me') renderMe(r.tab);
   else if (r.name === 'together') renderTogether();
   else if (r.name === 'room') renderRoom(r.code);
+  else if (r.name === 'about') renderAbout();
 }
 const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', together: 'together', room: 'together', me: 'me' })[n];
 function moveDot() {
@@ -266,6 +269,28 @@ document.addEventListener('click', (e) => {
   e.preventDefault(); navigate(a.getAttribute('href'));
 });
 addEventListener('popstate', () => show(parse(rel())));
+addEventListener('offline', () => toast('Нет интернета. Покажу то, что уже загружено', null, 4000));
+addEventListener('online', () => toast('Связь вернулась', null, 2000));
+
+// ---------- О сайте ----------
+function renderAbout() {
+  document.title = 'О сайте · Кинорулетка';
+  const li = (n, u, t) => `<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
+  view.innerHTML = `<div class="wrap about"><h1 class="vh">О сайте</h1>
+    <p class="lead">Кинорулетка подбирает случайный фильм, сериал или аниме по жанру, годам и рейтингу. Можно крутить одному или вдвоём: каждый листает карточки, а сайт показывает совпадения.</p>
+    <h2>Откуда данные</h2><ul class="src">
+      ${li('IMDb', 'https://www.imdb.com/', 'названия, рейтинги, постеры; через открытый API api.tiffara.com')}
+      ${li('AniList', 'https://anilist.co/', 'аниме: рейтинги, постеры, описания')}
+      ${li('Wikidata', 'https://www.wikidata.org/', 'русские названия и ссылки на Кинопоиск (CC0)')}
+      ${li('Русская Википедия', 'https://ru.wikipedia.org/', 'описания и сюжеты (CC BY-SA 4.0)')}
+      ${li('YouTube', 'https://www.youtube.com/', 'трейлеры, встроенный плеер youtube-nocookie')}
+    </ul>
+    <h2>Где посмотреть</h2><p>Ссылки ведут только на легальные сервисы: Кинопоиск, Okko, Иви, JustWatch, а для справки на IMDb, AniList и MyAnimeList. Сайт сам ничего не показывает и не хранит видео.</p>
+    <h2>Аккаунт</h2><p>Без входа «Любимые» и «Просмотрено» живут только в этой вкладке. С аккаунтом списки хранятся на сервере. Почту не спрашиваем, поэтому пароль восстановить нельзя. Сменить пароль или удалить аккаунт можно в меню аккаунта.</p>
+    <h2>Спасибо</h2><p>Шрифт Golos Text (Paratype, SIL OFL). Постеры и названия принадлежат правообладателям и показаны для справки.</p>
+    <p class="muted">Исходный код: <a href="https://github.com/relocpe/kino-roulette" target="_blank" rel="noopener">github.com/relocpe/kino-roulette</a></p>
+  </div>`;
+}
 
 // ---------- Каталог ----------
 function renderCatalog() {
@@ -312,7 +337,8 @@ function renderMe(tab, keep) {
     <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<a role="tab" href="me/${k}" data-nav aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}">${l}<span>${nOf(k) || ''}</span></a>`).join('')}</div>
     ${plaque}
     ${data.length ? `<div class="grid">${data.map(tile).join('')}</div>` : `<p class="empty big">${emptyTxt}</p>`}
-    ${tab === 'recent' && data.length ? '<button class="tlink clr" type="button" id="recClear">Очистить недавние</button>' : ''}</div>`;
+    ${tab === 'recent' && data.length ? '<button class="tlink clr" type="button" id="recClear">Очистить недавние</button>' : ''}
+    <p class="mefoot">${S.loggedIn() ? '<button class="tlink" type="button" data-acct>Аккаунт: пароль, выход, удаление</button><span aria-hidden="true">·</span>' : ''}<a class="tlink" href="about" data-nav>О сайте</a></p></div>`;
   syncButtons(view);
   const c = $('#recClear'); if (c) c.onclick = () => { H.clearRecent?.(); renderMe('recent'); };
 }
@@ -370,9 +396,52 @@ function drawAuth() {
     } finally { b.disabled = false; b.classList.remove('load'); }
   };
 }
+// ---------- Аккаунт: пароль, удаление, выход ----------
+export function openAccount() { if (!S.loggedIn()) return openAuth('login'); drawAcct(); if (!dlg.open) dlg.showModal(); }
+function drawAcct() {
+  const u = S.me();
+  const pw = (id, lbl, ac) => `<label class="fl" for="${id}">${lbl}</label><div class="pw"><input class="fi" id="${id}" type="password" autocomplete="${ac}" minlength="8" required><button class="eyeb" type="button" aria-label="Показать пароль" aria-pressed="false">${IC.eyeOpen}</button></div>`;
+  dlg.innerHTML = `<div class="af acct">
+    <div class="ahead"><h2>Аккаунт</h2><button class="px" type="button" data-close aria-label="Закрыть">${IC.x}</button></div>
+    <p class="anick2">Ник: <b>${esc(u.nickname)}</b></p>
+    <form class="asec" id="fPw" novalidate><h3>Сменить пароль</h3>
+      <input type="text" autocomplete="username" value="${esc(u.nickname)}" hidden>
+      ${pw('pCur', 'Текущий пароль', 'current-password')}${pw('pNew', 'Новый пароль', 'new-password')}
+      <p class="ferr" id="ePw" role="alert"></p>
+      <button class="abtn" type="submit"><span>Сохранить пароль</span></button>
+      <p class="anote">Остальные устройства выйдут из аккаунта.</p></form>
+    <div class="asec"><h3>Выход</h3><button class="btn ghost" type="button" id="aOut">Выйти из аккаунта</button></div>
+    <form class="asec danger" id="fDel" novalidate><h3>Удалить аккаунт</h3>
+      <p class="anote">Удалятся аккаунт, все входы и списки «Любимые» и «Просмотрено». Вернуть их не получится.</p>
+      <input type="text" autocomplete="username" value="${esc(u.nickname)}" hidden>
+      ${pw('pDel', 'Пароль для подтверждения', 'current-password')}
+      <p class="ferr" id="eDel" role="alert"></p>
+      <button class="abtn del" type="submit"><span>Удалить навсегда</span></button></form>
+  </div>`;
+  dlg.querySelector('[data-close]').onclick = () => close();
+  dlg.querySelectorAll('.eyeb').forEach((b) => (b.onclick = () => { const i = b.previousElementSibling, on = i.type === 'password'; i.type = on ? 'text' : 'password'; b.setAttribute('aria-pressed', String(on)); }));
+  const errText = (err) => err.code === 'bad_password' ? (err.status === 403 ? 'Текущий пароль неверный' : 'Минимум 8 символов') : err.code === 'rate_limited' ? 'Слишком много попыток. Подожди 15 минут' : err.status ? err.message || 'Не получилось' : 'Нет связи с сервером. Попробуй ещё раз';
+  const busy = (b, on) => { b.disabled = on; b.classList.toggle('load', on); };
+  $('#fPw').onsubmit = async (e) => {
+    e.preventDefault(); const c = $('#pCur').value, n = $('#pNew').value, er = $('#ePw'), b = e.target.querySelector('.abtn');
+    if (!c) { er.textContent = 'Введи текущий пароль'; return; }
+    if (n.length < 8) { er.textContent = 'Новый пароль: минимум 8 символов'; return; }
+    busy(b, true); er.textContent = '';
+    try { await S.changePassword(c, n); close(); toast('Пароль изменён'); } catch (err) { er.textContent = errText(err); } finally { busy(b, false); }
+  };
+  $('#aOut').onclick = async () => { close(); await S.logout(); toast('Вышли из аккаунта'); };
+  let armed = false;
+  $('#fDel').onsubmit = async (e) => {
+    e.preventDefault(); const p = $('#pDel').value, er = $('#eDel'), b = e.target.querySelector('.abtn');
+    if (!p) { er.textContent = 'Введи пароль'; return; }
+    if (!armed) { armed = true; b.firstElementChild.textContent = 'Точно удалить? Нажми ещё раз'; return; }
+    busy(b, true); er.textContent = '';
+    try { await S.deleteAccount(p); close(); toast('Аккаунт удалён'); } catch (err) { er.textContent = errText(err); armed = false; b.firstElementChild.textContent = 'Удалить навсегда'; } finally { busy(b, false); }
+  };
+}
 function close() { if (!dlg.open) return; if (reduce.matches) return dlg.close(); dlg.classList.add('out'); setTimeout(() => { dlg.classList.remove('out'); dlg.close(); }, 180); }
 dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
-document.addEventListener('click', (e) => { const a = e.target.closest('[data-auth]'); if (a) { e.preventDefault(); openAuth(a.dataset.auth); } });
+document.addEventListener('click', (e) => { if (e.target.closest('[data-acct]')) { e.preventDefault(); openAccount(); return; } const a = e.target.closest('[data-auth]'); if (a) { e.preventDefault(); openAuth(a.dataset.auth); } });
 
 // аватар: «Войти» или круг с буквой и меню
 function drawAvatar() {
@@ -381,11 +450,11 @@ function drawAvatar() {
   else {
     document.body.classList.add('authed');
     box.innerHTML = `<button class="ava" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Аккаунт ${esc(u.nickname)}">${esc(u.nickname[0].toUpperCase())}</button>
-      <div class="amenu" role="menu" hidden><p class="anick">${esc(u.nickname)}</p><button type="button" role="menuitemcheckbox" data-x="fx"></button><a role="menuitem" href="me/favorites" data-nav>Мои списки</a><button type="button" role="menuitem" data-x="out">Выйти</button></div>`;
+      <div class="amenu" role="menu" hidden><p class="anick">${esc(u.nickname)}</p><button type="button" role="menuitemcheckbox" data-x="fx"></button><a role="menuitem" href="me/favorites" data-nav>Мои списки</a><button type="button" role="menuitem" data-x="acct">Аккаунт</button><a role="menuitem" href="about" data-nav>О сайте</a><button type="button" role="menuitem" data-x="out">Выйти</button></div>`;
     const b = box.querySelector('.ava'), m = box.querySelector('.amenu');
     const fxLbl = () => { const on = $('#fxBtn').getAttribute('aria-checked') === 'true'; const x = m.querySelector('[data-x="fx"]'); x.textContent = on ? 'Эффекты: вкл' : 'Эффекты: выкл'; x.setAttribute('aria-checked', String(on)); };
     b.onclick = (e) => { e.stopPropagation(); fxLbl(); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); };
-    m.onclick = async (e) => { const x = e.target.closest('[data-x]'); if (!x) { m.hidden = true; return; } if (x.dataset.x === 'fx') { $('#fxBtn').click(); fxLbl(); } else { m.hidden = true; await S.logout(); toast('Вышли из аккаунта'); } };
+    m.onclick = async (e) => { const x = e.target.closest('[data-x]'); if (!x) { m.hidden = true; return; } if (x.dataset.x === 'fx') { $('#fxBtn').click(); fxLbl(); } else if (x.dataset.x === 'acct') { m.hidden = true; openAccount(); } else { m.hidden = true; await S.logout(); toast('Вышли из аккаунта'); } };
     document.addEventListener('click', () => { m.hidden = true; b.setAttribute('aria-expanded', 'false'); });
   }
 }
@@ -410,7 +479,8 @@ export function simHTML() { return `<section class="sim" aria-label="Похож�
 export function fillSim(sec, list, onPick) {
   if (list.length < 4) { sec.remove(); return; }
   const row = sec.querySelector('.srow');
-  row.innerHTML = list.map((t) => { remember(t); return `<a class="stile" href="title/${esc(t.id)}" data-id="${esc(t.id)}"><div class="tp"><img src="${esc(poster(t.i, 300))}" alt="" loading="lazy" onerror="this.remove()"></div><b>${esc(t.ru || t.t)}</b></a>`; }).join('');
+  row.innerHTML = list.map((t) => { remember(t); return `<a class="stile" href="title/${esc(t.id)}" data-id="${esc(t.id)}"><div class="tp"><img src="${esc(poster(t.i, 300))}" alt="" loading="lazy" onerror="this.remove()"></div><b>${esc(t.ru || ruCached(t.id) || t.t)}</b></a>`; }).join('');
+  localize(row);
   const map = new Map(list.map((t) => [t.id, t]));
   row.onclick = (e) => { const a = e.target.closest('.stile'); if (!a || e.metaKey || e.ctrlKey) return; e.preventDefault(); onPick(map.get(a.dataset.id), a.querySelector('.tp').getBoundingClientRect()); };
   sec.querySelectorAll('.sa').forEach((b) => (b.onclick = () => row.scrollBy({ left: +b.dataset.d * row.clientWidth * 0.8, behavior: reduce.matches ? 'auto' : 'smooth' })));
@@ -528,6 +598,7 @@ async function startDeck(st) {
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
   const done = new Set((st.mySwipes || []).map((x) => x.titleId));
   room.deck = deck.filter((t) => !done.has(t.id)); room.i = 0; room.total = deck.length;
+  ruTitles(room.deck.slice(0, 60).map((t) => t.id)).then(() => { const h = document.querySelector('.stitle'), t = room.deck[room.i]; if (h && t && ruCached(t.id)) h.textContent = ruCached(t.id); });
   if (!room.deck.length) { body.innerHTML = '<div class="tog"><h1>Колода пуста</h1><p class="tsub">Под такие фильтры ничего не нашлось или вы всё пролистали.</p></div>'; return; }
   drawCard();
 }
@@ -536,8 +607,8 @@ function drawCard() {
   const body = $('#rbody'), t = room.deck[room.i];
   if (!t) { body.innerHTML = `<div class="tog"><h1>Карточки кончились</h1><p class="tsub">${(room.st?.matches || []).length ? 'Совпадения ждут вас выше.' : 'Совпадений пока нет. Подождите партнёра или создайте комнату с другими фильтрами.'}</p></div>`; return; }
   const meta = [yr(t), t.r ? `${t.r.toFixed(1)}★` : ''].filter(Boolean).join(' · ');
-  body.innerHTML = `<div class="swipe"><div class="deck"><div class="scard" id="sc"><img src="${esc(poster(t.i, 600))}" alt="Постер: ${esc(t.t)}" draggable="false"><span class="stamp like">Смотрим</span><span class="stamp nope">Мимо</span></div>${room.deck[room.i + 1] ? `<div class="scard under"><img src="${esc(poster(room.deck[room.i + 1].i, 600))}" alt=""></div>` : ''}</div>
-    <h2 class="stitle">${esc(t.t)}</h2><p class="smeta">${esc(meta)}</p>
+  body.innerHTML = `<div class="swipe"><div class="deck"><div class="scard" id="sc"><img src="${esc(poster(t.i, 600))}" alt="Постер: ${esc(ruCached(t.id) || t.t)}" draggable="false"><span class="stamp like">Смотрим</span><span class="stamp nope">Мимо</span></div>${room.deck[room.i + 1] ? `<div class="scard under"><img src="${esc(poster(room.deck[room.i + 1].i, 600))}" alt=""></div>` : ''}</div>
+    <h2 class="stitle">${esc(ruCached(t.id) || t.t)}</h2><p class="smeta">${esc(meta)}</p>
     <div class="sbtns"><button class="sb no" type="button" aria-label="Мимо">${IC.x}</button><button class="sb yes" type="button" aria-label="Смотрим">${IC.heart}</button></div><p class="rprog" id="rprog"></p></div>`;
   drawProgress();
   const c = $('#sc');
@@ -546,7 +617,7 @@ function drawCard() {
     const dir = like ? 1 : -1;
     if (!reduce.matches) await c.animate([{ transform: c.style.transform || 'none' }, { transform: `translateX(${dir * innerWidth * 0.9}px) rotate(${dir * 18}deg)`, opacity: 0 }], { duration: 260, easing: 'ease-in', fill: 'forwards' }).finished;
     room.i++; drawCard();
-    try { const r = await S.roomSwipe(room.code, t.id, like, { title: t.t, year: Number(t.y) || undefined, poster: poster(t.i, 300), type: /tv/.test(t.k) ? 'tv' : 'movie', rating: t.r }); if (r.match) { const st = room.st; const mt = { titleId: t.id, title: t.t, year: t.y, poster: poster(t.i, 300) }; if (!(st.matches || []).some((x) => x.titleId === t.id)) { st.matches = [...(st.matches || []), mt]; drawMatchCount(); matchPop(mt); } } }
+    try { const r = await S.roomSwipe(room.code, t.id, like, { title: ruCached(t.id) || t.t, year: Number(t.y) || undefined, poster: poster(t.i, 300), type: /tv/.test(t.k) ? 'tv' : 'movie', rating: t.r }); if (r.match) { const st = room.st; const mt = { titleId: t.id, title: t.t, year: t.y, poster: poster(t.i, 300) }; if (!(st.matches || []).some((x) => x.titleId === t.id)) { st.matches = [...(st.matches || []), mt]; drawMatchCount(); matchPop(mt); } } }
     catch (x) { toast(x.message); }
   };
   body.querySelector('.no').onclick = () => swipe(false);

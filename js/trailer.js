@@ -4,17 +4,20 @@ import { getJSON } from './api.js?v=9';
 const W = 'https://www.wikidata.org/w/api.php?format=json&origin=*';
 const PIPED = ['https://api.piped.private.coffee'];
 const INV = ['https://yt.chocolatemoo53.com'];
-let invList = null;
 const RU_LANG = 'Q7737';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const cache = new Map();
 
-async function invInstances() {
-  if (!invList) invList = getJSON('https://api.invidious.io/instances.json?sort_by=health', 5000)
-    .then((d) => d.filter(([, x]) => x.cors && x.api && x.type === 'https').map(([h]) => 'https://' + h).slice(0, 4))
-    .catch(() => []);
-  return [...new Set([...INV, ...(await invList)])];
+// зеркала, у которых упал CORS или сеть, пропускаем сутки — без повторных ошибок в консоли.
+// Каталог api.invidious.io больше не запрашиваем: он сам периодически отдаётся без CORS.
+const BAD = 'kr:badhost';
+const badMap = () => { try { return JSON.parse(localStorage.getItem(BAD) || '{}'); } catch { return {}; } };
+const isBad = (h) => Date.now() - (badMap()[h] || 0) < 864e5;
+const markBad = (h) => { try { const m = badMap(); m[h] = Date.now(); localStorage.setItem(BAD, JSON.stringify(m)); } catch {} };
+async function mirror(h, url) {
+  try { return await getJSON(url, 6000); }
+  catch (e) { if (e?.name === 'TypeError' || e?.name === 'AbortError') markBad(h); throw e; }
 }
 
 async function wikidataIds(imdb) {
@@ -30,10 +33,10 @@ async function wikidataIds(imdb) {
 // ищем по нескольким зеркалам, отдаём [{id, title, len}]
 async function search(q) {
   const tries = [
-    ...PIPED.map((h) => () => getJSON(`${h}/search?q=${encodeURIComponent(q)}&filter=videos`, 6000)
+    ...PIPED.filter((h) => !isBad(h)).map((h) => () => mirror(h, `${h}/search?q=${encodeURIComponent(q)}&filter=videos`, 6000)
       .then((d) => (d.items || []).filter((x) => x.url).map((x) => ({ id: x.url.split('v=')[1], title: x.title, len: x.duration, ch: x.uploaderName })))),
   ];
-  for (const h of await invInstances()) tries.push(() => getJSON(`${h}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, 6000)
+  for (const h of INV.filter((x) => !isBad(x))) tries.push(() => mirror(h, `${h}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, 6000)
     .then((d) => (Array.isArray(d) ? d : []).map((x) => ({ id: x.videoId, title: x.title, len: x.lengthSeconds, ch: x.author }))));
   for (const f of tries) { try { const r = await f(); if (r.length) return r; } catch {} }
   return null;

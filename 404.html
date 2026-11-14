@@ -7,17 +7,36 @@
 <meta name="description" content="Выбери жанр — фильмы, сериалы и аниме, крути барабан и получи фильм или сериал на вечер. Трейлер и ссылки на легальные сервисы.">
 <meta name="theme-color" content="#0c0b0a">
 <meta name="color-scheme" content="dark">
-<meta property="og:title" content="Кинорулетка">
-<meta property="og:description" content="Случайный фильм или сериал по жанру и настроению.">
-<meta property="og:image" content="https://relocpe.github.io/kino-roulette/og.jpg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Кинорулетка">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:url" content="https://relocpe.github.io/kino-roulette/">
+<meta property="og:title" content="Кинорулетка — что смотрим сегодня?">
+<meta property="og:description" content="Крути барабан и получи фильм, сериал или аниме на вечер. Можно вдвоём.">
+<meta property="og:image" content="https://relocpe.github.io/kino-roulette/og.jpg?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Кинорулетка: что смотрим сегодня?">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Кинорулетка — что смотрим сегодня?">
+<meta name="twitter:description" content="Крути барабан и получи фильм, сериал или аниме на вечер.">
+<meta name="twitter:image" content="https://relocpe.github.io/kino-roulette/og.jpg?v=2">
+<meta name="apple-mobile-web-app-title" content="Кинорулетка">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <base href="/kino-roulette/">
 <link rel="icon" href="/kino-roulette/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/kino-roulette/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/kino-roulette/apple-touch-icon.png">
+<link rel="manifest" href="/kino-roulette/manifest.webmanifest">
 <link rel="preload" href="/kino-roulette/fonts/golos-text-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
-<link rel="stylesheet" href="/kino-roulette/css/app.css?v=10">
-<link rel="stylesheet" href="/kino-roulette/css/views.css?v=11">
+<script src="/kino-roulette/js/dlg.js?v=1"></script>
+<link rel="stylesheet" href="/kino-roulette/css/app.css?v=11">
+<link rel="stylesheet" href="/kino-roulette/css/views.css?v=12">
 </head>
 <body data-fx="none" data-route="roulette">
 <div class="fxwrap" aria-hidden="true"><canvas id="gl"></canvas></div>
@@ -108,6 +127,7 @@
 <dialog class="adlg" id="auth" aria-label="Вход"></dialog>
 <dialog class="cpop" id="cpop" aria-label="Фильтры"></dialog>
 <dialog class="mdlg" id="matchDlg" aria-label="Совпадения"></dialog>
+<dialog class="adlg" id="shareDlg" aria-label="Поделиться"></dialog>
 
 <dialog class="tmodal" id="tmodal" aria-labelledby="tmTitle">
   <div class="tm-box">
@@ -124,6 +144,6 @@
 </dialog>
 
 
-<script type="module" src="/kino-roulette/js/app.js?v=11"></script>
+<script type="module" src="/kino-roulette/js/app.js?v=12"></script>
 </body>
 </html>

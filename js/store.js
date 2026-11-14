@@ -78,6 +78,8 @@ export async function auth(kind, nickname, password) {
 }
 export const checkNick = (nick) => api('GET', `/auth/check?nick=${encodeURIComponent(nick)}`);
 function logoutLocal() { token = ''; user = null; localStorage.removeItem(TOK); localStorage.removeItem(USR); lists = loadSess(); emit(); emitAuth(); }
+export async function changePassword(current, password) { const d = await api('POST', '/auth/password', { current, password }); setSession(d); emitAuth(); return d; }
+export async function deleteAccount(password) { await api('POST', '/auth/delete', { password }); try { sessionStorage.removeItem(SESS); } catch {} logoutLocal(); }
 export async function logout() { try { await api('POST', '/auth/logout'); } catch {} logoutLocal(); }
 
 export async function init() {

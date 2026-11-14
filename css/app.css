@@ -349,3 +349,16 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 
 @media (max-width: 600px) { .tm-head h3 { font-size: 18px; } .tm-yt { display: none; } }
 @media (prefers-reduced-motion: reduce) { .tm-box { animation: none; } }
+
+/* телефоны и встроенный браузер Telegram: без SVG-фильтров и blend-зерна на карточках, меньше размытия */
+@media (pointer: coarse) {
+  .card, .card.c, .poster img { filter: none; }
+  .card::after { display: none; }
+  .backdrop { filter: blur(36px) saturate(1.1); inset: -60px; }
+  .strip { filter: none !important; }
+}
+.nodlg dialog:not([open]) { display: none; }
+.nodlg dialog[open] { position: fixed; inset: 0; margin: auto; z-index: 1000; display: block; }
+.nodlg dialog.modal[open] { box-shadow: 0 0 0 100vmax rgb(0 0 0 / .55); }
+/* липкий низ шторки не должен перекрывать сфокусированное поле */
+.picker, .cpop { scroll-padding-bottom: 96px; }
