@@ -41,6 +41,7 @@ let fxAuto = prefs.fx == null;
 function motion(on, user) {
   if (user) { prefs.fx = on; fxAuto = false; savePrefs(); }
   fxBtn.setAttribute('aria-checked', String(on));
+  fxBtn.title = on ? 'Эффекты: вкл' : 'Эффекты: выкл';
   setMotion(on);
 }
 motion(prefs.fx ?? !coarse);
@@ -48,15 +49,34 @@ fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') 
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 
 // ---------- фильтры ----------
-const panel = $('#filters');
+const picker = $('#picker');
+const CHECK = '<i class="cb" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i>';
+const CHEV = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const subLabel = (c) => c.label.replace('Психологический триллер', 'Психологический').replace('С неожиданной развязкой', 'С твистом');
 function chipEl(c, cls = '') {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'chip' + cls; b.dataset.id = c.id; b.textContent = c.label;
   return b;
 }
+// жанры: список с чекбоксами, у жанра с уточнениями — шеврон, уточнения раскрываются под ним
 const ordered = [...MAIN.map((id) => byId[id]), ...GENRES.filter((g) => !MAIN.includes(g.id))];
-ordered.forEach((c) => { const b = chipEl(c); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
-$('#gClear').addEventListener('click', () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; changed(); });
+const expanded = new Set(prefs.sel.filter((g) => SUBS[g]));
+for (const c of ordered) {
+  const grp = document.createElement('div'); grp.className = 'grp'; grp.dataset.g = c.id;
+  grp.innerHTML = `<div class="grow"><button type="button" class="gopt" role="checkbox" data-id="${c.id}">${CHECK}<span>${esc(c.label)}</span></button>${SUBS[c.id] ? `<button type="button" class="gchev" aria-expanded="false" aria-label="Уточнить: ${esc(c.label)}">${CHEV}</button>` : ''}</div>`
+    + (SUBS[c.id] ? `<div class="gsubs"><div class="gsin">${SUBS[c.id].map((sid) => `<button type="button" class="gopt sub" role="checkbox" data-g="${c.id}" data-s="${sid}">${CHECK}<span>${esc(subLabel(byId[sid]))}</span></button>`).join('')}</div></div>` : '');
+  $('#genres').append(grp);
+}
+$('#genres').addEventListener('click', (e) => {
+  const ch = e.target.closest('.gchev');
+  if (ch) { const g = ch.closest('.grp').dataset.g; expanded.has(g) ? expanded.delete(g) : expanded.add(g); syncChips(); return; }
+  const b = e.target.closest('.gopt'); if (!b) return;
+  if (b.dataset.s) {
+    const g = b.dataset.g;
+    if (!prefs.sel.includes(g)) { if (prefs.sel.length >= MAX) return hint(`Максимум ${MAX} жанра. Сними один, чтобы добавить «${byId[g].label}».`, b); prefs.sel = [...prefs.sel, g]; }
+    pickSub(g, b.dataset.s);
+  } else toggle(b.dataset.id, b);
+});
 
 let hintT = 0;
 function hint(msg, b) {
@@ -67,7 +87,7 @@ function toggle(id, b) {
   const on = !prefs.sel.includes(id);
   if (!on) { prefs.sel = prefs.sel.filter((x) => x !== id); delete prefs.sub[id]; }
   else if (prefs.sel.length >= MAX) return hint(`Максимум ${MAX} жанра. Сними один, чтобы добавить «${byId[id].label}».`, b);
-  else prefs.sel = [...prefs.sel, id];
+  else { prefs.sel = [...prefs.sel, id]; if (SUBS[id]) expanded.add(id); }
   $('#hint').textContent = '';
   changed(); if (on) burst(0.5);
 }
@@ -75,35 +95,23 @@ function pickSub(g, s) {
   if (s && prefs.sub[g] !== s) prefs.sub[g] = s; else delete prefs.sub[g];
   changed(); if (s) burst(0.5);
 }
-function changed() { syncUI(); savePrefs(); applyFx(); }
+function changed() { syncUI(); savePrefs(); applyFx(); if (document.body.classList.contains('has-result') && !spinning) setSpin('Крутить'); }
 
 function syncChips() {
-  document.querySelectorAll('#genres .chip[data-id]').forEach((b) => b.setAttribute('aria-pressed', String(prefs.sel.includes(b.dataset.id))));
-  // счётчик нужен только когда упёрлись в лимит
-  $('#gCount').textContent = prefs.sel.length >= MAX ? `${MAX}/${MAX}` : '';
-  $('#gClear').disabled = !prefs.sel.length;
-  $('#genres').classList.toggle('full', prefs.sel.length >= MAX);
-  const box = $('#subs');
-  const want = prefs.sel.filter((g) => SUBS[g]);
-  for (const row of [...box.children]) if (!want.includes(row.dataset.g)) { row.classList.remove('open'); row.classList.add('closing'); setTimeout(() => row.remove(), reduce.matches ? 0 : 260); }
-  for (const g of want) {
-    let row = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`);
-    if (!row) {
-      row = document.createElement('div'); row.className = 'subrow'; row.dataset.g = g;
-      row.innerHTML = `<div class="subin"><span class="sublbl">${esc(byId[g].label)}:</span></div>`;
-      const inner = row.firstChild;
-      const any = chipEl({ id: '', label: 'Любой' }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
-      for (const sid of SUBS[g]) { const c = byId[sid]; const b = chipEl({ ...c, label: c.label.replace('Психологический триллер', 'Психологический').replace('С неожиданной развязкой', 'С твистом') }, ' sub'); b.addEventListener('click', () => pickSub(g, sid)); inner.append(b); }
-      box.append(row);
-      requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add('open')));
-    }
-    row.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.id || null) === (prefs.sub[g] || null))));
-  }
-  for (const g of want) { const r = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`); if (r) box.append(r); }
+  const full = prefs.sel.length >= MAX;
+  document.querySelectorAll('#genres .grp').forEach((grp) => {
+    const g = grp.dataset.g, on = prefs.sel.includes(g);
+    grp.querySelector('.gopt').setAttribute('aria-checked', String(on));
+    grp.classList.toggle('off', full && !on);
+    const ch = grp.querySelector('.gchev'); if (!ch) return;
+    const ex = expanded.has(g); ch.setAttribute('aria-expanded', String(ex)); grp.classList.toggle('open', ex);
+    grp.querySelectorAll('.gopt.sub').forEach((b) => { b.setAttribute('aria-checked', String(on && prefs.sub[g] === b.dataset.s)); b.tabIndex = ex ? 0 : -1; });
+  });
+  $('#gCount').textContent = prefs.sel.length ? `${prefs.sel.length} из ${MAX}` : '';
 }
 
 // режим
-document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); closePanel($('#pType')); }));
+document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); if (picker.dataset.sec === 'type') closePanel(picker); }));
 
 // десятилетия: одно или диапазон
 const NOW = new Date().getFullYear();
@@ -134,49 +142,73 @@ const rating = $('#rating');
 rating.value = prefs.rating;
 function showRating() {
   const v = Number(rating.value), k = v / 9;
-  $('#ratingOut').textContent = v ? v.toFixed(1) : 'любой';
+  $('#ratingOut').textContent = v ? v.toFixed(1) : 'любая';
   rating.style.setProperty('--k', k);
   $('#ratingOut').style.setProperty('--k', k);
 }
-rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncFilterDot(); });
+rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncFields(); });
 
 // не повторять
 const nr = $('#noRepeat');
 nr.addEventListener('click', () => { prefs.noRepeat = !prefs.noRepeat; changed(); });
-
 document.querySelectorAll('#known button').forEach((b) => b.addEventListener('click', () => { prefs.known = b.dataset.known === '1'; changed(); }));
-$('#resetBtn').addEventListener('click', () => { Object.assign(prefs, { dec: [], from: '', to: '', rating: 0, known: false, noRepeat: true }); rating.value = 0; showRating(); changed(); });
+
+const resetYears = () => Object.assign(prefs, { dec: [], from: '', to: '' });
+const resetRate = () => { Object.assign(prefs, { rating: 0, known: false, noRepeat: true }); rating.value = 0; showRating(); };
+const resetGenres = () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; };
+$('#pReset').addEventListener('click', () => {
+  const s = picker.dataset.sec;
+  if (s === 'genre' || s === 'all') resetGenres();
+  if (s === 'years' || s === 'all') resetYears();
+  if (s === 'rate' || s === 'all') resetRate();
+  if (s === 'all') prefs.mode = 'all';
+  changed();
+});
+$('#pDone').addEventListener('click', () => { const all = picker.dataset.sec === 'all'; closePanel(picker); if (all) setTimeout(spin, reduce.matches ? 0 : 220); });
 
 const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
-// фраза-запрос: «Хочу [фильм] · [ужасы, психологический] · [любые годы]»
-const TYPE_W = { movie: 'фильм', series: 'сериал', all: 'фильм или сериал' };
-const low = (x) => x.label.toLowerCase().replace('психологический триллер', 'психологический').replace('с неожиданной развязкой', 'с твистом');
-const genreText = () => { const P = pairs(); return P.length ? P.map(([g, s]) => (s ? `${low(g)}, ${low(s)}` : low(g))).join(' или ') : 'любой жанр'; };
-function filtText() {
-  const r = decRange();
-  const y = r ? (r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])}–${decLabel(r[1])}`) : (prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : '');
-  const parts = [y, Number(prefs.rating) ? `от ${Number(prefs.rating).toFixed(Number(prefs.rating) % 1 ? 1 : 0)}★` : '', prefs.known ? 'известные' : '', prefs.noRepeat ? '' : 'с повторами'].filter(Boolean);
-  return parts.length ? parts.join(' · ') : 'любые годы';
+// значения полей пульта
+const TYPE_V = { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы' };
+const low = (x) => subLabel(x).toLowerCase();
+function genreVal() {
+  const P = pairs();
+  if (!P.length) return 'Любой';
+  if (P.length === 1) { const [g, s] = P[0]; return s ? `${g.label} · ${low(s)}` : g.label; }
+  return P.slice(0, 2).map(([g]) => g.label).join(', ') + (P.length > 2 ? ` +${P.length - 2}` : '');
 }
-function syncFilterDot() {
-  $('#tType').textContent = TYPE_W[prefs.mode];
-  $('#tGenre').textContent = genreText();
-  $('#tFilt').textContent = filtText();
-  $('#tFilt').setAttribute('aria-label', 'Годы и рейтинг: ' + filtText());
-  $('#tGenre').setAttribute('aria-label', 'Жанр: ' + genreText());
-  $('#tType').setAttribute('aria-label', 'Что крутим: ' + TYPE_W[prefs.mode]);
-  $('#tGenre').classList.toggle('on', !!prefs.sel.length);
-  $('#tFilt').classList.toggle('on', filtText() !== 'любые годы');
+function yearsVal() {
+  const r = decRange();
+  if (r) return r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])} – ${decLabel(r[1])}`;
+  return prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : 'Любые';
+}
+function rateVal() {
+  const r = Number(prefs.rating);
+  const rs = r ? `от ${r.toFixed(r % 1 ? 1 : 0)}★` : '';
+  return prefs.known ? (rs ? `${rs} · известные` : 'Только известные') : rs || 'Всё подряд';
+}
+function sumVal() {
+  const parts = [prefs.mode === 'all' ? '' : TYPE_V[prefs.mode], prefs.sel.length ? genreVal() : '', yearsVal() === 'Любые' ? '' : yearsVal(), rateVal() === 'Всё подряд' ? '' : rateVal()].filter(Boolean);
+  return parts.length ? (prefs.mode === 'all' ? ['Фильмы и сериалы', ...parts] : parts).join(' · ') : 'Любой фильм или сериал';
+}
+function syncFields() {
+  const set = (id, lbl, v) => { const b = $(id); b.querySelector('span').textContent = v; b.setAttribute('aria-label', `${lbl}: ${v}`); };
+  set('#fType', 'Что', TYPE_V[prefs.mode]); set('#fGenre', 'Жанр', genreVal()); set('#fYears', 'Годы', yearsVal()); set('#fRate', 'Рейтинг', rateVal()); set('#fSum', 'Настройки', sumVal());
 }
 function syncUI() {
-  syncChips(); syncDec(); syncFilterDot();
+  syncChips(); syncDec(); syncFields();
   document.querySelectorAll('#known button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.known === '1') === !!prefs.known)));
   document.querySelectorAll('#types button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
   const bad = pairs().filter(([, s]) => (prefs.mode === 'movie' && s?.series) || (prefs.mode === 'series' && s?.movie));
   const warn = bad.length ? bad.map(([g, s]) => (s.id === 'a_movie' ? 'Аниме-фильмы' : s.label)).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
   if (warn) $('#hint').textContent = warn;
-  if (!spinning) $('#status').textContent = warn;
+  if (!spinning) say(warn);
+}
+// подсказка над пультом
+function say(msg, btn) {
+  const t = $('#toast'); $('#status').textContent = msg || '';
+  const b = $('#toastBtn'); b.hidden = !btn; if (btn) { b.textContent = btn[0]; b.onclick = () => { btn[1](); say(''); }; }
+  t.hidden = !msg;
 }
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 function applyFx(gId, sId) {
@@ -187,24 +219,32 @@ function applyFx(gId, sId) {
 }
 showRating(); syncUI(); applyFx();
 
-// листы выбора: поповер у токена на десктопе, шторка снизу на мобилке
-const DIALOGS = ['#pType', '#pGenre', '#filters', '#histPanel'].map((x) => $(x));
+// поповер над полем пульта на десктопе, шторка снизу на мобилке (там — все разделы сразу)
+const DIALOGS = [picker, $('#histPanel')];
 const anyOpen = () => DIALOGS.some((d) => d.open && !d.classList.contains('out'));
+const POPW = { type: 300, genre: 560, years: 520, rate: 400 };
 function place(d, from) {
-  d.classList.toggle('pop', !!from && !mobile());
-  if (!from || mobile()) { d.style.left = d.style.top = d.style.maxHeight = ''; return; }
-  const r = from.getBoundingClientRect(), w = Math.min(d.offsetWidth || 440, innerWidth - 24);
+  const pop = !!from && !mobile() && d === picker;
+  d.classList.toggle('pop', pop);
+  if (!pop) { d.style.left = d.style.top = d.style.maxHeight = d.style.width = ''; return; }
+  const w = Math.min(POPW[d.dataset.sec] || 440, innerWidth - 24); d.style.width = `${w}px`;
+  const r = from.getBoundingClientRect(), pr = $('#pult').getBoundingClientRect();
   const left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2));
-  // сторона, где больше места; высота поповера не больше этого места — токен никогда не перекрыт
-  const spB = innerHeight - r.bottom - 22, spA = r.top - 22, h = d.scrollHeight || 300;
-  const down = h <= spB || spB >= spA, maxH = Math.max(160, Math.min(down ? spB : spA, innerHeight * 0.8));
+  const maxH = Math.max(200, pr.top - 12 - 76), h = Math.min(d.scrollHeight || 300, maxH);
   d.style.maxHeight = `${Math.round(maxH)}px`; d.style.left = `${Math.round(left)}px`;
-  d.style.top = `${Math.round(down ? r.bottom + 10 : r.top - 10 - Math.min(h, maxH))}px`;
+  d.style.top = `${Math.round(pr.top - 12 - h)}px`;
 }
-const ro = new ResizeObserver((es) => es.forEach((e) => { const d = e.target.closest('dialog'); if (d?.open && d._from) place(d, d._from); }));
-DIALOGS.forEach((d) => d.firstElementChild && ro.observe(d.firstElementChild));
-function openPanel(d, from) {
+const ro = new ResizeObserver(() => { if (picker.open && picker._from) place(picker, picker._from); });
+ro.observe(picker.firstElementChild);
+function openPanel(d, from, sec) {
   clearTimeout(d._t); d.classList.remove('out');
+  if (d === picker) {
+    const s = mobile() ? 'all' : sec || 'all';
+    picker.dataset.sec = s;
+    $('#pReset').textContent = s === 'all' ? 'Сбросить' : s === 'years' ? 'Любые годы' : s === 'genre' ? 'Сбросить' : 'Сбросить';
+    $('#pDone').textContent = s === 'all' ? 'Показать' : 'Готово';
+    document.querySelectorAll('#pult .pf').forEach((b) => b.classList.toggle('open', b === from && s !== 'all'));
+  }
   if (!d.open) d.showModal();
   d._from = from || null; from?.setAttribute('aria-expanded', 'true'); place(d, from); requestAnimationFrame(() => place(d, from));
   document.documentElement.classList.add('locked');
@@ -213,17 +253,30 @@ function closePanel(d) {
   if (!d.open) return;
   if (reduce.matches) { d.close(); return; }
   d.classList.add('out'); clearTimeout(d._t);
-  d._t = setTimeout(() => { if (d.classList.contains('out')) { d.classList.remove('out'); d.close(); } }, 200);
+  d._t = setTimeout(() => { if (d.classList.contains('out')) { d.classList.remove('out'); d.close(); } }, d.classList.contains('pop') ? 140 : 200);
 }
 for (const d of DIALOGS) {
   d.addEventListener('click', (e) => { if (e.target === d || e.target.closest('[data-close]')) closePanel(d); });
   d.addEventListener('cancel', (e) => { e.preventDefault(); closePanel(d); });
-  d.addEventListener('close', () => { d._from?.setAttribute('aria-expanded', 'false'); if (!anyOpen() && !tm.open) document.documentElement.classList.remove('locked'); d._from?.focus?.(); });
+  d.addEventListener('close', () => {
+    d._from?.setAttribute('aria-expanded', 'false'); document.querySelectorAll('#pult .pf.open').forEach((b) => b.classList.remove('open'));
+    if (!anyOpen() && !tm.open) document.documentElement.classList.remove('locked'); d._from?.focus?.({ preventScroll: true });
+  });
 }
 addEventListener('resize', () => DIALOGS.forEach((d) => d.open && place(d, d._from)), { passive: true });
-$('#tType').addEventListener('click', (e) => openPanel($('#pType'), e.currentTarget));
-$('#tGenre').addEventListener('click', (e) => openPanel($('#pGenre'), e.currentTarget));
-$('#tFilt').addEventListener('click', (e) => openPanel(panel, e.currentTarget));
+document.querySelectorAll('#pult .pf').forEach((b) => b.addEventListener('click', () => {
+  if (spinning) return;
+  if (picker.open && picker._from === b && !picker.classList.contains('out')) return closePanel(picker);
+  openPanel(picker, b, b.dataset.sec);
+}));
+// шторка: свайп вниз закрывает
+{
+  let y0 = null;
+  picker.addEventListener('touchstart', (e) => { const inner = picker.firstElementChild; y0 = picker.classList.contains('pop') || inner.scrollTop > 0 ? null : e.touches[0].clientY; }, { passive: true });
+  picker.addEventListener('touchmove', (e) => { if (y0 == null) return; const dy = e.touches[0].clientY - y0; if (dy > 0) picker.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  picker.addEventListener('touchend', (e) => { if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; picker.style.transform = ''; y0 = null; if (dy > 90) closePanel(picker); });
+}
+const setSpin = (txt) => { $('#spin').firstChild.textContent = txt; };
 
 function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
@@ -291,11 +344,12 @@ let landedAt = null;
 async function spin() {
   if (spinning) return;
   spinning = true;
-  const btn = $('#spin'); btn.disabled = true; btn.firstChild.textContent = 'Крутим…';
-  $('#status').textContent = '';
+  const btn = $('#spin'); btn.disabled = true; setSpin('Крутим…'); document.body.classList.add('spinning');
+  if (picker.open) closePanel(picker);
+  say('');
   if (!result.hidden) await collapse();
   reel.classList.remove('landed');
-  if (mobile()) reel.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'center' });
+  scrollTo({ top: 0, behavior: reduce.matches ? 'auto' : 'smooth' });
 
   let v = 0, last = performance.now(), cruising = !reduce.matches;
   const vmax = Math.max(1800, P * 16);
@@ -310,7 +364,12 @@ async function spin() {
   const ch = await choose();
   if (ch.error) {
     cruising = false; await settle(v);
-    finish(); $('#status').textContent = ch.error;
+    finish();
+    if (ch.empty) {
+      // что сильнее режет выборку: годы/рейтинг или жанры
+      const narrow = decRange() || prefs.from || prefs.to || Number(prefs.rating) || prefs.known;
+      say('Под такие фильтры ничего не нашлось', narrow ? ['Сбросить годы и рейтинг', () => { resetYears(); resetRate(); changed(); }] : ['Убрать жанры', () => { resetGenres(); changed(); }]);
+    } else say(ch.error);
     return;
   }
   const win = ch.win;
@@ -346,11 +405,12 @@ async function spin() {
   applyFx(win.g, win.s);
   burst(1);
   remember(win.t, win.s || win.g, win.g);
-  $('#status').textContent = resetNote + (ch.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
+  const note = resetNote + (ch.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
   const center = cards.find((c) => c.vi === T);
   await new Promise((r) => setTimeout(r, reduce.matches ? 0 : 260));
   showResult(win.t, win.s || win.g, win.g, center?.getBoundingClientRect());
-  finish();
+  finish(); setSpin('Ещё раз'); say(note);
+  if (note) setTimeout(() => { if ($('#status').textContent === note) say(''); }, 6000);
 }
 const bad = new Set();
 // Подбор: пул по логике групп, затем проверка кандидата по полной карточке IMDb (интересы, страна).
@@ -376,7 +436,7 @@ async function choose() {
     bad.add(c.t.id);
   }
   const want = P.map(([g, s]) => (s ? `${g.label}, ${s.label}` : g.label).toLowerCase()).join(' или ');
-  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими фильтрами. Ослабь годы или рейтинг в «Фильтрах».` };
+  return { empty: true, error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими фильтрами.` };
 }
 async function settle(v) {
   if (reduce.matches) return;
@@ -385,7 +445,7 @@ async function settle(v) {
 }
 function finish() {
   spinning = false;
-  const btn = $('#spin'); btn.disabled = false; btn.firstChild.textContent = 'Крутить';
+  const btn = $('#spin'); btn.disabled = false; setSpin('Крутить'); document.body.classList.remove('spinning');
 }
 $('#spin').addEventListener('click', spin);
 addEventListener('keydown', (e) => {
@@ -436,45 +496,62 @@ function showResult(t, chipId, gId, fromRect) {
   open(fromRect);
   details(t).then((d) => { if (my === token) { render(d, true); patchHistory(d); } }).catch(() => {});
 }
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor"/></svg>';
 function render(t, full) {
   curT = t;
-  if (full) findTrailer(t, prefs.tlang || 'ru').catch(() => {});
+  const my = token;
   const title = t.ru || t.t;
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
-  const meta = [kindOf(t), years, isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s)].filter(Boolean);
+  const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
   const wantG = [].concat(byId[curG]?.q?.genres || []);
   const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
-  const dir = t.src === 'al' ? '' : t.directors?.length ? `реж. ${t.directors.slice(0, 2).join(', ')}` : '';
-  // описание — сюжет: раздел «Сюжет» ру-вики → сюжет IMDb/AniList → вводная вики без фраз о происхождении
+  const kick = [kindOf(t), years, genres ? genres[0].toUpperCase() + genres.slice(1) : ''].filter(Boolean);
+  const dirs = t.src === 'al' ? [] : (t.directors || []).slice(0, 2), cast = t.src === 'al' ? [] : (t.stars || []).slice(0, 3);
+  // описание: сюжет из ру-вики → вводная ру-вики без фраз о происхождении → английский сюжет с пометкой
   const ruPlot = (t.plotRu ? cleanWiki(t.plotRu) : '') || plotFromLead(cleanWiki(t.wiki || '')), lead = t.wiki ? stripOrigin(cleanWiki(t.wiki)) : '';
-  const txt = ruPlot || t.p || lead, isEn = !ruPlot && !!t.p;
-  const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
+  const txt = ruPlot || lead || t.p, isEn = !ruPlot && !lead && !!t.p;
+  const desc = txt ? `${isEn ? '<p class="elabel">Описание на английском</p>' : ''}<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
-  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
+  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 800)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
+  const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
+  const facts = [
+    t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
+    dur ? fact(isSeries ? 'Сезоны' : 'Длительность', esc(dur)) : '',
+    dirs.length ? fact(dirs.length > 1 ? 'Режиссёры' : 'Режиссёр', esc(dirs.join(', ')), ' dir') : '',
+    cast.length ? fact('В ролях', esc(cast.join(', ')), ' cast') : '',
+  ].join('');
+  const tr = trState.get(t.id);
   const infoHTML = `
     <div class="info">
-      <div class="trow"><h2>${esc(title)}</h2>${t.r ? `<span class="score" aria-label="Рейтинг ${t.r.toFixed(1)}"><b aria-hidden="true">★</b> ${t.r.toFixed(1)}</span>` : ''}</div>
+      <p class="kick">${kick.map((x) => `<span>${esc(x)}</span>`).join('')}</p>
+      <h2 class="${title.length > 34 ? 'xl' : title.length > 18 ? 'l' : ''}">${esc(title)}</h2>
       ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : ''}
-      <p class="meta">${esc([...meta, genres, dir].filter(Boolean).join(' · '))}</p>
+      ${facts ? `<div class="facts">${facts}</div>` : ''}
       ${desc}
       <div class="actions">
-        <button class="btn primary" type="button" data-act="trailer">${ico.play}Трейлер</button>
+        <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="again">${ico.redo}Другой</button>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
     </div>
   `;
-  if (keepPoster) { result.querySelector('.info')?.remove(); result.querySelector('.recent')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
+  if (keepPoster) { result.querySelector('.info')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
   else result.innerHTML = posterHTML + infoHTML;
-  result.querySelector('.crumb')?.remove();
-  result.insertAdjacentHTML('afterbegin', `<button class="crumb" type="button" data-act="edit">${esc(crumbText())}<span class="dot" aria-hidden="true"> · </span><u>Изменить</u></button>`);
   const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
   if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
+  // есть ли трейлер: если не нашёлся ни на одном языке — кнопка «Трейлера нет»
+  if (full && tr == null) {
+    const l = prefs.tlang || 'ru';
+    findTrailer(t, l).then((r) => r || findTrailer(t, l === 'ru' ? 'en' : 'ru')).catch(() => null).then((r) => {
+      trState.set(t.id, !!r);
+      if (!r && my === token && curT?.id === t.id) { const b = result.querySelector('[data-act="trailer"]'); if (b) { b.disabled = true; b.textContent = 'Трейлера нет'; } }
+    });
+  }
 }
+const trState = new Map();
 const SPRING = 'cubic-bezier(.2, 1.25, .35, 1)';
 function open(fromRect) {
   const was = !result.hidden;
@@ -484,11 +561,10 @@ function open(fromRect) {
   if (!was && fromRect && img && !reduce.matches) {
     const to = img.getBoundingClientRect();
     const dx = fromRect.left - to.left, dy = fromRect.top - to.top, sx = fromRect.width / to.width, sy = fromRect.height / to.height;
-    img.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '6px' }, { transform: 'none' }], { duration: 520, easing: SPRING });
-    result.querySelectorAll('.info, .recent').forEach((el, i) => el.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 160 + i * 80, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' }));
+    img.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '6px' }, { transform: 'none' }], { duration: 460, easing: 'cubic-bezier(.16,1,.3,1)' });
+    result.querySelectorAll('.info > *').forEach((el, i) => el.animate([{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 320, delay: 200 + i * 40, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' }));
     result.animate([{ backgroundColor: 'rgb(12 11 10 / 0)', borderColor: 'transparent' }, {}], { duration: 420, easing: 'ease-out' });
   }
-  if (mobile()) stage.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' });
 }
 // «Ещё раз»: карточка сворачивается обратно в кадр плёнки
 async function collapse() {
@@ -498,7 +574,7 @@ async function collapse() {
     const to = { left: gate.left + 6, top: gate.top + 6, width: CW, height: CW * 1.5 };
     const dx = to.left - from.left, dy = to.top - from.top, sx = to.width / from.width, sy = to.height / from.height;
     const a = img.animate([{ transform: 'none' }, { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '6px' }], { duration: 380, easing: 'cubic-bezier(.5,0,.2,1)', fill: 'forwards' });
-    result.querySelectorAll('.info, .recent').forEach((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }));
+    result.querySelectorAll('.info').forEach((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }));
     result.animate([{}, { backgroundColor: 'rgb(12 11 10 / 0)', borderColor: 'transparent' }], { duration: 300, fill: 'forwards' });
     await a.finished.catch(() => {});
   }
@@ -524,7 +600,7 @@ result.addEventListener('click', (e) => {
   const act = b.dataset.act;
   if (act === 'trailer') openTrailer(curT, b);
   if (act === 'again') spin();
-  if (act === 'edit') { if (!spinning) collapse().then(() => $('#tGenre').focus()); }
+  if (act === 'edit') { if (!spinning) collapse().then(() => $('#fGenre').focus()); }
   if (act === 'more') { $('#desc').classList.add('open'); b.remove(); }
   if (act === 'where') {
     const w = $('#where'), op = w.hidden; w.hidden = !op; b.setAttribute('aria-expanded', op);

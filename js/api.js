@@ -292,6 +292,7 @@ export async function core(id) {
     interests: (full.interests || []).map((x) => x.id),
     countries: (full.originCountries || []).map((x) => x.code),
     directors: (full.directors || []).map((d) => d.displayName),
+    stars: (full.stars || []).map((d) => d.displayName),
     meta: full.metacritic?.score,
   });
 }
