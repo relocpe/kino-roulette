@@ -28,14 +28,22 @@ button:disabled { cursor: default; }
 h1, h2, h3, p { margin: 0; }
 
 /* эффекты: только в сцене барабана, к низу маска до сплошного фона */
-.fxwrap { position: absolute; inset: 0 0 auto; height: 100vh; height: 100lvh; z-index: 0; pointer-events: none; overflow: hidden;
-  -webkit-mask-image: linear-gradient(#000 0, #000 calc(var(--fxEnd) - 22vh), rgb(0 0 0 / .14) var(--fxEnd), transparent calc(var(--fxEnd) + 12vh));
-  mask-image: linear-gradient(#000 0, #000 calc(var(--fxEnd) - 22vh), rgb(0 0 0 / .14) var(--fxEnd), transparent calc(var(--fxEnd) + 12vh)); }
-#gl, #fx, #fxTop, .overlay { position: absolute; inset: 0; width: 100vw; height: 100%; }
-.overlay { opacity: 0; transition: opacity .6s var(--ease); background-image: var(--grain); background-size: 160px; mix-blend-mode: overlay; }
-body[data-fx="documentary"] .overlay, body[data-fx="cult"] .overlay, body[data-fx="noir"] .overlay, body[data-fx="horror"] .overlay { opacity: .5; animation: grain .5s steps(4) infinite; }
-body.fx-still .overlay { animation: none; }
-@keyframes grain { 0% { background-position: 0 0 } 25% { background-position: -40px 20px } 50% { background-position: 30px -50px } 75% { background-position: -20px -10px } }
+.fxwrap { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; transform-origin: 50% 45%; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+body.nogl .fxwrap { background: radial-gradient(120% 80% at 50% 40%, #15120f, var(--bg)); }
+body.nogl #gl { visibility: hidden; }
+/* результат: фон под колонкой текста гаснет до 10% */
+body.has-result .fxwrap { -webkit-mask-image: linear-gradient(90deg, #000 var(--pw), rgb(0 0 0 / .1) calc(var(--pw) + 18vw)); mask-image: linear-gradient(90deg, #000 var(--pw), rgb(0 0 0 / .1) calc(var(--pw) + 18vw)); }
+/* грейд карточек: боковые 100%, центральная ≤25%; зерно 24 к/с только на боковых */
+.card { filter: url(#gS); }
+.card.c, .poster img { filter: url(#gC); }
+.card::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--grain) 0 0 / var(--gS, 128px) calc(var(--gS, 128px) * 8); mix-blend-mode: overlay; opacity: var(--gA, .15); animation: grain24 .3333s steps(8) infinite; }
+.card.c::after { opacity: 0; }
+@keyframes grain24 { to { background-position: 0 calc(var(--gS, 128px) * -8); } }
+body.fx-still .card::after { animation: none; }
+.vig { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 40%, rgb(0 0 0 / var(--vig, .3)) 100%); }
+.fxtop { position: fixed; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+.fxl { position: absolute; pointer-events: none; will-change: transform, opacity; }
 .backdrop { position: fixed; inset: -120px; z-index: 1; pointer-events: none; opacity: 0; background: center / cover no-repeat; filter: blur(80px) saturate(1.1); transition: opacity .6s var(--ease); }
 body.has-result .backdrop { opacity: .3; }
 
@@ -246,20 +254,6 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .phead h2 { font-size: 19px; font-weight: 600; }
 .px { border: 0; background: rgb(241 235 226 / .06); width: 38px; height: 38px; border-radius: 50%; font-size: 14px; color: var(--ink-2); }
-/* жанровые импульсы */
-.fx-shake .stage { animation: shake .38s cubic-bezier(.36,.07,.19,.97); }
-@keyframes shake { 10%, 90% { transform: translate(-2px, 1px) } 20%, 80% { transform: translate(4px, -2px) } 30%, 50%, 70% { transform: translate(-6px, 2px) } 40%, 60% { transform: translate(6px, -1px) } }
-.fx-glitch .reel { animation: glitch .25s steps(3); }
-@keyframes glitch { 0% { transform: translate(3px, 0); filter: drop-shadow(-4px 0 rgb(255 0 60 / .8)) drop-shadow(4px 0 rgb(0 220 255 / .8)); clip-path: inset(10% 0 30% 0); }
-  50% { transform: translate(-4px, 1px); clip-path: inset(40% 0 5% 0); } 100% { transform: none; filter: none; clip-path: inset(0); } }
-.fx-vhs .reel { animation: vhsjit .3s steps(4); }
-@keyframes vhsjit { 0% { transform: translate(-3px, 1px) } 33% { transform: translate(4px, -1px) skewX(.6deg) } 66% { transform: translate(-2px, 0) } 100% { transform: none } }
-body[data-fx="horror"] .card img { filter: saturate(.55) contrast(1.08) brightness(.92); }
-body[data-fx="slasher"] .card img { filter: contrast(1.1) saturate(.8); }
-body[data-fx="noir"] .card img, body[data-fx="crime"] .card img { filter: grayscale(1) contrast(1.1); }
-body[data-fx="western"] .card img { filter: sepia(.35) saturate(1.1); }
-body[data-fx="psycho"] .reel { transform: scale(var(--breath, 1)) skewX(var(--skew, 0deg)); transform-origin: 50% 50%; }
-body.nofx .fxwrap { display: none; }
 
 
 @media (max-width: 760px) {
@@ -284,6 +278,7 @@ body.nofx .fxwrap { display: none; }
   @keyframes tin { from { opacity: 0; transform: translateY(8px); } }
   /* результат: постер во всю ширину сверху, ниже текст */
   .result { top: -52px; display: block; }
+  body.has-result .fxwrap { -webkit-mask-image: linear-gradient(#000 45dvh, rgb(0 0 0 / .1) 70dvh); mask-image: linear-gradient(#000 45dvh, rgb(0 0 0 / .1) 70dvh); }
   .poster { position: relative; width: 100%; height: min(54dvh, 130vw); }
   .poster img { object-position: 50% 22%; }
   .poster::before { z-index: 1; }
@@ -331,7 +326,6 @@ body.nofx .fxwrap { display: none; }
 @keyframes pup { from { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  body[data-fx="psycho"] .reel { transform: none; }
 }
 /* трейлер */
 .tmodal { padding: 0; border: 0; background: transparent; max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; color: var(--ink); overflow: hidden; }

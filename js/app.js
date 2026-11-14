@@ -1,7 +1,7 @@
-import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=8';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=8';
-import { setFx, burst, glInfo, setMotion } from './fx.js?v=8';
-import { findTrailer, ytSearch } from './trailer.js?v=8';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=9';
+import { findTrailer, ytSearch } from './trailer.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -44,7 +44,7 @@ function motion(on, user) {
   fxBtn.title = on ? 'Эффекты: вкл' : 'Эффекты: выкл';
   setMotion(on);
 }
-motion(prefs.fx ?? !coarse);
+motion(prefs.fx ?? true);
 fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') !== 'true', true));
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 
@@ -89,11 +89,11 @@ function toggle(id, b) {
   else if (prefs.sel.length >= MAX) return hint(`Максимум ${MAX} жанра. Сними один, чтобы добавить «${byId[id].label}».`, b);
   else { prefs.sel = [...prefs.sel, id]; if (SUBS[id]) expanded.add(id); }
   $('#hint').textContent = '';
-  changed(); if (on) burst(0.5);
+  changed();
 }
 function pickSub(g, s) {
   if (s && prefs.sub[g] !== s) prefs.sub[g] = s; else delete prefs.sub[g];
-  changed(); if (s) burst(0.5);
+  changed();
 }
 function changed() { syncUI(); savePrefs(); applyFx(); if (document.body.classList.contains('has-result') && !spinning) setSpin('Крутить'); }
 
@@ -211,12 +211,12 @@ function say(msg, btn) {
   t.hidden = !msg;
 }
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
-function applyFx(gId, sId) {
-  let g = byId[gId], s = byId[sId];
-  if (!g && !s) { const p = pairs()[0]; if (p) [g, s] = p; }
-  const main = s || g;
-  setFx(main ? main.fx : 'idle', main?.accent, s && g ? g.fx : null);
-}
+// играет один жанр — старший по приоритету среди выбранных; на остановке — среди жанров выпавшего тайтла
+const selG = () => pairs().map(([g]) => g.id);
+const IMDB2G = {}; for (const g of GENRES) for (const n of [].concat(g.q?.genres || [])) IMDB2G[n] = g.id;
+function titleG(t) { const ids = (t.g || []).map((n) => IMDB2G[n]).filter(Boolean); if (t.src === 'al') ids.push('anime'); return ids; }
+function applyFx() { setGenre(top1(selG())); }
+function landFx(t) { const sel = selG(); if (!sel.length) return setGenre('none'); const both = titleG(t).filter((x) => sel.includes(x)); setGenre(top1(both.length ? both : sel)); }
 showRating(); syncUI(); applyFx();
 
 // поповер над полем пульта на десктопе, шторка снизу на мобилке (там — все разделы сразу)
@@ -328,6 +328,7 @@ function paint(force) {
     const d = Math.min(1, Math.abs(x - CX) / (P * 2.4));
     el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * 0.12).toFixed(3)})`;
     el.style.opacity = (1 - d * 0.5).toFixed(3);
+    const c = Math.abs(x - CX) < P / 2; if (el.classList.contains('c') !== c) el.classList.toggle('c', c);
   }
   reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
 }
@@ -349,6 +350,10 @@ async function spin() {
   say('');
   if (!result.hidden) await collapse();
   reel.classList.remove('landed');
+  applyFx(); phase('spin');
+  const P0 = plan(); let lastQ = -1;
+  // квантование картинки барабана (война 24 к/с, мелодрама 8 к/с)
+  const draw = (now) => { if (P0.fps) { const q = Math.floor(now / (1000 / P0.fps)); if (q === lastQ) return; lastQ = q; } paint(); };
   scrollTo({ top: 0, behavior: reduce.matches ? 'auto' : 'smooth' });
 
   let v = 0, last = performance.now(), cruising = !reduce.matches;
@@ -356,7 +361,7 @@ async function spin() {
   const cruise = (now) => {
     if (!cruising) return;
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    v = Math.min(vmax, v + vmax * dt * 2.5); pos += v * dt; paint(); requestAnimationFrame(cruise);
+    v = Math.min(vmax, v + vmax * dt * 2.5); pos += v * dt; onReel(v); draw(now); requestAnimationFrame(cruise);
   };
   requestAnimationFrame(cruise);
   const t0 = performance.now();
@@ -364,7 +369,7 @@ async function spin() {
   const ch = await choose();
   if (ch.error) {
     cruising = false; await settle(v);
-    finish();
+    phase('idle'); finish();
     if (ch.empty) {
       // что сильнее режет выборку: годы/рейтинг или жанры
       const narrow = decRange() || prefs.from || prefs.to || Number(prefs.rating) || prefs.known;
@@ -391,24 +396,36 @@ async function spin() {
     items.set(T, win.t);
     cards.forEach((c) => { if (Math.abs(c.vi - T) <= 6) c.vi = null; });
     const p0 = pos, dist = T * P - p0, D = (4 * dist) / vNow * 1000;
+    // кривая торможения по жанру: обычная, рапид в конце (мелодрама), почти стоп-кадр + доворот (боевик), перелёт и возврат (комедия)
+    const kind = P0.land;
+    const quart = (u) => 1 - Math.pow(1 - u, 4);
+    let curve = quart, total = D;
+    if (kind === 'rapid' && D > 1600) { const a = D - 1200, cA = D - 480; curve = (u) => { const tt = u * D; const tc = tt < a ? tt * (cA / a) : cA + (tt - a) * 0.4; return quart(Math.min(1, tc / D)); }; }
+    if (kind === 'slowmo') {
+      // почти стоп-кадр ×0.2 за 300ms до остановки, потом доворот 120ms
+      const rem = Math.min(0.5, (P * 0.35) / dist), pA = 1 - rem, pB = pA + rem * 0.25, a = Math.max(400, D - 300); total = a + 420;
+      curve = (u) => { const tt = u * total; if (tt < a) return pA * (1 - Math.pow(1 - tt / a, 3)); if (tt < a + 300) return pA + (pB - pA) * ((tt - a) / 300); return pB + (1 - pB) * (1 - Math.pow(1 - (tt - a - 300) / 120, 3)); };
+    }
+    if (kind === 'overshoot') { const ov = (P * 0.18) / dist; total = D + 220; curve = (u) => { const tt = u * total; if (tt < D) return quart(tt / D) * (1 + ov); const k = (tt - D) / 220; return 1 + ov * (1 - k * k * (3 - 2 * k)); }; }
     await new Promise((done) => {
-      const s = performance.now();
+      const s = performance.now(); let pv = pos, pt = s;
       const step = (now) => {
-        const u = Math.min(1, (now - s) / D);
-        pos = p0 + dist * (1 - Math.pow(1 - u, 4)); paint();
-        if (u < 1) requestAnimationFrame(step); else done();
+        const u = Math.min(1, (now - s) / total);
+        pos = p0 + dist * curve(u); onReel((pos - pv) / Math.max(0.001, (now - pt) / 1000)); pv = pos; pt = now; draw(now);
+        if (u < 1) requestAnimationFrame(step); else { paint(); done(); }
       };
       requestAnimationFrame(step);
     });
   }
-  reel.classList.add('landed');
-  applyFx(win.g, win.s);
-  burst(1);
+  reel.classList.add('landed'); onReel(0);
+  landFx(win.t); phase('land');
   remember(win.t, win.s || win.g, win.g);
   const note = resetNote + (ch.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
   const center = cards.find((c) => c.vi === T);
-  await new Promise((r) => setTimeout(r, reduce.matches ? 0 : 260));
+  const hold = wow(center);
+  await new Promise((r) => setTimeout(r, reduce.matches ? 0 : hold));
   showResult(win.t, win.s || win.g, win.g, center?.getBoundingClientRect());
+  phase('result');
   finish(); setSpin('Ещё раз'); say(note);
   if (note) setTimeout(() => { if ($('#status').textContent === note) say(''); }, 6000);
 }
@@ -515,7 +532,7 @@ function render(t, full) {
   const desc = txt ? `${isEn ? '<p class="elabel">Описание на английском</p>' : ''}<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
-  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 800)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
+  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
   const facts = [
     t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
@@ -580,6 +597,7 @@ async function collapse() {
   }
   result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
   result.hidden = true; result.innerHTML = ''; stage.classList.remove('show'); document.body.classList.remove('has-result');
+  phase('idle');
 }
 function whereLinks(t, title) {
   const q = encodeURIComponent(title), qy = encodeURIComponent(`${title} ${t.y || ''}`.trim()), qo = encodeURIComponent(t.t);
@@ -595,7 +613,7 @@ function whereLinks(t, title) {
 result.addEventListener('click', (e) => {
   const mini = e.target.closest('.rmini');
   if (mini && spinning) return;
-  if (mini) { const h = hist.find((x) => x.id === mini.dataset.id); if (h) { applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null); result.innerHTML = ''; result.hidden = true; showResult(h, h.chip, h.gc, mini.getBoundingClientRect()); } return; }
+  if (mini) { const h = hist.find((x) => x.id === mini.dataset.id); if (h) { landFx(h); result.innerHTML = ''; result.hidden = true; showResult(h, h.chip, h.gc, mini.getBoundingClientRect()); } return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act;
   if (act === 'trailer') openTrailer(curT, b);
@@ -674,7 +692,7 @@ $('#hlist').addEventListener('click', (e) => {
   const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
   const r = b.querySelector('img').getBoundingClientRect();
   $('#histPanel').close();
-  applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null);
+  landFx(h);
   result.innerHTML = ''; result.hidden = true;
   showResult(h, h.chip, h.gc, r);
 });
@@ -684,7 +702,7 @@ drawHistory();
 
 // для тестов
 window.__kr = {
-  spin, setFx, burst, choose, gl: () => glInfo(), cleanWiki,
+  spin, setGenre, phase, wow: (id) => { setGenre(id); return wow(cards.find((c) => c.classList.contains('c'))); }, genreNow, choose, gl: () => glInfo(), cleanWiki,
   // sel: ['horror', 'comedy'], extra: {sub: {horror: 'slasher'}, from, to, rating, noRepeat}
   set(sel, mode = 'all', extra = {}) {
     prefs.sel = sel; prefs.sub = extra.sub || {}; prefs.mode = mode; prefs.dec = []; Object.assign(prefs, extra);

@@ -15,15 +15,10 @@
 
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
-<link rel="stylesheet" href="css/app.css?v=8">
+<link rel="stylesheet" href="css/app.css?v=9">
 </head>
 <body data-fx="idle">
-<div class="fxwrap" aria-hidden="true">
-  <canvas id="gl"></canvas>
-  <canvas id="fx"></canvas>
-  <div class="overlay"></div>
-  <canvas id="fxTop"></canvas>
-</div>
+<div class="fxwrap" aria-hidden="true"><canvas id="gl"></canvas></div>
 <div class="backdrop" id="backdrop" aria-hidden="true"></div>
 
 <header class="top">
@@ -41,12 +36,14 @@
   <section class="stage" id="stage" aria-label="Барабан">
     <div class="reel" id="reel" aria-hidden="true">
       <div class="strip" id="strip"></div>
+      <div class="vig" id="vig"></div>
       <div class="gate" id="gate"><i></i><i></i><i></i><i></i></div>
     </div>
     <article class="result" id="result" hidden tabindex="-1" aria-live="polite"></article>
   </section>
 </main>
 
+<div class="fxtop" id="fxTop" aria-hidden="true"></div>
 <div class="toast" id="toast" hidden><p class="status" id="status" role="status" aria-live="polite"></p><button class="tbtn" id="toastBtn" type="button" hidden></button></div>
 
 <div class="pult" id="pult" role="group" aria-label="Что крутим">
@@ -115,6 +112,6 @@
 </dialog>
 
 
-<script type="module" src="js/app.js?v=8"></script>
+<script type="module" src="js/app.js?v=9"></script>
 </body>
 </html>
