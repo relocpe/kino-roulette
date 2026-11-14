@@ -210,3 +210,44 @@ body[data-fx="slasher"] .card img { filter: contrast(1.1) saturate(.8); }
 @media (max-width: 480px) { .sound span { display: none; } }
 @media (prefers-reduced-motion: reduce) { body[data-fx="psycho"] .reel, body[data-fx="psycho"] h1 { transform: none; } }
 #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100lvh; z-index: 0; pointer-events: none; }
+
+/* выбор жанра: один / до трёх, уточнения под жанром */
+.ghead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.ghead .label { margin: 0; }
+.count-seg { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: rgb(255 255 255 / .03); }
+.count-seg button { border: 0; background: none; color: var(--ink-3); font-size: 12.5px; padding: 4px 11px; border-radius: 999px; min-height: 28px; transition: background-color .2s, color .2s; }
+.count-seg button[aria-checked="true"] { background: rgb(239 232 220 / .14); color: var(--ink); }
+.subs { display: grid; }
+.subrow { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .32s cubic-bezier(.2,.8,.2,1), opacity .25s, margin .32s; margin-top: 0; }
+.subrow.open { grid-template-rows: 1fr; opacity: 1; margin-top: 10px; }
+.subrow.closing { grid-template-rows: 0fr; opacity: 0; margin-top: 0; }
+.subin { overflow: hidden; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-left: 12px; border-left: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); min-height: 0; }
+.sublbl { font-size: 12.5px; color: var(--ink-3); margin-right: 4px; }
+.chip.sub { font-size: 13px; min-height: 32px; padding-block: 4px; }
+.chip.sub::before { width: 5px; height: 5px; }
+.chip.nope { animation: nope .38s cubic-bezier(.36,.07,.19,.97); border-color: #ffb4a8; }
+@keyframes nope { 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@media (max-width: 900px) { .subin { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .subin::-webkit-scrollbar { display: none; } .chip.sub { white-space: nowrap; } }
+
+/* трейлер */
+.tmodal { padding: 0; border: 0; background: transparent; max-width: none; max-height: none; width: 100%; height: 100%; margin: 0; color: var(--ink); overflow: hidden; }
+.tmodal::backdrop { background: rgb(4 3 2 / .86); backdrop-filter: blur(10px); }
+.tmodal[open] { display: grid; place-items: center; }
+.tm-box { width: min(1180px, 94vw, calc((100dvh - 120px) * 16 / 9)); animation: tmIn .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes tmIn { from { opacity: 0; transform: scale(.94); clip-path: inset(45% 0 45% 0); } to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); } }
+.tm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.tm-head h3 { margin: 0; font: 600 22px/1.2 Cormorant, serif; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+.tm-lang { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.tm-lang button { border: 0; background: none; color: var(--ink-3); font-size: 12.5px; padding: 4px 10px; border-radius: 999px; min-height: 28px; }
+.tm-lang button[aria-pressed="true"] { background: rgb(239 232 220 / .14); color: var(--ink); }
+.tm-yt { color: var(--ink-3); font-size: 13px; text-decoration: none; }
+.tm-yt:hover { color: var(--ink); }
+.tm-x { border: 1px solid var(--line); background: rgb(255 255 255 / .05); color: var(--ink); width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
+.tm-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; box-shadow: 0 40px 120px -20px #000, 0 0 0 1px rgb(255 255 255 / .06), 0 0 120px -30px var(--accent); }
+.tm-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.tm-load { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: 15px; text-align: center; padding: 20px; }
+.tm-load a { color: var(--ink); }
+html.tm-on { overflow: hidden; }
+@media (max-width: 600px) { .tm-head h3 { font-size: 18px; } .tm-yt { display: none; } }
+@media (prefers-reduced-motion: reduce) { .tm-box { animation: none; } .subrow { transition: none; } .chip.nope { animation: none; } }

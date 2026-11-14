@@ -7,6 +7,7 @@ export const GENRES = [
   { id: 'scifi', label: 'Фантастика', q: { genres: 'Sci-Fi' }, fx: 'scifi', accent: '#6ea8ff' },
   { id: 'fantasy', label: 'Фэнтези', q: { genres: 'Fantasy' }, fx: 'fantasy', accent: '#b18cff' },
   { id: 'action', label: 'Боевик', q: { genres: 'Action' }, fx: 'action', accent: '#ff8a2a' },
+  { id: 'adventure', label: 'Приключения', q: { genres: 'Adventure' }, fx: 'adventure', accent: '#e8b04a' },
   { id: 'comedy', label: 'Комедия', q: { genres: 'Comedy' }, fx: 'comedy', accent: '#ffd23f' },
   { id: 'drama', label: 'Драма', q: { genres: 'Drama' }, fx: 'drama', accent: '#8fb3c9' },
   { id: 'romance', label: 'Мелодрама', q: { genres: 'Romance' }, fx: 'romance', accent: '#ff7aa2' },
@@ -50,6 +51,24 @@ export const LISTS = {
 };
 
 export const ALL = [...GENRES, ...MOODS];
+// какие уточнения показываются под каждым жанром (поджанр сужает только свой жанр)
+export const SUBS = {
+  horror: ['psycho', 'slasher', 'cult'],
+  thriller: ['psycho', 'twist', 'detective'],
+  scifi: ['cyberpunk', 'postapoc', 'dystopia'],
+  fantasy: ['anime'],
+  action: ['cyberpunk', 'postapoc', 'cult'],
+  adventure: ['postapoc'],
+  comedy: ['sitcom', 'cult'],
+  drama: ['kdrama', 'mini'],
+  romance: ['kdrama'],
+  crime: ['detective', 'noir', 'truecrime'],
+  mystery: ['detective', 'twist', 'noir'],
+  animation: ['anime'],
+  documentary: ['truecrime'],
+  western: ['cult'],
+  war: ['mini'],
+};
 export const isGenre = new Set(GENRES.map((c) => c.id));
 export const byId = Object.fromEntries(ALL.map((c) => [c.id, c]));
 

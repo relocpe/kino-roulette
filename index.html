@@ -15,7 +15,7 @@
 <link rel="preload" href="fonts/cormorant-cyrillic-600-italic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
-<link rel="stylesheet" href="css/app.css?v=3">
+<link rel="stylesheet" href="css/app.css?v=4">
 </head>
 <body data-fx="idle">
 <canvas id="gl" aria-hidden="true"></canvas>
@@ -37,7 +37,7 @@
 <main class="layout">
   <aside class="controls" aria-label="Фильтры">
     <h1>Что смотрим<br><em>сегодня?</em></h1>
-    <p class="lede">Отметь жанры или настроение и крути барабан. Если отметишь несколько, выпадет любой из них.</p>
+    <p class="lede">Выбери жанр и крути барабан.</p>
 
     <div class="seg" role="radiogroup" aria-label="Что ищем">
       <button type="button" role="radio" data-mode="movie">Фильмы</button>
@@ -45,14 +45,17 @@
       <button type="button" role="radio" data-mode="all">Всё</button>
     </div>
 
-    <fieldset class="group">
-      <legend>Жанры</legend>
-      <div class="chips" id="genres"></div>
-    </fieldset>
-    <fieldset class="group">
-      <legend>Поджанры и настроение</legend>
-      <div class="chips" id="moods"></div>
-    </fieldset>
+    <div class="group">
+      <div class="ghead">
+        <span class="label" id="gLbl">Жанр</span>
+        <div class="count-seg" role="radiogroup" aria-label="Сколько жанров">
+          <button type="button" role="radio" data-multi="0">Один</button>
+          <button type="button" role="radio" data-multi="1">До 3</button>
+        </div>
+      </div>
+      <div class="chips" id="genres" role="group" aria-labelledby="gLbl"></div>
+      <div class="subs" id="subs"></div>
+    </div>
 
     <div class="filters">
       <div class="field">
@@ -92,10 +95,24 @@
   </section>
 </main>
 
+<dialog class="tmodal" id="tmodal" aria-labelledby="tmTitle">
+  <div class="tm-box">
+    <div class="tm-head">
+      <h3 id="tmTitle"></h3>
+      <div class="tm-tools">
+        <div class="tm-lang" role="group" aria-label="Язык трейлера"><button type="button" data-lang="ru">RU</button><button type="button" data-lang="en">EN</button></div>
+        <a class="tm-yt" id="tmYt" target="_blank" rel="noopener">YouTube ↗</a>
+        <button class="tm-x" type="button" data-close aria-label="Закрыть">✕</button>
+      </div>
+    </div>
+    <div class="tm-frame" id="tmFrame"></div>
+  </div>
+</dialog>
+
 <footer class="foot">
   <p>Данные о фильмах: IMDb через открытый API (api.tiffara.com) и Википедия. Смотреть — только на легальных сервисах.</p>
 </footer>
 
-<script type="module" src="js/app.js?v=3"></script>
+<script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>

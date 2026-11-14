@@ -89,6 +89,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, ge
 addEventListener('kr:fx', (e) => { const id = e.detail.id, two = e.detail.second; scene = SCENES[id] ? id : SCENES[two] ? two : null; apply(); });
 addEventListener('kr:burst', (e) => { if (!ac || !on || !scene || e.detail.k < 1) return; if (scene === 'slasher') return; if (scene === 'horror') boom(); });
 addEventListener('kr:sfx', (e) => { if (!ac || !on) return; if (e.detail === 'slash') swoosh(); if (e.detail === 'whisper') { nodes.wenv.gain.setTargetAtTime(1, ac.currentTime, 0.05); } });
+addEventListener('kr:trailer', (e) => { if (!ac) return; e.detail ? ac.suspend() : (on && !document.hidden && ac.resume()); });
 document.addEventListener('visibilitychange', () => { if (!ac) return; document.hidden ? ac.suspend() : (on && ac.resume()); apply(); });
 
 function label() { btn.setAttribute('aria-pressed', on); btn.querySelector('span').textContent = on ? 'Звук вкл' : 'Звук выкл'; }

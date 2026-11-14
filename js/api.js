@@ -1,4 +1,4 @@
-import { LISTS } from './chips.js?v=3';
+import { LISTS } from './chips.js?v=4';
 
 const B = 'https://api.tiffara.com';
 const IMG = 'https://m.media-amazon.com/images/M/';
@@ -13,7 +13,7 @@ async function snap() {
   return snapshot;
 }
 
-async function getJSON(url, ms = 9000) {
+export async function getJSON(url, ms = 9000) {
   const key = 'k:' + url;
   try { const c = sessionStorage.getItem(key); if (c) return JSON.parse(c); } catch {}
   const ctl = new AbortController();
@@ -112,25 +112,28 @@ async function queryPair(g, s, f) {
 }
 async function fallbackPair(g, s) {
   const sn = await snap();
-  const ids = s ? sn.chips[s.id] || [] : g ? sn.chips[g.id] || [] : Object.keys(sn.titles);
+  const ids = (s ? sn.chips[s.id] : g ? sn.chips[g.id] : null) || Object.keys(sn.titles);
   return ids.map((id) => sn.titles[id]).filter(Boolean);
 }
 
-// Логика: ИЛИ внутри «Жанров», ИЛИ внутри «Поджанров», И между группами.
-// Возвращает пул [{t, g, s}] — каждый тайтл с парой чипов, которой он соответствует.
-export async function getPool(G, S, f) {
-  if (f.mode === 'movie' && S.length && S.every((s) => s.series)) return { pool: [], conflict: true };
-  const Sx = f.mode === 'movie' ? S.filter((s) => !s.series) : S;
-  const pairs = [];
-  for (const g of G.length ? G : [null]) for (const s of Sx.length ? Sx : [null]) pairs.push([g, s]);
+// Логика: ИЛИ между выбранными жанрами; поджанр сужает только свой жанр.
+// pairs: [[жанр|null, поджанр|null], ...]. Возвращает пул [{t, g, s}].
+export async function getPool(P, f) {
+  let pairs = P.length ? P.slice() : [[null, null]];
+  if (f.mode === 'movie') {
+    const ok = pairs.filter(([, s]) => !s?.series);
+    if (!ok.length) return { pool: [], conflict: true };
+    pairs = ok;
+  }
+  if (pairs.length === 1) pairs.push(pairs[0]);
   pairs.sort(() => Math.random() - 0.5);
   let offline = false;
   const pool = [], seen = new Set();
   const run = async (batch) => {
     const parts = await Promise.all(batch.map(async ([g, s]) => {
-      let list;
-      try { list = await queryPair(g, s, f); } catch { offline = true; list = await fallbackPair(g, s); }
-      return list.filter((t) => matchLocal(t, g, s, f)).map((t) => ({ t, g: g?.id || null, s: s?.id || null }));
+      let list, snap = !!s?.list;
+      try { list = await queryPair(g, s, f); } catch { offline = true; snap = true; list = await fallbackPair(g, s); }
+      return list.filter((t) => matchLocal(t, g, s, f)).map((t) => ({ t, g: g?.id || null, s: s?.id || null, snap }));
     }));
     for (const part of parts) for (const x of part) if (!seen.has(x.t.id)) { seen.add(x.t.id); pool.push(x); }
   };
@@ -164,8 +167,10 @@ export async function details(t) {
     wiki(t.id).catch(() => null),
   ]);
   const out = { ...t, ...(full || {}) };
-  const ru = akas?.akas?.find((a) => a.country?.code === 'RU') || akas?.akas?.find((a) => a.language?.code === 'ru');
-  out.ru = ru?.text || w?.label || null;
+  const cyr = (a) => /[а-яё]/i.test(a?.text || '');
+  const A = akas?.akas || [];
+  const ru = A.find((a) => a.country?.code === 'RU' && cyr(a)) || A.find((a) => a.language?.code === 'ru' && cyr(a));
+  out.ru = ru?.text || (cyr({ text: w?.label }) ? w.label : null) || null;
   if (seasons?.seasons) out.seasons = seasons.seasons.filter((s) => /^\d+$/.test(s.season)).length;
   out.wiki = w?.extract || null;
   out.wikiUrl = w?.url || null;

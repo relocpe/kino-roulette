@@ -1,5 +1,5 @@
 // Фоновые эффекты жанров: WebGL-сцена (gl.js) снизу, 2D-детали поверх, верхний слой над интерфейсом.
-import * as G from './gl.js?v=3';
+import * as G from './gl.js?v=4';
 const R = Math.random;
 const rr = (a, b) => a + R() * (b - a);
 const TAU = Math.PI * 2;
@@ -100,6 +100,7 @@ FX.scifi = {
     }
   },
   burst(s, k) { s.warp = 1 * k; },
+  gl(s, dt) { s.warp = Math.max(0, s.warp - dt * 0.8); G.shared.warp = s.warp; },
 };
 
 FX.fantasy = {
@@ -310,6 +311,8 @@ FX.western = {
   },
   burst(s, k) { s.gust = 3 * k; },
 };
+
+FX.adventure = FX.western;
 
 FX.war = {
   init(s) {
@@ -851,6 +854,8 @@ FX.psycho = {
 };
 
 // ---------- движок ----------
+// эти жанры GL рисует целиком, 2D-версия остаётся запасной
+const GL_ONLY = new Set(['scifi', 'cyberpunk', 'dystopia', 'fantasy', 'family', 'animation', 'anime', 'romance', 'kdrama', 'sitcom', 'music', 'western', 'adventure', 'action', 'comedy', 'crime', 'truecrime', 'detective', 'twist', 'mini']);
 const top = document.getElementById('fxTop');
 const ctt = top.getContext('2d');
 let topDirty = false;
@@ -882,7 +887,9 @@ function frame(now, still) {
   for (const l of layers) {
     l.a += (l.target - l.a) * Math.min(1, dt * 3.2);
     const a = Math.max(0, Math.min(1, l.a));
-    ctx.save(); FX[l.id].draw(l.s, t, dt, a, G.active(l.id)); ctx.restore();
+    const gOn = G.active(l.id);
+    if (gOn && GL_ONLY.has(l.id)) FX[l.id].gl?.(l.s, dt);
+    else { ctx.save(); FX[l.id].draw(l.s, t, dt, a, gOn); ctx.restore(); }
     if (FX[l.id].top && !still) anyTop = true;
   }
   if (anyTop || topDirty) {

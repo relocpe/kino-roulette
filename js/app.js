@@ -1,7 +1,8 @@
-import { GENRES, MOODS, byId, GENRE_RU, isGenre } from './chips.js?v=3';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=3';
-import { setFx, burst, glInfo } from './fx.js?v=3';
-import './sound.js?v=3';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=4';
+import { findTrailer, ytSearch } from './trailer.js?v=4';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=4';
+import { setFx, burst, glInfo } from './fx.js?v=4';
+import './sound.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -10,7 +11,10 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const prefs = Object.assign({ mode: 'all', sel: [], from: '', to: '', rating: 6.5, noRepeat: true }, load(LS.prefs, {}));
+const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, multi: false, from: '', to: '', rating: 6.5, noRepeat: true }, load(LS.prefs, {}));
+prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id)).slice(0, prefs.multi ? 3 : 1);
+prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
+const MAX = 3;
 let hist = load(LS.hist, []);
 let seen = new Set(load(LS.seen, []));
 const savePrefs = () => save(LS.prefs, prefs);
@@ -25,44 +29,84 @@ const savePrefs = () => save(LS.prefs, prefs);
 }
 
 // ---------- фильтры ----------
-function chipEl(c) {
+// Жанр: один (как радио) или до трёх. Под выбранным жанром раскрываются его уточнения, максимум одно.
+function chipEl(c, cls = '') {
   const b = document.createElement('button');
-  b.type = 'button'; b.className = 'chip'; b.dataset.id = c.id; b.textContent = c.label;
+  b.type = 'button'; b.className = 'chip' + cls; b.dataset.id = c.id; b.textContent = c.label;
   b.style.setProperty('--c', c.accent);
-  b.setAttribute('aria-pressed', prefs.sel.includes(c.id));
-  b.addEventListener('click', () => toggle(c.id, b));
   return b;
 }
-GENRES.forEach((c) => $('#genres').append(chipEl(c)));
-MOODS.forEach((c) => $('#moods').append(chipEl(c)));
+GENRES.forEach((c) => { const b = chipEl(c); b.addEventListener('click', () => toggle(c.id, b)); $('#genres').append(b); });
 
+function hint(msg, b) {
+  if (b && !reduce.matches) { b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); }
+  note(msg);
+}
 function toggle(id, b) {
   const on = !prefs.sel.includes(id);
-  prefs.sel = on ? [...prefs.sel, id] : prefs.sel.filter((x) => x !== id);
-  b.setAttribute('aria-pressed', on);
-  savePrefs(); note(); applyFx();
+  if (!on) { prefs.sel = prefs.sel.filter((x) => x !== id); delete prefs.sub[id]; }
+  else if (!prefs.multi) { prefs.sel = [id]; prefs.sub = {}; }
+  else if (prefs.sel.length >= MAX) return hint(`Максимум ${MAX} жанра. Сними один, чтобы добавить «${byId[id].label}».`, b);
+  else prefs.sel = [...prefs.sel, id];
+  syncChips(); savePrefs(); note(); applyFx();
   if (on) burst(0.5);
 }
-const selG = () => prefs.sel.filter((id) => isGenre.has(id)).map((id) => byId[id]);
-const selS = () => prefs.sel.filter((id) => !isGenre.has(id)).map((id) => byId[id]);
-// поджанр важнее: он главный эффект, жанр идёт фоном
+function pickSub(g, s) {
+  if (s && prefs.sub[g] !== s) prefs.sub[g] = s; else delete prefs.sub[g];
+  syncChips(); savePrefs(); note(); applyFx();
+  if (s) burst(0.5);
+}
+function setMulti(m) {
+  prefs.multi = m;
+  if (!m && prefs.sel.length > 1) { prefs.sel = prefs.sel.slice(0, 1); prefs.sub = prefs.sub[prefs.sel[0]] ? { [prefs.sel[0]]: prefs.sub[prefs.sel[0]] } : {}; }
+  syncChips(); savePrefs(); note(); applyFx();
+}
+document.querySelectorAll('.count-seg button').forEach((b) => b.addEventListener('click', () => setMulti(b.dataset.multi === '1')));
+
+// ряды уточнений: один на каждый выбранный жанр, у которого они есть
+function syncChips() {
+  document.querySelectorAll('#genres .chip').forEach((b) => b.setAttribute('aria-pressed', prefs.sel.includes(b.dataset.id)));
+  document.querySelectorAll('.count-seg button').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.multi === '1') === !!prefs.multi)));
+  const box = $('#subs');
+  const want = prefs.sel.filter((g) => SUBS[g]);
+  for (const row of [...box.children]) if (!want.includes(row.dataset.g)) { row.classList.remove('open'); row.classList.add('closing'); setTimeout(() => row.remove(), reduce.matches ? 0 : 260); }
+  for (const g of want) {
+    let row = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`);
+    if (!row) {
+      row = document.createElement('div'); row.className = 'subrow'; row.dataset.g = g;
+      row.innerHTML = `<div class="subin"><span class="sublbl">${esc(byId[g].label)}</span></div>`;
+      const inner = row.firstChild;
+      const any = chipEl({ id: '', label: 'Любые', accent: byId[g].accent }, ' sub'); any.addEventListener('click', () => pickSub(g, null)); inner.append(any);
+      for (const sid of SUBS[g]) { const c = byId[sid]; const b = chipEl({ ...c, label: c.label.replace('Психологический триллер', 'Психологический') }, ' sub'); b.addEventListener('click', () => pickSub(g, sid)); inner.append(b); }
+      box.append(row);
+      requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add('open')));
+    }
+    row.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.id || null) === (prefs.sub[g] || null))));
+  }
+  // порядок рядов = порядок выбора
+  for (const g of want) { const r = box.querySelector(`.subrow[data-g="${g}"]:not(.closing)`); if (r) box.append(r); }
+}
+syncChips();
+
+const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
+const label = ([g, s]) => s ? `${g.label.toLowerCase()} · ${s.label.toLowerCase()}` : g.label.toLowerCase();
+// эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 function applyFx(gId, sId) {
-  const g = byId[gId] || selG().at(-1), s = byId[sId] || selS().at(-1);
+  let g = byId[gId], s = byId[sId];
+  if (!g && !s) { const p = pairs()[0]; if (p) [g, s] = p; }
   const main = s || g;
   setFx(main ? main.fx : 'idle', main?.accent, s && g ? g.fx : null);
 }
 function note(extra) {
-  const G = selG(), S = selS();
-  const part = (L) => L.map((c) => `<b>${esc(c.label.toLowerCase())}</b>`).join(' или ');
-  let html = !G.length && !S.length ? 'Ничего не отмечено, крутим всё подряд.' : `Ищем: ${[G.length ? part(G) : '', S.length ? part(S) : ''].filter(Boolean).join(' + ')}`;
-  if (prefs.mode === 'movie' && S.some((c) => c.series)) html += `<br><span class="warn">${S.filter((c) => c.series).map((c) => c.label).join(' и ')}: только среди сериалов.</span>`;
-  if (extra) html += `<br><span class="warn">${extra}</span>`;
+  const P = pairs();
+  let html = !P.length ? 'Жанр не выбран, крутим всё подряд.' : `Ищем: ${P.map((p) => `<b>${esc(label(p))}</b>`).join(' или ')}`;
+  if (prefs.mode === 'movie' && P.some(([, s]) => s?.series)) html += `<br><span class="warn">${P.filter(([, s]) => s?.series).map(([, s]) => s.label).join(' и ')}: только среди сериалов.</span>`;
+  if (extra) html += `<br><span class="warn">${esc(extra)}</span>`;
   $('#selnote').innerHTML = html;
   $('#clearSel').hidden = !prefs.sel.length;
 }
 $('#clearSel').addEventListener('click', () => {
-  prefs.sel = []; savePrefs(); note();
-  document.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+  prefs.sel = []; prefs.sub = {}; savePrefs(); syncChips(); note();
   applyFx();
 });
 
@@ -88,7 +132,8 @@ function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
   let from = y(yFrom.value), to = y(yTo.value);
   if (from && to && from > to) [from, to] = [to, from];
-  const niche = prefs.sel.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary', 'detective', 'dystopia'].includes(id)) || (selG().length && selS().length);
+  const ids = [...prefs.sel, ...Object.values(prefs.sub)];
+  const niche = ids.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary', 'detective', 'dystopia', 'psycho', 'sitcom', 'mini'].includes(id));
   return { mode: prefs.mode, from, to, minRating: Number(rating.value) || 0, minVotes: niche ? 1500 : 4000 };
 }
 
@@ -211,9 +256,9 @@ async function spin() {
 const bad = new Set();
 // Подбор: пул по логике групп, затем проверка кандидата по полной карточке IMDb (интересы, страна).
 async function choose() {
-  const G = selG(), S = selS(), f = filters();
+  const P = pairs(), f = filters();
   let res;
-  try { res = await getPool(G, S, f); } catch { res = { pool: [] }; }
+  try { res = await getPool(P, f); } catch { res = { pool: [] }; }
   if (res.conflict) return { error: 'Мини-сериалы и ситкомы бывают только среди сериалов. Переключи на «Сериалы» или «Всё».' };
   const pool = res.pool.filter((x) => !bad.has(x.t.id));
   let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool.slice();
@@ -225,13 +270,13 @@ async function choose() {
     for (let k = 0; k < 2 && !d; k++) { try { d = await core(c.t.id); } catch {} }
     const g = byId[c.g], s = byId[c.s];
     // без карточки принимаем только то, что не требует проверки интересов, или офлайн-подборку (она проверена заранее)
-    if (!d) { if (matchLocal(c.t, g, s, f) && (res.offline || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
+    if (!d) { if (matchLocal(c.t, g, s, f) && (c.snap || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
     d.i = d.i || c.t.i;
     if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
     bad.add(c.t.id);
   }
-  const want = [G.map((c) => c.label.toLowerCase()).join(' или '), S.map((c) => c.label.toLowerCase()).join(' или ')].filter(Boolean).join(' + ');
-  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Сними часть фильтров: снизь рейтинг, расширь годы или выбери другой поджанр.` };
+  const want = P.map(label).join(' или ');
+  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Снизь рейтинг, расширь годы или выбери «Любые».` };
 }
 async function settle(v) {
   if (reduce.matches) return;
@@ -265,8 +310,11 @@ function showResult(t, chipId, gId) {
   render(t, chipId, false, gId);
   details(t).then((d) => { if (my === token) { render(d, chipId, true, gId); patchHistory(d); } }).catch(() => {});
 }
+let curT = null;
 function render(t, chipId, full, gId) {
   const el = $('#result');
+  curT = t;
+  if (full) findTrailer(t, prefs.tlang || 'ru').catch(() => {});
   const title = t.ru || t.t;
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
@@ -291,7 +339,7 @@ function render(t, chipId, full, gId) {
       ${desc}
       <div class="actions">
         <button class="btn primary" type="button" data-act="again">${ico.redo}Ещё раз</button>
-        <a class="btn" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} ${t.y || ''} трейлер`)}">${ico.play}Трейлер</a>
+        <button class="btn" type="button" data-act="trailer">${ico.play}Трейлер</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">${ico.eye}Где посмотреть</button>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
@@ -312,6 +360,7 @@ function whereLinks(t, title) {
 }
 $('#result').addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'trailer') openTrailer(curT, b);
   if (b.dataset.act === 'again') { $('#where')?.setAttribute('hidden', ''); spin(); }
   if (b.dataset.act === 'where') {
     const w = $('#where'), open = w.hidden; w.hidden = !open; b.setAttribute('aria-expanded', open);
@@ -320,6 +369,39 @@ $('#result').addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => { const w = $('#where'); if (w && !w.hidden && !e.target.closest('.actions')) { w.hidden = true; $('[data-act="where"]')?.setAttribute('aria-expanded', 'false'); } });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const w = $('#where'); if (w && !w.hidden) { w.hidden = true; $('[data-act="where"]')?.focus(); } } });
+
+// ---------- трейлер ----------
+const tm = $('#tmodal');
+let tReq = 0, tBack = null;
+async function openTrailer(t, from) {
+  if (!t) return;
+  tBack = from;
+  const my = ++tReq;
+  $('#tmTitle').textContent = t.ru || t.t;
+  $('#tmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу трейлер…</div>';
+  $('#tmYt').href = ytSearch(t);
+  tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === (prefs.tlang || 'ru'))));
+  if (!tm.open) { tm.showModal(); document.documentElement.classList.add('tm-on'); window.dispatchEvent(new CustomEvent('kr:trailer', { detail: true })); }
+  let lang = prefs.tlang || 'ru';
+  let r = await findTrailer(t, lang).catch(() => null);
+  if (!r && my === tReq) { const alt = lang === 'ru' ? 'en' : 'ru'; r = await findTrailer(t, alt).catch(() => null); if (r) lang = alt; }
+  if (my !== tReq || !tm.open) return;
+  tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+  if (!r) { $('#tmFrame').innerHTML = `<div class="tm-load">Трейлер не нашёлся. <a href="${ytSearch(t)}" target="_blank" rel="noopener">Поискать на YouTube</a></div>`; return; }
+  $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || t.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+  $('#tmFrame').dataset.vid = r.id;
+  $('#tmYt').href = `https://www.youtube.com/watch?v=${r.id}`;
+}
+function closeTrailer() {
+  if (!tm.open) return;
+  tReq++; $('#tmFrame').innerHTML = ''; delete $('#tmFrame').dataset.vid;
+  tm.close(); document.documentElement.classList.remove('tm-on');
+  window.dispatchEvent(new CustomEvent('kr:trailer', { detail: false }));
+  tBack?.focus();
+}
+tm.addEventListener('click', (e) => { if (e.target === tm || e.target.closest('[data-close]')) closeTrailer(); });
+tm.addEventListener('cancel', (e) => { e.preventDefault(); closeTrailer(); });
+tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { if ((prefs.tlang || 'ru') === b.dataset.lang && $('#tmFrame').dataset.vid) return; prefs.tlang = b.dataset.lang; savePrefs(); openTrailer(curT, tBack); }));
 
 // ---------- история ----------
 function remember(t, chip, g) {
@@ -347,13 +429,15 @@ drawHistory();
 // для тестов
 window.__kr = {
   spin, setFx, burst, choose, gl: () => glInfo(),
+  // sel: ['horror', 'comedy'], sub: {horror: 'slasher'}
   set(sel, mode = 'all', extra = {}) {
-    prefs.sel = sel; prefs.mode = mode; Object.assign(prefs, extra);
+    prefs.sel = sel; prefs.sub = extra.sub || {}; prefs.multi = sel.length > 1; prefs.mode = mode; Object.assign(prefs, extra);
     yFrom.value = prefs.from || ''; yTo.value = prefs.to || ''; rating.value = prefs.rating ?? 6.5; showRating();
-    document.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', sel.includes(b.dataset.id)));
+    syncChips();
     document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x.dataset.mode === mode));
     savePrefs(); note(); applyFx();
   },
+  prefs, details, trailer: (t, l) => findTrailer(t, l),
   async pick() { const r = await choose(); if (r.win) { seen.add(r.win.t.id); } return r.error ? { error: r.error } : { t: r.win.t, g: r.win.g, s: r.win.s, offline: !!r.offline }; },
   filters,
 };
