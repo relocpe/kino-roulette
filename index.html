@@ -15,18 +15,23 @@
 <link rel="preload" href="fonts/cormorant-cyrillic-600-italic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
-<link rel="stylesheet" href="css/app.css?v=1">
+<link rel="stylesheet" href="css/app.css?v=3">
 </head>
 <body data-fx="idle">
+<canvas id="gl" aria-hidden="true"></canvas>
 <canvas id="fx" aria-hidden="true"></canvas>
 <div class="overlay" aria-hidden="true"></div>
+<canvas id="fxTop" aria-hidden="true"></canvas>
 
 <header class="top">
   <a class="mark" href="./" aria-label="Кинорулетка, на главную">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="6.6" r="2" fill="currentColor"/><circle cx="12" cy="17.4" r="2" fill="currentColor"/><circle cx="6.6" cy="12" r="2" fill="currentColor"/><circle cx="17.4" cy="12" r="2" fill="currentColor"/></svg>
     <span>Кинорулетка</span>
   </a>
-  <button class="link" id="histBtn" type="button" aria-controls="history">История <span id="histCount" class="count"></span></button>
+  <nav class="tools">
+    <button class="link sound" id="soundBtn" type="button" aria-pressed="true" title="Звук в тёмных жанрах"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z" fill="currentColor"/><path class="w" d="M11 5.5a3.5 3.5 0 0 1 0 5M12.8 3.5a6 6 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Звук вкл</span></button>
+    <button class="link" id="histBtn" type="button" aria-controls="history">История <span id="histCount" class="count"></span></button>
+  </nav>
 </header>
 
 <main class="layout">
@@ -91,6 +96,6 @@
   <p>Данные о фильмах: IMDb через открытый API (api.tiffara.com) и Википедия. Смотреть — только на легальных сервисах.</p>
 </footer>
 
-<script type="module" src="js/app.js?v=1"></script>
+<script type="module" src="js/app.js?v=3"></script>
 </body>
 </html>

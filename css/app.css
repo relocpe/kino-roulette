@@ -191,3 +191,22 @@ body[data-fx="cult"] .result h2, body[data-fx="cult"] h1 { text-shadow: -2px 0 r
 .layout > * { min-width: 0; }
 .field { min-width: 0; }
 @media (max-width: 480px) { .filters { grid-template-columns: 1fr; gap: 8px; } }
+#fxTop { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100lvh; z-index: 6; pointer-events: none; }
+.tools { display: flex; gap: 12px; align-items: center; }
+.sound { display: inline-flex; gap: 6px; align-items: center; }
+.sound[aria-pressed="false"] .w { opacity: .2; }
+.sound[aria-pressed="false"] { color: var(--ink-3); }
+/* VHS-сбой в ужасах: дрожание кадра и расслоение текста, до 300 мс */
+.fx-vhs .layout { animation: vhsjit .3s steps(4); }
+.fx-vhs h1, .fx-vhs .result h2, .fx-vhs .chip[aria-pressed="true"] { animation: vhstext .3s steps(3); }
+@keyframes vhsjit { 0% { transform: translate(-3px, 1px) } 33% { transform: translate(4px, -1px) skewX(.6deg) } 66% { transform: translate(-2px, 0) } 100% { transform: none } }
+@keyframes vhstext { 0% { text-shadow: -4px 0 rgb(255 30 40 / .8), 4px 0 rgb(40 200 255 / .7); clip-path: inset(0 0 45% 0); }
+  50% { text-shadow: 3px 0 rgb(255 30 40 / .8), -3px 0 rgb(40 200 255 / .7); clip-path: inset(30% 0 0 0); transform: translateX(3px); } 100% { clip-path: inset(0); } }
+body[data-fx="horror"] .card img, body[data-fx="horror"] .result .poster img { filter: saturate(.55) contrast(1.08) brightness(.92); }
+body[data-fx="psycho"] .reel, body[data-fx="psycho"] h1 { transform: scale(var(--breath, 1)) skewX(var(--skew, 0deg)); transform-origin: 50% 50%; }
+body[data-fx="slasher"] .card img { filter: contrast(1.1) saturate(.8); }
+.selnote b { color: var(--ink); font-weight: 500; }
+.selnote .warn { color: #ffb4a8; }
+@media (max-width: 480px) { .sound span { display: none; } }
+@media (prefers-reduced-motion: reduce) { body[data-fx="psycho"] .reel, body[data-fx="psycho"] h1 { transform: none; } }
+#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100lvh; z-index: 0; pointer-events: none; }

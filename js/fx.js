@@ -1,4 +1,5 @@
-// Фоновые эффекты жанров: один canvas, у каждого эффекта свой init/draw/burst.
+// Фоновые эффекты жанров: WebGL-сцена (gl.js) снизу, 2D-детали поверх, верхний слой над интерфейсом.
+import * as G from './gl.js?v=3';
 const R = Math.random;
 const rr = (a, b) => a + R() * (b - a);
 const TAU = Math.PI * 2;
@@ -67,25 +68,12 @@ FX.idle = {
   },
 };
 
-FX.horror = {
-  init(s) { s.fog = Array.from({ length: N(10) }, () => ({ x: rr(0, W), y: rr(H * 0.3, H), r: rr(200, 420), v: rr(6, 18) })); s.fl = 0; s.next = 1; },
-  draw(s, t, dt, a) {
-    const g = glow('rgba(120,110,110,1)', 128);
-    for (const f of s.fog) { f.x += f.v * dt; if (f.x - f.r > W) f.x = -f.r; blob(f.x, f.y, f.r, g, a * 0.09); }
-    s.next -= dt;
-    if (s.next < 0) { s.fl = rr(0.12, 0.22); s.next = rr(1.2, 4); }
-    s.fl = Math.max(0, s.fl - dt);
-    vignette('rgba(30,0,0,0.95)', 0.25, a);
-    if (s.fl > 0) { ctx.globalAlpha = a * 0.45; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
-  },
-  burst(s) { s.fl = 0.2; setTimeout(() => (s.fl = 0.16), 380); },
-};
 
 FX.thriller = {
   init(s) { s.g = 0; s.lines = []; s.next = 2; },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
     const beat = t % 1.3, k = Math.exp(-beat * 7) + 0.6 * Math.exp(-Math.max(0, beat - 0.22) * 7) * (beat > 0.22);
-    vignette(`rgba(170,10,10,${0.35 + 0.45 * k})`, 0.3, a);
+    if (!gOn) vignette(`rgba(170,10,10,${0.35 + 0.45 * k})`, 0.3, a);
     s.next -= dt;
     if (s.next < 0) { s.next = rr(2, 4.5); s.lines = Array.from({ length: 3 + (R() * 3 | 0) }, () => ({ y: rr(0, H), h: rr(1, 6), x: rr(-40, 40), life: rr(0.08, 0.18) })); }
     ctx.globalAlpha = a * 0.6;
@@ -187,7 +175,8 @@ FX.drama = {
     s.drops = Array.from({ length: N(260) }, () => ({ x: rr(0, W), y: rr(0, H), r: R() < 0.85 ? rr(1.2, 3.4) : rr(4, 7) }));
     s.run = Array.from({ length: N(22) }, () => ({ x: rr(0, W), y: rr(-H, H), r: rr(4, 7.5), v: rr(40, 120), w: rr(0, TAU) }));
   },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     ctx.globalAlpha = a * 0.5; ctx.fillStyle = 'rgba(40,60,80,.35)'; ctx.fillRect(0, 0, W, H);
     const hl = 'rgba(225,238,255,.75)', sh = 'rgba(0,0,0,.5)';
     for (const d of s.drops) { drop(d.x, d.y, d.r); }
@@ -242,21 +231,6 @@ FX.crime = {
   burst(s) { s.snap = 1.6; },
 };
 
-FX.mystery = {
-  init(s) { s.fog = Array.from({ length: N(14) }, () => ({ x: rr(0, W), y: rr(0, H), r: rr(180, 380), v: rr(-14, 14) })); s.fx = W / 2; s.fy = H / 2; s.boost = 0; },
-  draw(s, t, dt, a) {
-    const g = glow('rgba(150,170,200,1)', 128);
-    for (const f of s.fog) { f.x += f.v * dt; if (f.x > W + f.r) f.x = -f.r; if (f.x < -f.r) f.x = W + f.r; blob(f.x, f.y + Math.sin(t * 0.2 + f.r) * 20, f.r, g, a * 0.1); }
-    const tx = pointer.active ? pointer.x : W * (0.5 + 0.35 * Math.sin(t * 0.37)), ty = pointer.active ? pointer.y : H * (0.5 + 0.3 * Math.sin(t * 0.53));
-    s.fx += (tx - s.fx) * Math.min(1, dt * 5); s.fy += (ty - s.fy) * Math.min(1, dt * 5);
-    s.boost = Math.max(0, s.boost - dt * 0.6);
-    const r = Math.min(W, H) * (0.22 + s.boost * 0.4);
-    const gr = ctx.createRadialGradient(s.fx, s.fy, r * 0.2, s.fx, s.fy, r);
-    gr.addColorStop(0, 'rgba(4,6,10,0)'); gr.addColorStop(1, 'rgba(4,6,10,0.8)');
-    ctx.globalAlpha = a; ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
-  },
-  burst(s, k) { s.boost = k; },
-};
 
 FX.animation = {
   init(s) { s.b = Array.from({ length: 6 }, (_, i) => ({ h: i * 60, o: rr(0, TAU), f: rr(0.15, 0.3), j: 0 })); },
@@ -295,7 +269,8 @@ FX.family = {
 
 FX.documentary = {
   init(s) { s.d = Array.from({ length: N(70) }, () => ({ u: R(), v: R(), s: rr(0.6, 1.8), o: rr(0, TAU) })); s.scr = []; },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     const fl = 0.85 + 0.15 * Math.sin(t * 47) * Math.sin(t * 13);
     const ox = -W * 0.05, oy = -H * 0.1;
     ctx.save();
@@ -341,7 +316,8 @@ FX.war = {
     s.sm = Array.from({ length: N(16) }, () => ({ x: rr(0, W), y: rr(H * 0.4, H * 1.2), r: rr(160, 320), v: rr(8, 20) }));
     s.e = Array.from({ length: N(90) }, () => emb()); function emb(y) { return { x: rr(0, W), y: y ?? rr(0, H), v: rr(30, 90), o: rr(0, TAU), l: rr(0.5, 1) }; } s.emb = emb;
   },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     const g = glow('rgba(70,62,58,1)', 128);
     for (const m of s.sm) { m.y -= m.v * dt; m.x += Math.sin(t * 0.2 + m.r) * 6 * dt; if (m.y < -m.r) { m.y = H + m.r; m.x = rr(0, W); } blob(m.x, m.y, m.r, g, a * 0.28); }
     const gr = ctx.createLinearGradient(0, H, 0, H * 0.5); gr.addColorStop(0, 'rgba(200,70,20,.28)'); gr.addColorStop(1, 'rgba(200,70,20,0)');
@@ -376,28 +352,6 @@ FX.music = {
 };
 
 // ---------- поджанры ----------
-FX.psycho = {
-  init(s) { s.k = 0; },
-  draw(s, t, dt, a) {
-    const br = 0.5 + 0.5 * Math.sin(t * 1.2);
-    s.k = Math.max(0, s.k - dt);
-    const cx = W / 2 + Math.sin(t * 0.7) * W * 0.04, cy = H / 2 + Math.cos(t * 0.5) * H * 0.04;
-    ctx.save(); ctx.translate(cx, cy); ctx.scale(1 + 0.08 * Math.sin(t * 0.9), 1 - 0.06 * Math.sin(t * 0.9 + 1)); ctx.translate(-cx, -cy);
-    const r0 = Math.min(W, H) * (0.18 + 0.12 * br + s.k * 0.2);
-    const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, Math.hypot(W, H) * 0.6);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.6, 'rgba(60,0,30,.55)'); g.addColorStop(1, 'rgba(0,0,0,.95)');
-    ctx.globalAlpha = a; ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
-    ctx.restore();
-    ctx.globalCompositeOperation = 'lighter';
-    const o = 6 + 10 * br;
-    blob(cx - o, cy, Math.min(W, H) * 0.3, glow('rgba(255,0,60,1)', 128), a * 0.06);
-    blob(cx + o, cy, Math.min(W, H) * 0.3, glow('rgba(0,200,255,1)', 128), a * 0.06);
-    ctx.globalCompositeOperation = 'source-over';
-    root.style.setProperty('--split', (0.6 + 1.6 * br + s.k * 4).toFixed(2) + 'px');
-  },
-  burst(s, k) { s.k = k; },
-  end() { root.style.removeProperty('--split'); },
-};
 
 FX.detective = {
   init(s) {
@@ -434,7 +388,8 @@ FX.detective = {
 
 FX.noir = {
   init(s) { s.rain = Array.from({ length: N(120) }, () => ({ x: rr(0, W), y: rr(0, H), l: rr(10, 30), v: rr(500, 900) })); s.k = 0; },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     ctx.globalAlpha = a * 0.55; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(W * 0.15, -H * 0.2); ctx.rotate(-0.42);
     const off = (t * 6) % 70; s.k = Math.max(0, s.k - dt);
@@ -454,30 +409,6 @@ FX.noir = {
   burst(s, k) { s.k = k; },
 };
 
-FX.slasher = {
-  init(s) { s.dr = Array.from({ length: N(14) }, () => ({ x: rr(0, W), l: rr(0, 40), v: rr(4, 16), w: rr(2, 5) })); s.sl = []; },
-  draw(s, t, dt, a) {
-    vignette('rgba(70,0,0,.9)', 0.35, a);
-    ctx.globalAlpha = a * 0.85; ctx.fillStyle = '#7a0b0f';
-    for (const d of s.dr) {
-      d.l += d.v * dt * (0.5 + Math.max(0, Math.sin(t * 0.7 + d.x))); if (d.l > H * 0.35) { d.l = 0; d.x = rr(0, W); }
-      ctx.fillRect(d.x - d.w / 2, 0, d.w, d.l); ctx.beginPath(); ctx.arc(d.x, d.l, d.w * 0.9, 0, TAU); ctx.fill();
-    }
-    ctx.lineCap = 'round';
-    for (const c of s.sl) {
-      c.p = Math.min(1, c.p + dt * 6); c.l -= dt;
-      const x = c.x1 + (c.x2 - c.x1) * c.p, y = c.y1 + (c.y2 - c.y1) * c.p;
-      ctx.globalAlpha = a * Math.max(0, c.l) * 1.4; ctx.strokeStyle = '#ffe9e9'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(c.x1, c.y1); ctx.lineTo(x, y); ctx.stroke();
-      ctx.strokeStyle = 'rgba(220,20,30,.7)'; ctx.lineWidth = 9; ctx.globalAlpha *= 0.5; ctx.stroke();
-    }
-    s.sl = s.sl.filter((c) => c.l > 0);
-  },
-  burst(s, k) {
-    for (let i = 0; i < 3; i++) setTimeout(() => s.sl.push({ x1: rr(0, W * 0.3), y1: rr(0, H * 0.4) + i * H * 0.2, x2: rr(W * 0.7, W), y2: rr(H * 0.4, H * 0.8) + i * H * 0.1, p: 0, l: 0.7 }), i * 110);
-    for (const d of s.dr) d.l += 40 * k;
-  },
-};
 
 FX.cyberpunk = {
   init(s) { s.r = Array.from({ length: N(110) }, () => ({ x: rr(0, W), y: rr(-H, H), l: rr(20, 90), v: rr(300, 700), c: R() < 0.5 })); s.f = 0; },
@@ -503,7 +434,8 @@ FX.cyberpunk = {
 
 FX.postapoc = {
   init(s) { s.p = Array.from({ length: N(150) }, () => ({ x: rr(0, W), y: rr(0, H), r: rr(1, 3.5), v: rr(14, 40), o: rr(0, TAU), e: R() < 0.08 })); s.k = 0; },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, 'rgba(60,40,25,.45)'); g.addColorStop(0.7, 'rgba(150,80,30,.18)'); g.addColorStop(1, 'rgba(200,100,30,.35)');
     ctx.globalAlpha = a; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -634,7 +566,8 @@ FX.mini = {
 
 FX.cult = {
   init(s) { s.band = 0; s.k = 0; },
-  draw(s, t, dt, a) {
+  draw(s, t, dt, a, gOn) {
+    if (gOn) return;
     ctx.globalAlpha = a * 0.12; ctx.fillStyle = '#000';
     for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
     s.k = Math.max(0, s.k - dt);
@@ -665,67 +598,344 @@ FX.twist = {
   burst(s, k) { s.out = k; },
 };
 
+
+// ---------- тёмные жанры: общий туман и верхний слой ----------
+let FOG = null;
+function fogTex() {
+  if (FOG) return FOG;
+  const w = 256, h = 128, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), img = g.createImageData(w, h);
+  const oct = [[8, 4, 0.5], [16, 8, 0.28], [32, 16, 0.15], [64, 32, 0.07]].map(([gx, gy, amp]) => ({ gx, gy, amp, v: Array.from({ length: gx * (gy + 1) }, R) }));
+  const sm = (x) => x * x * (3 - 2 * x);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (const o of oct) {
+      const fx = (x / w) * o.gx, fy = (y / h) * o.gy, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = sm(fx - x0), ty = sm(fy - y0);
+      const at = (i, j) => o.v[(j % (o.gy + 1)) * o.gx + (i % o.gx)];
+      const a0 = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * tx, a1 = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * tx;
+      n += (a0 + (a1 - a0) * ty) * o.amp;
+    }
+    const edge = Math.sin((y / h) * Math.PI);
+    const al = Math.max(0, Math.min(1, (n - 0.35) * 2.2)) * edge;
+    const i = (y * w + x) * 4; img.data[i] = 150; img.data[i + 1] = 148; img.data[i + 2] = 156; img.data[i + 3] = al * 255;
+  }
+  g.putImageData(img, 0, 0);
+  return (FOG = c);
+}
+function drawFog(t, y, h, speed, alpha, scale = 1.4) {
+  const f = fogTex(), fw = W * scale, x = -((t * speed) % fw);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(f, x, y, fw, h); ctx.drawImage(f, x + fw, y, fw, h);
+}
+function flashlight(c, x, y, r, dark) {
+  const g = c.createRadialGradient(x, y, r * 0.15, x, y, r);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${dark})`);
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+}
+function eyes(c, x, y, sc, a) {
+  const d = 17 * sc;
+  c.globalAlpha = a * 0.75; c.fillStyle = '#000';
+  const g = c.createRadialGradient(x, y, 0, x, y, 150 * sc); g.addColorStop(0, 'rgba(0,0,0,.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(x - 160 * sc, y - 160 * sc, 320 * sc, 320 * sc);
+  for (const s of [-1, 1]) {
+    const ex = x + s * d;
+    c.globalAlpha = a * 0.5; c.drawImage(glow('rgba(255,200,120,1)', 64), ex - 22 * sc, y - 22 * sc, 44 * sc, 44 * sc);
+    c.globalAlpha = a; c.fillStyle = '#f3dca8';
+    c.beginPath(); c.ellipse(ex, y, 8 * sc, 3.2 * sc, s * -0.18, 0, TAU); c.fill();
+    c.fillStyle = '#050302'; c.beginPath(); c.ellipse(ex, y, 1.2 * sc, 3 * sc, 0, 0, TAU); c.fill();
+  }
+}
+function figure(c, x, base, h, a) {
+  const g = c.createRadialGradient(x, base - h * 0.55, 0, x, base - h * 0.55, h * 0.7);
+  g.addColorStop(0, 'rgba(120,120,130,.35)'); g.addColorStop(1, 'rgba(120,120,130,0)');
+  c.globalAlpha = a; c.fillStyle = g; c.fillRect(x - h, base - h * 1.3, h * 2, h * 1.4);
+  const hw = h * 0.065;
+  c.fillStyle = '#020202'; c.beginPath();
+  c.ellipse(x, base - h + hw * 1.2, hw, hw * 1.3, 0, 0, TAU);
+  c.moveTo(x - hw * 0.5, base - h + hw * 2.2);
+  c.bezierCurveTo(x - hw * 3.2, base - h + hw * 3, x - hw * 3.6, base - h * 0.55, x - hw * 2.4, base);
+  c.lineTo(x + hw * 2.4, base);
+  c.bezierCurveTo(x + hw * 3.6, base - h * 0.55, x + hw * 3.2, base - h + hw * 3, x + hw * 0.5, base - h + hw * 2.2);
+  c.closePath(); c.fill();
+}
+function drips(s, n) { s.dr = Array.from({ length: N(n) }, () => ({ x: rr(0, W), l: rr(0, 60), v: rr(3, 14), w: rr(1.5, 4.5), max: rr(H * 0.08, H * 0.4) })); }
+function drawDrips(s, dt, a, k = 1) {
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.4); g.addColorStop(0, '#5a070b'); g.addColorStop(1, '#2a0204');
+  ctx.fillStyle = g; ctx.globalAlpha = a * 0.9;
+  for (const d of s.dr) {
+    d.l += d.v * dt * k * (1 - d.l / d.max * 0.8);
+    if (d.l >= d.max * 0.98) { d.l = 0; d.x = rr(0, W); d.max = rr(H * 0.08, H * 0.4); }
+    ctx.beginPath(); ctx.moveTo(d.x - d.w, 0); ctx.quadraticCurveTo(d.x - d.w * 0.4, d.l * 0.6, d.x - d.w * 0.5, d.l);
+    ctx.arc(d.x, d.l, d.w * 0.9, Math.PI, 0, true); ctx.quadraticCurveTo(d.x + d.w * 0.4, d.l * 0.6, d.x + d.w, 0); ctx.fill();
+  }
+}
+const canFlash = (s, t, gap = 0.4) => { if (t - (s.lf ?? -9) < gap) return false; s.lf = t; return true; };
+const pointerOr = (t, fx = 0.37, fy = 0.53) => pointer.active ? [pointer.x, pointer.y] : [W * (0.5 + 0.33 * Math.sin(t * fx)), H * (0.5 + 0.28 * Math.sin(t * fy + 1))];
+
+FX.horror = {
+  init(s) { s.bulb = 1; s.bt = 0.6; s.black = 0; s.ld = -9; s.vhs = 0; s.nv = rr(4, 8); s.sub = null; s.ns = rr(8, 16); s.close = 0; s.lx = W / 2; s.ly = H / 2; drips(s, 18); s.scr = []; },
+  draw(s, t, dt, a, gOn) {
+    s.bt -= dt;
+    if (s.bt < 0) {
+      const r = R();
+      if (r < 0.1 && canFlash(s, t)) { s.black = rr(0.08, 0.2); s.bulb = 0.2; s.bt = s.black; }
+      else if (r < 0.4 && t - s.ld > 0.4) { s.ld = t; s.bulb = rr(0.35, 0.65); s.bt = rr(0.05, 0.13); }
+      else { s.bulb = rr(0.8, 1); s.bt = rr(0.35, 2.4); }
+    }
+    s.black = Math.max(0, s.black - dt); s.close = Math.max(0, s.close - dt * 0.25);
+    const b = s.black > 0 ? 0 : s.bulb;
+    G.shared.bulb = b;
+    if (gOn) { drawDrips(s, dt, a); return; }
+    ctx.globalAlpha = a; ctx.fillStyle = `rgba(0,0,0,${0.5 + (1 - b) * 0.4})`; ctx.fillRect(0, 0, W, H);
+    drawFog(t, H * 0.34, H * 0.75, 18, a * 0.75 * (0.4 + 0.6 * b));
+    drawFog(t + 40, H * 0.5, H * 0.6, 34, a * 0.6 * (0.4 + 0.6 * b), 1.1);
+    const [tx, ty] = pointerOr(t);
+    s.lx += (tx - s.lx) * Math.min(1, dt * 6); s.ly += (ty - s.ly) * Math.min(1, dt * 6);
+    ctx.globalAlpha = a; flashlight(ctx, s.lx, s.ly, Math.min(W, H) * (0.3 - s.close * 0.08), 0.72);
+    ctx.globalCompositeOperation = 'lighter';
+    blob(s.lx, s.ly, Math.min(W, H) * 0.22, glow('rgba(255,225,180,1)', 128), a * 0.07 * b);
+    ctx.globalCompositeOperation = 'source-over';
+    drawDrips(s, dt, a);
+    const inner = 0.2 + 0.05 * Math.sin(t * 0.35) - s.close * 0.12;
+    vignette('rgba(12,0,0,1)', Math.max(0.05, inner), a);
+  },
+  top(c, s, t, dt, a) {
+    const b = s.black > 0 ? 0 : s.bulb;
+    c.globalAlpha = a; c.fillStyle = `rgba(0,0,0,${s.black > 0 ? 0.62 : (1 - b) * 0.32 + 0.04})`; c.fillRect(0, 0, W, H);
+    if (R() < dt * 2.5) s.scr.push({ x: rr(0, W), l: rr(0.05, 0.22), w: R() < 0.2 ? 2 : 1 });
+    c.fillStyle = 'rgba(230,225,215,.16)';
+    for (const sc of s.scr) { sc.l -= dt; c.fillRect(sc.x, 0, sc.w, H); }
+    s.scr = s.scr.filter((x) => x.l > 0);
+    c.globalAlpha = a * 0.35; c.fillStyle = '#ddd';
+    for (let i = 0; i < 4; i++) c.fillRect(rr(0, W), rr(0, H), rr(1, 2.5), rr(1, 2.5));
+    s.nv -= dt;
+    if (s.nv < 0) { s.nv = rr(5, 11); if (canFlash(s, t)) { s.vhs = 0.28; cssPulse('fx-vhs', 300); } }
+    if (s.vhs > 0) {
+      s.vhs -= dt;
+      for (let i = 0; i < 10; i++) { c.globalAlpha = a * rr(0.06, 0.22); c.fillStyle = i % 3 ? '#e8e8e8' : '#ff2a2a'; c.fillRect(rr(-W * 0.2, W * 0.4), rr(0, H), rr(W * 0.3, W), rr(1, 3)); }
+      const by = rr(0, H); c.globalAlpha = a * 0.12; c.fillStyle = '#fff'; c.fillRect(0, by, W, rr(8, 30));
+    }
+    s.ns -= dt;
+    if (s.ns < 0 && canFlash(s, t)) { s.ns = rr(14, 30); s.sub = spawnSub(); }
+    if (s.sub) {
+      s.sub.l -= dt;
+      if (s.sub.l > 0) s.sub.k === 'eyes' ? eyes(c, s.sub.x, s.sub.y, s.sub.sc, a * 0.9) : figure(c, s.sub.x, H, s.sub.h, a * 0.85);
+      else s.sub = null;
+    }
+  },
+  burst(s, k) {
+    s.close = k;
+    const t = (performance.now() - T0) / 1000;
+    if (k >= 1 && canFlash(s, t, 0.3)) { s.black = 0.14; }
+    setTimeout(() => { s.vhs = 0.3; cssPulse('fx-vhs', 300); }, 180);
+    if (k >= 1 && (window.__krSub || R() < 0.6)) setTimeout(() => { s.sub = spawnSub(); s.lf = (performance.now() - T0) / 1000; }, 650);
+  },
+};
+function spawnSub() {
+  const left = R() < 0.5, x = left ? rr(W * 0.04, W * 0.2) : rr(W * 0.8, W * 0.96);
+  return R() < 0.6 ? { k: 'eyes', x, y: rr(H * 0.25, H * 0.75), sc: rr(0.8, 1.4), l: rr(0.09, 0.13) } : { k: 'fig', x, h: rr(H * 0.45, H * 0.7), l: rr(0.1, 0.14) };
+}
+
+FX.slasher = {
+  init(s) { drips(s, 22); s.sl = []; s.red = 0; s.ni = rr(4, 8); },
+  draw(s, t, dt, a, gOn) {
+    G.shared.red = Math.max(0, s.red);
+    if (!gOn) { ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, H); vignette('rgba(60,0,2,1)', 0.22, a); }
+    drawDrips(s, dt, a, 1.4);
+    s.ni -= dt; if (s.ni < 0) { s.ni = rr(6, 11); FX.slasher.slash(s, 0); }
+  },
+  slash(s, delay) {
+    setTimeout(() => {
+      const fromLeft = R() < 0.5, y1 = rr(H * 0.1, H * 0.6), y2 = y1 + rr(H * 0.15, H * 0.45);
+      s.sl.push({ x1: fromLeft ? -40 : W + 40, y1, x2: fromLeft ? W + 40 : -40, y2, p: 0, l: 1 });
+      window.dispatchEvent(new CustomEvent('kr:sfx', { detail: 'slash' }));
+    }, delay);
+  },
+  top(c, s, t, dt, a) {
+    c.lineCap = 'round';
+    for (const q of s.sl) {
+      q.p = Math.min(1, q.p + dt * 7); q.l -= dt * 0.9;
+      const x = q.x1 + (q.x2 - q.x1) * q.p, y = q.y1 + (q.y2 - q.y1) * q.p;
+      const tail = Math.max(0, q.p - 0.35), tx = q.x1 + (q.x2 - q.x1) * tail, ty = q.y1 + (q.y2 - q.y1) * tail;
+      if (q.p < 1) {
+        const g = c.createLinearGradient(tx, ty, x, y); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,.95)');
+        c.globalAlpha = a; c.strokeStyle = g; c.lineWidth = 3; c.beginPath(); c.moveTo(tx, ty); c.lineTo(x, y); c.stroke();
+      }
+      c.globalAlpha = a * Math.max(0, q.l) * 0.8; c.strokeStyle = '#a3080f'; c.lineWidth = 2.2;
+      c.beginPath(); c.moveTo(q.x1, q.y1); c.lineTo(x, y + 2); c.stroke();
+      c.globalAlpha = a * Math.max(0, q.l) * 0.25; c.lineWidth = 10; c.stroke();
+    }
+    s.sl = s.sl.filter((q) => q.l > 0);
+    if (s.red > 0) { s.red -= dt; c.globalAlpha = a * Math.max(0, s.red / 0.14) * 0.32; c.fillStyle = '#c0000a'; c.fillRect(0, 0, W, H); }
+  },
+  burst(s, k) {
+    FX.slasher.slash(s, 0);
+    if (k >= 1) {
+      FX.slasher.slash(s, 160);
+      const t = (performance.now() - T0) / 1000;
+      if (canFlash(s, t)) setTimeout(() => (s.red = 0.14), 60);
+      cssPulse('fx-shake', 380);
+    }
+    for (const d of s.dr) d.l = Math.min(d.max * 0.9, d.l + 50 * k);
+  },
+};
+
+FX.mystery = {
+  init(s) { s.lx = W / 2; s.ly = H / 2; s.boost = 0; s.pass = null; s.np = rr(8, 15); },
+  draw(s, t, dt, a, gOn) {
+    if (!gOn) {
+      ctx.globalAlpha = a; ctx.fillStyle = 'rgba(2,4,10,.45)'; ctx.fillRect(0, 0, W, H);
+      drawFog(t, H * 0.1, H * 0.6, 10, a * 0.35, 1.6);
+      drawFog(t + 20, H * 0.45, H * 0.7, 22, a * 0.45);
+    }
+    s.np -= dt;
+    if (s.np < 0) { s.np = rr(10, 18); s.pass = { x: R() < 0.5 ? -80 : W + 80, v: rr(90, 160), h: rr(H * 0.5, H * 0.75) }; if (s.pass.x > 0) s.pass.v *= -1; }
+    if (s.pass) { s.pass.x += s.pass.v * dt; ctx.save(); ctx.filter = 'blur(6px)'; figure(ctx, s.pass.x, H + 10, s.pass.h, a * 0.6); ctx.restore(); if (s.pass.x < -120 || s.pass.x > W + 120) s.pass = null; }
+    const [tx, ty] = pointerOr(t);
+    s.lx += (tx - s.lx) * Math.min(1, dt * 5); s.ly += (ty - s.ly) * Math.min(1, dt * 5);
+    s.boost = Math.max(0, s.boost - dt * 0.6);
+    if (gOn) return;
+    ctx.globalAlpha = a; flashlight(ctx, s.lx, s.ly, Math.min(W, H) * (0.26 + s.boost * 0.35), 0.82);
+    ctx.globalCompositeOperation = 'lighter';
+    blob(s.lx, s.ly, Math.min(W, H) * 0.2, glow('rgba(190,210,255,1)', 128), a * 0.06);
+    ctx.globalCompositeOperation = 'source-over';
+  },
+  burst(s, k) { s.boost = k; },
+};
+
+FX.psycho = {
+  init(s) { s.k = 0; s.wh = 0; },
+  draw(s, t, dt, a, gOn) {
+    const br = 0.5 + 0.5 * Math.sin(t * 1.1);
+    s.k = Math.max(0, s.k - dt * 0.7);
+    G.shared.whisper = (window.__krWhisper || 0) + s.k * 0.5;
+    if (gOn) {
+      root.style.setProperty('--split', (0.8 + 2 * br + s.k * 5).toFixed(2) + 'px');
+      root.style.setProperty('--breath', (1 + 0.004 * br + s.k * 0.01).toFixed(4));
+      root.style.setProperty('--skew', ((Math.sin(t * 0.6) * 0.25 + s.k * Math.sin(t * 9) * 0.8) * a).toFixed(3) + 'deg');
+      return;
+    }
+    ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(0, 0, W, H);
+    const cx = W / 2 + Math.sin(t * 0.7) * W * 0.05, cy = H * 0.48 + Math.cos(t * 0.5) * H * 0.05, M = Math.hypot(W, H) * 0.6;
+    ctx.lineWidth = 1.2;
+    for (let i = 1; i <= 14; i++) {
+      const r0 = ((i / 14 + t * 0.03) % 1) * M;
+      ctx.globalAlpha = a * 0.16 * (1 - r0 / M);
+      ctx.strokeStyle = i % 2 ? '#d65a7a' : '#7fd8ff';
+      ctx.beginPath();
+      for (let j = 0; j <= 64; j++) {
+        const an = (j / 64) * TAU, rr2 = r0 * (1 + (0.06 + 0.1 * br + s.k * 0.2) * Math.sin(an * 3 + t * 0.8 + i) * Math.sin(an * 2 - t * 0.5));
+        const x = cx + Math.cos(an) * rr2 * (1 + 0.08 * br), y = cy + Math.sin(an) * rr2 * (1 - 0.06 * br);
+        j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(1 + 0.1 * Math.sin(t * 0.9), 1 - 0.08 * Math.sin(t * 0.9 + 1)); ctx.translate(-cx, -cy);
+    const r0 = Math.min(W, H) * (0.16 + 0.14 * br + s.k * 0.15);
+    const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, M);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, 'rgba(50,0,25,.6)'); g.addColorStop(1, 'rgba(0,0,0,.97)');
+    ctx.globalAlpha = a; ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
+    ctx.restore();
+    root.style.setProperty('--split', (0.8 + 2 * br + s.k * 5).toFixed(2) + 'px');
+    root.style.setProperty('--breath', (1 + 0.004 * br + s.k * 0.01).toFixed(4));
+    root.style.setProperty('--skew', ((Math.sin(t * 0.6) * 0.25 + s.k * Math.sin(t * 9) * 0.8) * a).toFixed(3) + 'deg');
+  },
+  top(c, s, t, dt, a) {
+    s.wh = window.__krWhisper || 0;
+    const n = Math.round((20 + s.wh * 160 + s.k * 200) * SCALE);
+    c.globalAlpha = a * (0.1 + s.wh * 0.25);
+    for (let i = 0; i < n; i++) { c.fillStyle = R() < 0.5 ? '#fff' : '#000'; c.fillRect(rr(0, W), rr(0, H), 1.5, 1.5); }
+  },
+  burst(s, k) { s.k = k; window.dispatchEvent(new CustomEvent('kr:sfx', { detail: 'whisper' })); },
+  end() { for (const v of ['--split', '--breath', '--skew']) root.style.removeProperty(v); },
+};
+
 // ---------- движок ----------
+const top = document.getElementById('fxTop');
+const ctt = top.getContext('2d');
+let topDirty = false;
 const layers = [];
-let raf = 0, last = 0, T0 = performance.now();
+let raf = 0, last = 0;
+const T0 = performance.now();
 const loopOn = () => !reduce.matches && !document.hidden;
 
 function resize() {
   DPR = Math.min(coarse ? 1.25 : 1.75, devicePixelRatio || 1);
   W = innerWidth; H = innerHeight;
   canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  top.width = Math.round(W); top.height = Math.round(H);
+  G.resize();
   SCALE = Math.min(1, Math.max(0.35, (W * H) / (1440 * 900))) * (coarse ? 0.7 : 1);
   for (const l of layers) FX[l.id].init(l.s);
   if (!loopOn()) renderStatic();
 }
 
-function frame(now) {
+function frame(now, still) {
   raf = 0;
   const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
   const t = (now - T0) / 1000;
+  const [mx, my] = pointerOr(t);
+  G.render(t, dt, mx, my, still);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
+  let anyTop = false;
   for (const l of layers) {
     l.a += (l.target - l.a) * Math.min(1, dt * 3.2);
-    ctx.save(); FX[l.id].draw(l.s, t, dt, Math.max(0, Math.min(1, l.a))); ctx.restore();
+    const a = Math.max(0, Math.min(1, l.a));
+    ctx.save(); FX[l.id].draw(l.s, t, dt, a, G.active(l.id)); ctx.restore();
+    if (FX[l.id].top && !still) anyTop = true;
+  }
+  if (anyTop || topDirty) {
+    ctt.setTransform(1, 0, 0, 1, 0, 0); ctt.clearRect(0, 0, W, H); topDirty = anyTop;
+    for (const l of layers) if (FX[l.id].top && !still) { ctt.save(); FX[l.id].top(ctt, l.s, t, dt, Math.max(0, Math.min(1, l.a)) * (l.target < 1 && l.target > 0 ? 0.5 : 1)); ctt.restore(); }
   }
   for (let i = layers.length - 1; i >= 0; i--) if (layers[i].target === 0 && layers[i].a < 0.02) { FX[layers[i].id].end?.(); layers.splice(i, 1); }
   ctx.globalAlpha = 1;
   if (loopOn()) raf = requestAnimationFrame(frame);
 }
 function renderStatic() {
-  // без движения: один кадр, чтобы оттенок жанра всё равно был виден
+  // без движения: один спокойный кадр, чтобы настроение жанра всё равно было видно
   for (const l of layers) l.a = l.target;
   last = performance.now() - 16;
-  frame(performance.now());
+  topDirty = true;
+  frame(performance.now(), true);
 }
 function kick() { if (!raf && loopOn()) { last = performance.now(); raf = requestAnimationFrame(frame); } else if (!loopOn()) renderStatic(); }
 
 export let current = null;
-export function setFx(id, accent) {
+let secondary = null;
+// id — главный эффект, second — фоновый на 35%, если выбраны и жанр, и поджанр
+export function setFx(id, accent, second) {
   if (!FX[id]) id = 'idle';
+  if (second && (!FX[second] || second === id)) second = null;
   document.body.dataset.fx = id;
+  document.body.dataset.fx2 = second || '';
   if (accent) root.style.setProperty('--accent', accent);
   else root.style.removeProperty('--accent');
-  if (current === id) return;
-  current = id;
-  for (const l of layers) l.target = 0;
-  const s = {};
-  FX[id].init(s);
-  layers.push({ id, s, a: 0, target: 1 });
-  while (layers.length > 3) { FX[layers[0].id].end?.(); layers.shift(); }
+  if (current === id && secondary === second) return;
+  current = id; secondary = second;
+  const want = { [id]: 1 };
+  if (second) want[second] = 0.35;
+  for (const l of layers) l.target = want[l.id] ?? 0;
+  for (const k of Object.keys(want)) if (!layers.some((l) => l.id === k)) { const s = {}; FX[k].init(s); layers.push({ id: k, s, a: 0, target: want[k] }); }
+  while (layers.length > 4) { const i = layers.findIndex((l) => l.target === 0); if (i < 0) break; FX[layers[i].id].end?.(); layers.splice(i, 1); }
+  if (!G.want(id)) G.stop();
+  window.dispatchEvent(new CustomEvent('kr:fx', { detail: { id, second } }));
   kick();
 }
 export function burst(k = 1) {
+  window.dispatchEvent(new CustomEvent('kr:burst', { detail: { id: current, k } }));
   if (reduce.matches) return;
   const l = layers.find((x) => x.id === current);
-  FX[current]?.burst?.(l.s, k);
+  if (l) FX[current]?.burst?.(l.s, k);
 }
 export const fxIds = Object.keys(FX);
+export const glInfo = G.glInfo;
 
 addEventListener('resize', resize, { passive: true });
 document.addEventListener('visibilitychange', kick);
 reduce.addEventListener?.('change', kick);
 addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; } }, { passive: true });
+addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') { pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; clearTimeout(pointer.to); pointer.to = setTimeout(() => (pointer.active = false), 2500); } }, { passive: true });
 document.addEventListener('pointerleave', () => (pointer.active = false));
 resize();

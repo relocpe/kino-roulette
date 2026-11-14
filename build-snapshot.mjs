@@ -1,4 +1,5 @@
-import { ALL, LISTS } from './js/chips.js';
+import { ALL, LISTS, isGenre } from './js/chips.js';
+import { matchFull } from './js/api.js';
 import { writeFileSync } from 'node:fs';
 const B = 'https://api.tiffara.com';
 const H = { 'User-Agent': 'Mozilla/5.0 kino-roulette snapshot' };
@@ -22,7 +23,20 @@ for (const c of ALL) {
       if (d.nextPageToken && variants.length < 3) { d = await j(`${B}/titles?${qs(base)}&pageToken=${encodeURIComponent(d.nextPageToken)}`); ids.push(...add(d.titles || [])); }
     }
   }
-  out.chips[c.id] = [...new Set(ids)];
+  ids = [...new Set(ids)];
+  if (!isGenre.has(c.id) && !c.list && (c.anyI || c.noI)) {
+    const keep = [];
+    for (let i = 0; i < ids.length; i += 8) await Promise.all(ids.slice(i, i + 8).map(async (id) => {
+      try {
+        const f = await j(`${B}/titles/${id}`);
+        const d = { ...out.titles[id], interests: (f.interests || []).map((x) => x.id), countries: (f.originCountries || []).map((x) => x.code) };
+        if (matchFull(d, null, c, { mode: 'all' })) keep.push(id);
+      } catch {}
+    }));
+    console.log('  validated', keep.length, '/', ids.length);
+    ids = ids.filter((id) => keep.includes(id));
+  }
+  out.chips[c.id] = ids;
   console.log(c.id, out.chips[c.id].length);
 }
 const seed = await j(`${B}/titles?${qs({ types: ['MOVIE', 'TV_SERIES'], minVoteCount: 100000 })}`);

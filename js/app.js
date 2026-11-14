@@ -1,6 +1,7 @@
-import { GENRES, MOODS, byId, GENRE_RU } from './chips.js';
-import { getPool, details, poster, seedPosters } from './api.js';
-import { setFx, burst } from './fx.js';
+import { GENRES, MOODS, byId, GENRE_RU, isGenre } from './chips.js?v=3';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=3';
+import { setFx, burst, glInfo } from './fx.js?v=3';
+import './sound.js?v=3';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -39,27 +40,36 @@ function toggle(id, b) {
   const on = !prefs.sel.includes(id);
   prefs.sel = on ? [...prefs.sel, id] : prefs.sel.filter((x) => x !== id);
   b.setAttribute('aria-pressed', on);
-  savePrefs(); note();
-  const lastId = prefs.sel[prefs.sel.length - 1];
-  const c = byId[lastId];
-  setFx(c ? c.fx : 'idle', c?.accent);
+  savePrefs(); note(); applyFx();
   if (on) burst(0.5);
 }
-function note() {
-  const n = prefs.sel.length;
-  $('#selnote').textContent = n === 0 ? 'Ничего не отмечено, крутим всё подряд.' : n === 1 ? `Выбрано: ${byId[prefs.sel[0]].label.toLowerCase()}.` : `Отмечено ${n}, выпадет любой из них.`;
-  $('#clearSel').hidden = n === 0;
+const selG = () => prefs.sel.filter((id) => isGenre.has(id)).map((id) => byId[id]);
+const selS = () => prefs.sel.filter((id) => !isGenre.has(id)).map((id) => byId[id]);
+// поджанр важнее: он главный эффект, жанр идёт фоном
+function applyFx(gId, sId) {
+  const g = byId[gId] || selG().at(-1), s = byId[sId] || selS().at(-1);
+  const main = s || g;
+  setFx(main ? main.fx : 'idle', main?.accent, s && g ? g.fx : null);
+}
+function note(extra) {
+  const G = selG(), S = selS();
+  const part = (L) => L.map((c) => `<b>${esc(c.label.toLowerCase())}</b>`).join(' или ');
+  let html = !G.length && !S.length ? 'Ничего не отмечено, крутим всё подряд.' : `Ищем: ${[G.length ? part(G) : '', S.length ? part(S) : ''].filter(Boolean).join(' + ')}`;
+  if (prefs.mode === 'movie' && S.some((c) => c.series)) html += `<br><span class="warn">${S.filter((c) => c.series).map((c) => c.label).join(' и ')}: только среди сериалов.</span>`;
+  if (extra) html += `<br><span class="warn">${extra}</span>`;
+  $('#selnote').innerHTML = html;
+  $('#clearSel').hidden = !prefs.sel.length;
 }
 $('#clearSel').addEventListener('click', () => {
   prefs.sel = []; savePrefs(); note();
   document.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-  setFx('idle');
+  applyFx();
 });
 
 document.querySelectorAll('.seg button').forEach((b) => {
   b.setAttribute('aria-checked', b.dataset.mode === prefs.mode);
   b.addEventListener('click', () => {
-    prefs.mode = b.dataset.mode; savePrefs();
+    prefs.mode = b.dataset.mode; savePrefs(); note();
     document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x === b));
   });
 });
@@ -72,13 +82,13 @@ for (const el of [yFrom, yTo]) el.addEventListener('change', () => { prefs.from 
 $('#noRepeat').checked = prefs.noRepeat;
 $('#noRepeat').addEventListener('change', (e) => { prefs.noRepeat = e.target.checked; savePrefs(); });
 note();
-{ const c = byId[prefs.sel[prefs.sel.length - 1]]; setFx(c ? c.fx : 'idle', c?.accent); }
+applyFx();
 
 function filters() {
   const y = (v) => { const n = parseInt(v, 10); return n >= 1880 && n <= 2035 ? n : undefined; };
   let from = y(yFrom.value), to = y(yTo.value);
   if (from && to && from > to) [from, to] = [to, from];
-  const niche = prefs.sel.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary'].includes(id));
+  const niche = prefs.sel.some((id) => ['kdrama', 'anime', 'noir', 'slasher', 'truecrime', 'cyberpunk', 'western', 'music', 'documentary', 'detective', 'dystopia'].includes(id)) || (selG().length && selS().length);
   return { mode: prefs.mode, from, to, minRating: Number(rating.value) || 0, minVotes: niche ? 1500 : 4000 };
 }
 
@@ -153,20 +163,18 @@ async function spin() {
   requestAnimationFrame(cruise);
   const t0 = performance.now();
 
-  let res;
-  try { res = await getPool(prefs.sel, filters()); } catch (e) { res = { pool: [], offline: true }; }
-  let pool = res.pool;
-  let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool;
-  let resetNote = '';
-  if (!fresh.length && pool.length) { fresh = pool; resetNote = 'Всё подходящее уже выпадало, начинаю круг заново. '; }
-  if (!fresh.length) {
+  const ch = await choose();
+  if (ch.error) {
     cruising = false; await settle(v);
-    finish(); $('#status').textContent = 'Под такие фильтры ничего не нашлось. Снизь рейтинг или расширь годы.';
+    finish(); $('#status').textContent = ''; note(ch.error);
+    $('#selnote').scrollIntoView?.({ block: 'nearest' });
     return;
   }
-  const win = fresh[Math.floor(Math.random() * fresh.length)];
-  display = pool.map((x) => x.t);
+  note();
+  const win = ch.win, res = ch;
+  display = ch.pool.map((x) => x.t);
   await Promise.all([preload(win.t, 300), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
+  const resetNote = ch.reset ? 'Всё подходящее уже выпадало, начинаю круг заново. ' : '';
 
   cruising = false;
   if (reduce.matches) {
@@ -193,13 +201,37 @@ async function spin() {
     });
   }
   reel.classList.add('landed');
-  const chip = byId[win.chip];
-  setFx(chip ? chip.fx : 'idle', chip?.accent);
+  applyFx(win.g, win.s);
   burst(1);
-  remember(win.t, win.chip);
+  remember(win.t, win.s || win.g, win.g);
   $('#status').textContent = resetNote + (res.offline ? 'Сервер с данными не ответил, крутим из встроенной подборки.' : '');
-  showResult(win.t, win.chip);
+  showResult(win.t, win.s || win.g, win.g);
   finish();
+}
+const bad = new Set();
+// Подбор: пул по логике групп, затем проверка кандидата по полной карточке IMDb (интересы, страна).
+async function choose() {
+  const G = selG(), S = selS(), f = filters();
+  let res;
+  try { res = await getPool(G, S, f); } catch { res = { pool: [] }; }
+  if (res.conflict) return { error: 'Мини-сериалы и ситкомы бывают только среди сериалов. Переключи на «Сериалы» или «Всё».' };
+  const pool = res.pool.filter((x) => !bad.has(x.t.id));
+  let fresh = prefs.noRepeat ? pool.filter((x) => !seen.has(x.t.id)) : pool.slice();
+  let reset = false;
+  if (!fresh.length && pool.length) { fresh = pool.slice(); reset = true; }
+  fresh.sort(() => Math.random() - 0.5);
+  for (const c of fresh.slice(0, 6)) {
+    let d = null;
+    for (let k = 0; k < 2 && !d; k++) { try { d = await core(c.t.id); } catch {} }
+    const g = byId[c.g], s = byId[c.s];
+    // без карточки принимаем только то, что не требует проверки интересов, или офлайн-подборку (она проверена заранее)
+    if (!d) { if (matchLocal(c.t, g, s, f) && (res.offline || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
+    d.i = d.i || c.t.i;
+    if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
+    bad.add(c.t.id);
+  }
+  const want = [G.map((c) => c.label.toLowerCase()).join(' или '), S.map((c) => c.label.toLowerCase()).join(' или ')].filter(Boolean).join(' + ');
+  return { error: `Не нашлось ничего${want ? ` под «${want}»` : ''} с такими годами и рейтингом. Сними часть фильтров: снизь рейтинг, расширь годы или выбери другой поджанр.` };
 }
 async function settle(v) {
   if (reduce.matches) return;
@@ -228,12 +260,12 @@ const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 &
 const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
 let token = 0;
 
-function showResult(t, chipId) {
+function showResult(t, chipId, gId) {
   const my = ++token;
-  render(t, chipId, false);
-  details(t).then((d) => { if (my === token) { render(d, chipId, true); patchHistory(d); } }).catch(() => {});
+  render(t, chipId, false, gId);
+  details(t).then((d) => { if (my === token) { render(d, chipId, true, gId); patchHistory(d); } }).catch(() => {});
 }
-function render(t, chipId, full) {
+function render(t, chipId, full, gId) {
   const el = $('#result');
   const title = t.ru || t.t;
   const orig = [t.ru && t.ru !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
@@ -247,11 +279,12 @@ function render(t, chipId, full) {
   if (t.directors?.length) facts.push(`<li>Режиссёр: ${esc(t.directors.slice(0, 2).join(', '))}</li>`);
   const desc = t.wiki ? `<p class="desc">${esc(trim(t.wiki))}</p><p class="src">Из <a href="${esc(t.wikiUrl)}" target="_blank" rel="noopener">Википедии</a></p>`
     : t.p ? `<p class="desc en" lang="en">${esc(t.p)}</p><p class="src">Описание IMDb, на английском</p>` : full ? '' : '<p class="src">Загружаю описание…</p>';
-  const chip = byId[chipId];
+  const chip = byId[chipId], gch = gId && gId !== chipId ? byId[gId] : null;
+  const tag = [gch?.label, chip?.label].filter(Boolean).join(' + ');
   el.innerHTML = `
     <div class="poster">${t.i ? `<img src="${poster(t.i, 600)}" alt="Постер: ${esc(title)}">` : ''}</div>
     <div class="info">
-      <p class="kicker">${KIND_RU[t.k] || 'Тайтл'}${years ? `, ${years}` : ''}${chip ? `. ${esc(chip.label)}` : ''}</p>
+      <p class="kicker">${KIND_RU[t.k] || 'Тайтл'}${years ? `, ${years}` : ''}${tag ? `. ${esc(tag)}` : ''}</p>
       <h2>${esc(title)}</h2>
       ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : '<p class="orig"></p>'}
       <ul class="facts">${facts.join('')}</ul>
@@ -289,9 +322,9 @@ document.addEventListener('click', (e) => { const w = $('#where'); if (w && !w.h
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const w = $('#where'); if (w && !w.hidden) { w.hidden = true; $('[data-act="where"]')?.focus(); } } });
 
 // ---------- история ----------
-function remember(t, chip) {
+function remember(t, chip, g) {
   seen.add(t.id); save(LS.seen, [...seen].slice(-600));
-  hist = [{ id: t.id, t: t.t, k: t.k, y: t.y, e: t.e, r: t.r, v: t.v, g: t.g, i: t.i, s: t.s, chip, ts: Date.now() }, ...hist.filter((h) => h.id !== t.id)].slice(0, 30);
+  hist = [{ id: t.id, t: t.t, k: t.k, y: t.y, e: t.e, r: t.r, v: t.v, g: t.g, i: t.i, s: t.s, chip, gc: g, ts: Date.now() }, ...hist.filter((h) => h.id !== t.id)].slice(0, 30);
   save(LS.hist, hist); drawHistory();
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
@@ -303,8 +336,8 @@ function drawHistory() {
 $('#hrow').addEventListener('click', (e) => {
   const b = e.target.closest('.hitem'); if (!b) return;
   const h = hist.find((x) => x.id === b.dataset.id); if (!h) return;
-  const c = byId[h.chip]; setFx(c ? c.fx : 'idle', c?.accent);
-  showResult(h, h.chip);
+  applyFx(h.gc, h.chip && !isGenre.has(h.chip) ? h.chip : null);
+  showResult(h, h.chip, h.gc);
   $('#result').scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: 'start' });
 });
 $('#histClear').addEventListener('click', () => { hist = []; seen = new Set(); save(LS.hist, hist); save(LS.seen, []); drawHistory(); });
@@ -312,4 +345,15 @@ $('#histBtn').addEventListener('click', () => { if (!hist.length) { $('#status')
 drawHistory();
 
 // для тестов
-window.__kr = { spin, setFx, burst };
+window.__kr = {
+  spin, setFx, burst, choose, gl: () => glInfo(),
+  set(sel, mode = 'all', extra = {}) {
+    prefs.sel = sel; prefs.mode = mode; Object.assign(prefs, extra);
+    yFrom.value = prefs.from || ''; yTo.value = prefs.to || ''; rating.value = prefs.rating ?? 6.5; showRating();
+    document.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', sel.includes(b.dataset.id)));
+    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-checked', x.dataset.mode === mode));
+    savePrefs(); note(); applyFx();
+  },
+  async pick() { const r = await choose(); if (r.win) { seen.add(r.win.t.id); } return r.error ? { error: r.error } : { t: r.win.t, g: r.win.g, s: r.win.s, offline: !!r.offline }; },
+  filters,
+};

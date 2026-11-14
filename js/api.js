@@ -1,4 +1,4 @@
-import { byId, LISTS } from './chips.js';
+import { LISTS } from './chips.js?v=3';
 
 const B = 'https://api.tiffara.com';
 const IMG = 'https://m.media-amazon.com/images/M/';
@@ -40,78 +40,114 @@ export function norm(t) {
 
 const TYPES = { movie: ['MOVIE'], series: ['TV_SERIES', 'TV_MINI_SERIES'], all: ['MOVIE', 'TV_SERIES', 'TV_MINI_SERIES'] };
 const KIND = { movie: ['movie', 'tvMovie'], series: ['tvSeries', 'tvMiniSeries'], all: ['movie', 'tvMovie', 'tvSeries', 'tvMiniSeries'] };
+const SERIES = ['tvSeries', 'tvMiniSeries'];
+const gNames = (g) => [].concat(g.q?.genres || g.alt?.flatMap((x) => [].concat(x.genres)) || []);
+const meet = (arr, want) => !want || want.some((x) => arr.includes(x));
 
-function okLocal(t, f, chip) {
-  if (!t.i) return false;
-  if (!(chip?.forceType) && !KIND[f.mode].includes(t.k)) return false;
-  if (f.from && t.y && t.y < f.from) return false;
-  if (f.to && t.y && t.y > f.to) return false;
+// Проверка по данным из списка: тип, годы, рейтинг, жанр из группы «Жанры», базовые требования поджанра.
+export function matchLocal(t, g, s, f) {
+  if (!t || !t.i) return false;
+  const kinds = s?.kinds || (s?.series ? SERIES : null);
+  if (!KIND[f.mode].includes(t.k)) return false;
+  if (kinds && !kinds.includes(t.k)) return false;
+  if (f.from && (!t.y || t.y < f.from)) return false;
+  if (f.to && (!t.y || t.y > f.to)) return false;
   if (f.minRating && (t.r || 0) < f.minRating) return false;
+  const gs = t.g || [];
+  if (g && !meet(gs, gNames(g))) return false;
+  if (s) {
+    if (s.need && !meet(gs, s.need)) return false;
+    if (s.noG && s.noG.some((x) => gs.includes(x))) return false;
+    if (s.minV && (t.v || 0) < s.minV) return false;
+    if (s.maxY && (!t.y || t.y > s.maxY)) return false;
+    if (s.list && !LISTS[s.list].includes(t.id)) return false;
+  }
+  return true;
+}
+// Полная проверка по карточке тайтла (с интересами IMDb и страной).
+export function matchFull(d, g, s, f) {
+  if (!matchLocal(d, g, s, f)) return false;
+  if (!s || !d.interests) return true;
+  const ids = d.interests;
+  if (s.noI && s.noI.some((x) => ids.includes(x))) return false;
+  if (s.anyI && !meet(ids, s.anyI) && !(s.orCountry && (d.countries || []).includes(s.orCountry))) return false;
   return true;
 }
 
-// Случайное окно лет внутри диапазона, чтобы каждый спин давал другие 50 тайтлов.
+// Случайное окно лет внутри диапазона, чтобы каждый спин давал другие тайтлы.
 function yearWindow(from, to) {
   const lo = from || 1960, hi = to || new Date().getFullYear();
-  if (hi - lo <= 8 || Math.random() < 0.3) return [from, to];
-  // чуть чаще новые годы
-  const u = Math.pow(Math.random(), 0.7);
-  const span = 4 + rnd(8);
-  const mid = Math.round(hi - u * (hi - lo));
+  if (hi - lo <= 8 || Math.random() < 0.35) return [from, to];
+  const u = Math.pow(Math.random(), 0.7), span = 4 + rnd(8), mid = Math.round(hi - u * (hi - lo));
   return [Math.max(lo, mid - span), Math.min(hi, mid + span)];
 }
+function merge(a, b) {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b || {})) out[k] = out[k] !== undefined && (k === 'genres' || k === 'interestIds') ? [...new Set([].concat(out[k], v))] : v;
+  return out;
+}
 
-async function queryChip(chip, f) {
-  if (chip?.list) {
-    const s = await snap();
-    return (s.chips[chip.id] || []).map((id) => s.titles[id]).filter((t) => okLocal(t, f, chip));
+async function queryPair(g, s, f) {
+  if (s?.list) {
+    const sn = await snap();
+    return LISTS[s.list].map((id) => sn.titles[id]).filter(Boolean);
   }
-  const variant = chip ? (chip.alt ? pick(chip.alt) : chip.q) : {};
+  const gv = g ? (g.alt ? pick(g.alt) : g.q) : {};
+  const sv = s ? (s.alt ? pick(s.alt) : s.q) : {};
   const [from, to] = yearWindow(f.from, f.to);
-  const sorts = [['SORT_BY_POPULARITY', 'ASC'], ['SORT_BY_USER_RATING_COUNT', 'DESC'], ['SORT_BY_USER_RATING', 'DESC']];
-  const [sortBy, sortOrder] = pick(sorts);
-  const p = {
-    types: TYPES[f.mode], minVoteCount: f.minVotes, minAggregateRating: f.minRating || undefined,
-    startYear: from || undefined, endYear: to || undefined, sortBy, sortOrder, ...variant,
-  };
-  if (chip?.forceType) p.types = variant.types;
-  if (variant.endYear && to) p.endYear = Math.min(variant.endYear, to);
-  if (variant.startYear && from) p.startYear = Math.max(variant.startYear, from);
+  const [sortBy, sortOrder] = pick([['SORT_BY_POPULARITY', 'ASC'], ['SORT_BY_USER_RATING_COUNT', 'DESC'], ['SORT_BY_USER_RATING', 'DESC']]);
+  const p = merge(merge({ types: TYPES[f.mode], minVoteCount: f.minVotes, minAggregateRating: f.minRating || undefined, sortBy, sortOrder }, gv), sv);
+  if (s?.kinds) p.types = ['TV_MINI_SERIES'];
+  else if (s?.series) p.types = TYPES[f.mode].filter((x) => x !== 'MOVIE');
+  if (s?.minV) p.minVoteCount = Math.max(f.minVotes, s.minV);
+  const end = (y) => (s?.maxY ? Math.min(s.maxY, y || s.maxY) : y);
+  p.startYear = from; p.endYear = end(to);
   let d = await getJSON(`${B}/titles?${qs(p)}`);
-  // если окно лет оказалось пустым, берём весь диапазон
-  if (!d.titles?.length && (from !== f.from || to !== f.to)) {
-    d = await getJSON(`${B}/titles?${qs({ ...p, startYear: f.from || undefined, endYear: variant.endYear || f.to || undefined })}`);
-  }
+  if (!d.titles?.length && (from !== f.from || to !== f.to)) d = await getJSON(`${B}/titles?${qs({ ...p, startYear: f.from, endYear: end(f.to) })}`);
   let list = (d.titles || []).map(norm);
   if (d.nextPageToken && Math.random() < 0.45) {
-    try {
-      const d2 = await getJSON(`${B}/titles?${qs(p)}&pageToken=${encodeURIComponent(d.nextPageToken)}`);
-      list = list.concat((d2.titles || []).map(norm));
-    } catch {}
+    try { const d2 = await getJSON(`${B}/titles?${qs(p)}&pageToken=${encodeURIComponent(d.nextPageToken)}`); list = list.concat((d2.titles || []).map(norm)); } catch {}
   }
-  return list.filter((t) => okLocal(t, f, chip));
+  return list;
+}
+async function fallbackPair(g, s) {
+  const sn = await snap();
+  const ids = s ? sn.chips[s.id] || [] : g ? sn.chips[g.id] || [] : Object.keys(sn.titles);
+  return ids.map((id) => sn.titles[id]).filter(Boolean);
 }
 
-async function fallbackChip(chip, f) {
-  const s = await snap();
-  const ids = chip ? s.chips[chip.id] || [] : Object.keys(s.titles);
-  return ids.map((id) => s.titles[id]).filter((t) => okLocal(t, f, chip));
-}
-
-// Возвращает пул: [{title, chipId}], и флаг offline, если пришлось брать встроенную базу.
-export async function getPool(chipIds, f) {
-  const chosen = chipIds.length ? [...chipIds].sort(() => Math.random() - 0.5).slice(0, 3) : [null];
+// Логика: ИЛИ внутри «Жанров», ИЛИ внутри «Поджанров», И между группами.
+// Возвращает пул [{t, g, s}] — каждый тайтл с парой чипов, которой он соответствует.
+export async function getPool(G, S, f) {
+  if (f.mode === 'movie' && S.length && S.every((s) => s.series)) return { pool: [], conflict: true };
+  const Sx = f.mode === 'movie' ? S.filter((s) => !s.series) : S;
+  const pairs = [];
+  for (const g of G.length ? G : [null]) for (const s of Sx.length ? Sx : [null]) pairs.push([g, s]);
+  pairs.sort(() => Math.random() - 0.5);
   let offline = false;
-  const parts = await Promise.all(chosen.map(async (id) => {
-    const chip = id ? byId[id] : null;
-    let list;
-    try { list = await queryChip(chip, f); } catch { offline = true; list = await fallbackChip(chip, f); }
-    return list.map((t) => ({ t, chip: id }));
-  }));
-  const seen = new Set();
-  const pool = [];
-  for (const part of parts) for (const x of part) if (!seen.has(x.t.id)) { seen.add(x.t.id); pool.push(x); }
+  const pool = [], seen = new Set();
+  const run = async (batch) => {
+    const parts = await Promise.all(batch.map(async ([g, s]) => {
+      let list;
+      try { list = await queryPair(g, s, f); } catch { offline = true; list = await fallbackPair(g, s); }
+      return list.filter((t) => matchLocal(t, g, s, f)).map((t) => ({ t, g: g?.id || null, s: s?.id || null }));
+    }));
+    for (const part of parts) for (const x of part) if (!seen.has(x.t.id)) { seen.add(x.t.id); pool.push(x); }
+  };
+  await run(pairs.slice(0, 3));
+  // мало вариантов — добираем остальные пары
+  for (let i = 3; pool.length < 12 && i < pairs.length; i += 3) await run(pairs.slice(i, i + 3));
   return { pool, offline };
+}
+
+export async function core(id) {
+  const full = await getJSON(`${B}/titles/${id}`, 6000);
+  return Object.assign(norm(full), {
+    interests: (full.interests || []).map((x) => x.id),
+    countries: (full.originCountries || []).map((x) => x.code),
+    directors: (full.directors || []).map((d) => d.displayName),
+    meta: full.metacritic?.score,
+  });
 }
 
 export async function seedPosters() {
@@ -121,19 +157,13 @@ export async function seedPosters() {
 
 // Детали: русское название, сезоны, описание из русской Википедии.
 export async function details(t) {
-  const tasks = [
-    getJSON(`${B}/titles/${t.id}`).catch(() => null),
+  const [full, akas, seasons, w] = await Promise.all([
+    t.interests ? t : core(t.id).catch(() => null),
     getJSON(`${B}/titles/${t.id}/akas`).catch(() => null),
     /tvSeries|tvMiniSeries/.test(t.k) ? getJSON(`${B}/titles/${t.id}/seasons`).catch(() => null) : null,
     wiki(t.id).catch(() => null),
-  ];
-  const [full, akas, seasons, w] = await Promise.all(tasks);
-  const out = { ...t };
-  if (full) Object.assign(out, norm(full), {
-    directors: (full.directors || []).map((d) => d.displayName),
-    stars: (full.stars || []).slice(0, 3).map((d) => d.displayName),
-    meta: full.metacritic?.score,
-  });
+  ]);
+  const out = { ...t, ...(full || {}) };
   const ru = akas?.akas?.find((a) => a.country?.code === 'RU') || akas?.akas?.find((a) => a.language?.code === 'ru');
   out.ru = ru?.text || w?.label || null;
   if (seasons?.seasons) out.seasons = seasons.seasons.filter((s) => /^\d+$/.test(s.season)).length;

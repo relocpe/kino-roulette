@@ -20,20 +20,27 @@ export const GENRES = [
   { id: 'music', label: 'Музыка', q: { genres: ['Music', 'Musical'] }, alt: [{ genres: 'Music' }, { genres: 'Musical' }], fx: 'music', accent: '#ff4fb0' },
 ];
 
+// need: хотя бы один из жанров IMDb; anyI: хотя бы один из интересов IMDb (проверяется по карточке тайтла);
+// noI: исключающие интересы; kinds: допустимые типы; series: только сериалы.
 export const MOODS = [
-  { id: 'psycho', label: 'Психологический триллер', alt: [{ interestIds: 'in0000182' }, { interestIds: 'in0000086', genres: 'Thriller' }, { interestIds: 'in0000114' }], fx: 'psycho', accent: '#d65a7a' },
-  { id: 'detective', label: 'Детектив', alt: [{ interestIds: 'in0000141' }, { interestIds: 'in0000138' }, { interestIds: 'in0000057' }, { interestIds: 'in0000140' }], fx: 'detective', accent: '#d8b27a' },
-  { id: 'noir', label: 'Нуар', alt: [{ interestIds: 'in0000054' }, { interestIds: 'in0000138' }, { interestIds: 'in0000179' }], fx: 'noir', accent: '#f2f2f2' },
-  { id: 'slasher', label: 'Слэшер', q: { interestIds: 'in0000115' }, fx: 'slasher', accent: '#e3262f' },
-  { id: 'cyberpunk', label: 'Киберпанк', alt: [{ interestIds: 'in0000159' }, { interestIds: 'in0000177' }, { interestIds: 'in0000158' }], fx: 'cyberpunk', accent: '#ff3df2' },
+  { id: 'psycho', label: 'Психологический триллер', alt: [{ interestIds: ['in0000182', 'in0000086'] }, { interestIds: 'in0000182', genres: 'Mystery' }, { interestIds: 'in0000114' }],
+    need: ['Thriller', 'Horror', 'Mystery'], anyI: ['in0000182', 'in0000114'], noI: ['in0000057', 'in0000051', 'in0000053', 'in0000058', 'in0000072', 'in0000008', 'in0000033', 'in0000055', 'in0000085', 'in0000056', 'in0000007'], noG: ['Comedy', 'Animation', 'Family', 'Biography', 'Documentary', 'Action', 'Adventure', 'War', 'Western', 'Romance'], fx: 'psycho', accent: '#d65a7a' },
+  { id: 'detective', label: 'Детектив', alt: [{ interestIds: 'in0000141' }, { interestIds: 'in0000138' }, { interestIds: 'in0000137' }, { interestIds: 'in0000057', genres: 'Mystery' }],
+    need: ['Mystery', 'Crime'], anyI: ['in0000141', 'in0000138', 'in0000137', 'in0000057'], fx: 'detective', accent: '#d8b27a' },
+  { id: 'noir', label: 'Нуар', alt: [{ interestIds: 'in0000054' }, { interestIds: 'in0000138' }],
+    need: ['Crime', 'Mystery', 'Thriller', 'Drama', 'Film-Noir'], anyI: ['in0000054', 'in0000138'], noG: ['Comedy', 'Animation', 'Family'], fx: 'noir', accent: '#f2f2f2' },
+  { id: 'slasher', label: 'Слэшер', q: { interestIds: 'in0000115' }, need: ['Horror'], anyI: ['in0000115'], noI: ['in0000039', 'in0000038'], fx: 'slasher', accent: '#e3262f' },
+  { id: 'cyberpunk', label: 'Киберпанк', q: { interestIds: 'in0000159' }, need: ['Sci-Fi'], anyI: ['in0000159'], fx: 'cyberpunk', accent: '#ff3df2' },
   { id: 'postapoc', label: 'Постапокалипсис', list: 'postapoc', fx: 'postapoc', accent: '#e38b3a' },
-  { id: 'dystopia', label: 'Антиутопия', q: { interestIds: 'in0000160' }, fx: 'dystopia', accent: '#ff5a4a' },
-  { id: 'truecrime', label: 'Тру-крайм', alt: [{ interestIds: 'in0000058' }, { interestIds: 'in0000059' }, { interestIds: 'in0000183' }], fx: 'truecrime', accent: '#ffcf3a' },
-  { id: 'anime', label: 'Аниме', q: { interestIds: 'in0000027' }, fx: 'anime', accent: '#ff8fb8' },
-  { id: 'kdrama', label: 'Дорамы', alt: [{ interestIds: 'in0000209' }, { countryCodes: 'KR', genres: 'Drama' }, { countryCodes: 'KR', genres: 'Romance' }], fx: 'kdrama', accent: '#ffb3c7' },
-  { id: 'sitcom', label: 'Ситком', q: { interestIds: 'in0000044' }, fx: 'sitcom', accent: '#ffb547' },
-  { id: 'mini', label: 'Мини-сериал', q: { types: 'TV_MINI_SERIES' }, forceType: true, fx: 'mini', accent: '#c7b8ff' },
-  { id: 'cult', label: 'Культовая классика', q: { minVoteCount: 250000, endYear: 2005 }, fx: 'cult', accent: '#ff6a3d' },
+  { id: 'dystopia', label: 'Антиутопия', q: { interestIds: 'in0000160' }, need: ['Sci-Fi', 'Drama', 'Thriller', 'Action'], anyI: ['in0000160'], fx: 'dystopia', accent: '#ff5a4a' },
+  { id: 'truecrime', label: 'Тру-крайм', alt: [{ interestIds: 'in0000058' }, { interestIds: 'in0000059' }],
+    need: ['Crime', 'Documentary', 'Biography'], anyI: ['in0000058', 'in0000059'], fx: 'truecrime', accent: '#ffcf3a' },
+  { id: 'anime', label: 'Аниме', q: { interestIds: 'in0000027' }, need: ['Animation'], anyI: ['in0000027'], fx: 'anime', accent: '#ff8fb8' },
+  { id: 'kdrama', label: 'Дорамы', alt: [{ interestIds: 'in0000209' }, { countryCodes: 'KR', genres: 'Drama' }, { countryCodes: 'KR', genres: 'Romance' }],
+    anyI: ['in0000209'], orCountry: 'KR', noG: ['Animation', 'Documentary', 'Reality-TV'], fx: 'kdrama', accent: '#ffb3c7' },
+  { id: 'sitcom', label: 'Ситком', q: { interestIds: 'in0000044' }, need: ['Comedy'], anyI: ['in0000044'], series: true, fx: 'sitcom', accent: '#ffb547' },
+  { id: 'mini', label: 'Мини-сериал', q: { types: 'TV_MINI_SERIES' }, kinds: ['tvMiniSeries'], series: true, fx: 'mini', accent: '#c7b8ff' },
+  { id: 'cult', label: 'Культовая классика', q: { minVoteCount: 250000, endYear: 2005 }, minV: 250000, maxY: 2005, fx: 'cult', accent: '#ff6a3d' },
   { id: 'twist', label: 'С неожиданной развязкой', list: 'twist', fx: 'twist', accent: '#7af0e0' },
 ];
 
@@ -43,6 +50,7 @@ export const LISTS = {
 };
 
 export const ALL = [...GENRES, ...MOODS];
+export const isGenre = new Set(GENRES.map((c) => c.id));
 export const byId = Object.fromEntries(ALL.map((c) => [c.id, c]));
 
 export const GENRE_RU = {
