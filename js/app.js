@@ -8,6 +8,7 @@ import { storyBlob, shareLink, shareImage } from './share.js?v=1';
 import { watchedIds, getLists } from './store.js?v=11';
 
 const $ = (s) => document.querySelector(s);
+const LORD_RESOLVER = 'https://kino-roulette-lordfilm-resolver.samevamp.workers.dev/resolve';
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)').matches;
 const mobile = () => matchMedia('(max-width: 760px)').matches;
@@ -618,7 +619,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть на LordFilm">LordFilm ↗</button>
+        <button class="btn" type="button" data-act="lord" aria-label="Смотреть фильм на LordFilm">СМОТРЕТЬ</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
@@ -711,8 +712,41 @@ result.addEventListener('click', (e) => {
     if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
   }
   if (act === 'lord') {
-    const q = encodeURIComponent(curT?.ru || curT?.t || '');
-    window.open(`https://lordfilm.biz/search?q=${q}`, '_blank', 'noopener');
+    const t = curT;
+    if (!t) return;
+    const title = t.ru || ruCached(t.id) || t.t || '';
+    const q = encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`);
+    const searchUrl = `https://1.2026-lord.pics/search?q=${q}`;
+    const goToFilm = async () => {
+      b.disabled = true; b.textContent = 'Ищу фильм…';
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(LORD_RESOLVER, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            originalTitle: t.t || '',
+            year: t.y,
+            type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
+        const result = await response.json();
+        const directUrl = /^https:\/\/1\.2026-lord\.pics\/\d+$/.test(result.url || '');
+        if (result.matched === true && directUrl) { window.location.href = result.url; return; }
+        V.toast('Точного совпадения нет — открываю поиск LordFilm', null, 2500);
+      } catch (error) {
+        console.warn('LordFilm direct lookup failed; opening search results.', error);
+        V.toast('Не удалось найти страницу фильма — открываю поиск LordFilm', null, 2500);
+      } finally {
+        clearTimeout(timer);
+      }
+      window.location.href = searchUrl;
+    };
+    const markWatched = watchedIds().has(t.id) ? Promise.resolve() : V.act('watched', t.id);
+    markWatched.then(goToFilm, goToFilm);
   }
 });
 // ---------- Поделиться ----------
