@@ -304,7 +304,7 @@ function measure() {
   const r = reel.getBoundingClientRect();
   const probe = document.createElement('div'); probe.style.width = 'var(--cw)'; reel.append(probe); CW = probe.offsetWidth || 160; probe.remove();
   P = CW + Math.round(CW * 0.09); CX = r.width / 2 - CW / 2;
-  const need = Math.ceil(r.width / P) + 4;
+  const need = Math.ceil(r.width / P) + 8; // запас карточек справа: src ставится заранее, за ~0.4 с до появления даже на полной скорости
   if (need !== K) {
     K = need; strip.textContent = '';
     cards = Array.from({ length: K }, () => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = '<img alt="" decoding="async"><span></span>'; strip.append(d); d.vi = null; const img = d.firstChild; img.onerror = () => d.classList.add('miss'); img.onload = () => d.classList.add('ok'); return d; });
@@ -325,7 +325,8 @@ function warm(src, ms = 2500) {
   if (!src) return Promise.resolve(false);
   let e = decoded.get(src);
   if (!e) {
-    const im = new Image(); im.decoding = 'async'; im.src = src;
+    const im = new Image(); im.decoding = 'async'; im.alt = ''; im.src = src;
+    im.onload = () => im.parentNode?.classList.add('ok'); im.onerror = () => im.parentNode?.classList.add('miss');
     e = { im, ok: false };
     e.p = (im.decode ? im.decode() : new Promise((r, j) => { im.onload = r; im.onerror = j; })).then(() => (e.ok = true), () => false);
     decoded.set(src, e);
@@ -337,14 +338,19 @@ function visRange() { const first = Math.floor((pos - CX) / P) - 1; return [firs
 async function buildTape(list, n = 24) {
   const pool = list.filter((t) => t?.i).sort(() => Math.random() - 0.5).slice(0, n);
   if (!pool.length) return;
-  await Promise.all(pool.map((t) => warm(reelSrc(t), 3000)));
-  const good = pool.filter(isWarm);
-  const next = good.length >= Math.min(6, pool.length) ? good : pool;
-  // видимые кадры закрепляем, чтобы смена ленты ничего не перерисовала на глазах
-  if (tape.length && K) { const [a, b] = visRange(); for (let v = a; v < b; v++) if (!items.has(v)) items.set(v, itemAt(v)); }
-  tape = next;
-  for (const k of items.keys()) if (k < visRange()[0] - 40) items.delete(k);
-  paint();
+  const commit = (next) => {
+    // видимые и запасные кадры закрепляем, чтобы смена ленты ничего не перерисовала на глазах
+    const had = tape.length > 0;
+    if (had && K) { const [a, b] = visRange(); for (let v = a; v < b; v++) if (!items.has(v)) items.set(v, itemAt(v)); }
+    tape = next;
+    const lo = visRange()[0] - 40; for (const k of items.keys()) if (k < lo) items.delete(k);
+    paint(!had); kickDrift();
+  };
+  // первый раз (медленная сеть) лента растёт по мере декодирования; в ленту попадают только готовые постеры
+  const grow = !tape.length, got = [];
+  await Promise.all(pool.map((t) => warm(reelSrc(t), 15000).then((ok) => { if (!ok) return; got.push(t); if (grow && got.length >= 4) commit([...got]); })));
+  if (!grow && got.length >= Math.min(6, pool.length)) commit(got);
+  else if (!tape.length) commit(pool); // ничего не загрузилось: покажем заглушки с названиями
 }
 function itemAt(v) { return items.has(v) ? items.get(v) : tape.length ? tape[mod(v, tape.length)] : null; }
 function paint(force) {
@@ -355,8 +361,10 @@ function paint(force) {
       el.vi = v;
       const t = itemAt(v);
       el.classList.remove('miss');
-      const img = el.firstChild;
-      const src = reelSrc(t);
+      let img = el.firstChild;
+      const src = reelSrc(t), w = decoded.get(src);
+      // уже декодированный <img> из кэша вставляем в карточку целиком: второй раз декодировать не нужно (большие PNG с AniList)
+      if (w?.ok && w.im !== img && !w.im.isConnected) { el.replaceChild(w.im, img); img = w.im; el.classList.add('ok'); }
       if (img.getAttribute('src') !== src) { if (src) { img.src = src; el.classList.toggle('ok', isWarm(t) || (img.complete && img.naturalWidth > 0)); } else { img.removeAttribute('src'); el.classList.remove('ok'); el.classList.add('miss'); } }
       else if (img.complete && img.naturalWidth) el.classList.add('ok');
       el.lastChild.textContent = t ? t.t : '';
@@ -430,8 +438,8 @@ async function spin() {
   }
   const win = ch.win;
   display = ch.pool.map((x) => x.t);
-  // победитель декодируется до торможения; если не успел за 2.5s — кадр покажет заглушку с названием, без подмены на ходу
-  await Promise.all([warm(reelSrc(win.t), 2500), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
+  // победитель декодируется до торможения; если не успел за 6 с (барабан всё это время крутится) — кадр покажет заглушку с названием, без подмены на ходу
+  await Promise.all([warm(reelSrc(win.t), 6000), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
   const resetNote = ch.reset ? 'Всё подходящее уже выпадало, начинаю круг заново. ' : '';
 
   cruising = false;
@@ -837,6 +845,7 @@ function pickSimilar(t, rect) {
 
 // для тестов
 window.__kr = {
+  tape: () => tape.map((t) => [reelSrc(t).slice(-24), isWarm(t)]),
   spin, setGenre, phase, wow: (id) => { setGenre(id); return wow(cards.find((c) => c.classList.contains('c'))); }, genreNow, choose, gl: () => glInfo(), cleanWiki,
   // sel: ['horror', 'comedy'], extra: {sub: {horror: 'slasher'}, from, to, rating, noRepeat}
   set(sel, mode = 'all', extra = {}) {
