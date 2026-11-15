@@ -711,6 +711,9 @@ function whereLinks(t, title) {
     ['Okko', `https://okko.tv/search/${q}`],
     ['Иви', `https://www.ivi.ru/search/?q=${q}`],
     ['JustWatch', `https://www.justwatch.com/ru/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q=${qo}`],
+    ['Plex · бесплатно', `https://watch.plex.tv/search?query=${q}`],
+    ['Tubi · бесплатно', `https://tubitv.com/search/${q}`],
+    ['Pluto TV · бесплатно', `https://pluto.tv/search?query=${q}`],
     ...(t.src === 'al' ? [['AniList', `https://anilist.co/anime/${t.al}`], ...(t.mal ? [['MyAnimeList', `https://myanimelist.net/anime/${t.mal}`]] : [])] : [['IMDb', `https://www.imdb.com/title/${t.id}/`]]),
   ];
   return L.map(([n, u, k]) => `<a href="${u}"${k ? ` data-${k}` : ''} target="_blank" rel="noopener">${n}${ico.ext}</a>`).join('');
@@ -736,6 +739,7 @@ result.addEventListener('click', (e) => {
     const title = t.ru || ruCached(t.id) || t.t || '';
     const q = encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`);
     const searchUrl = `https://1.2026-lord.pics/search?q=${q}`;
+    const originalLabel = b.textContent;
     const goToFilm = async () => {
       b.disabled = true; b.textContent = 'Ищу фильм…';
       const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
@@ -755,12 +759,17 @@ result.addEventListener('click', (e) => {
         const result = await response.json();
         const directUrl = /^https:\/\/1\.2026-lord\.pics\/\d+$/.test(result.url || '');
         if (result.matched === true && directUrl) { window.location.href = result.url; return; }
-        V.toast('Точного совпадения нет — открываю поиск LordFilm', null, 2500);
+        if (result.reason === 'search-unavailable' || result.reason === 'upstream-unavailable') {
+          V.toast('Автопоиск не сработал — открываю выдачу LordFilm', null, 2500);
+        } else {
+          V.toast('Точного совпадения нет — открываю поиск LordFilm', null, 2500);
+        }
       } catch (error) {
         console.warn('LordFilm direct lookup failed; opening search results.', error);
         V.toast('Не удалось найти страницу фильма — открываю поиск LordFilm', null, 2500);
       } finally {
         clearTimeout(timer);
+        b.disabled = false; b.textContent = originalLabel;
       }
       window.location.href = searchUrl;
     };

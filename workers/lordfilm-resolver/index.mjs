@@ -2,6 +2,16 @@ const LORD_FILM_ORIGIN = 'https://1.2026-lord.pics';
 const ALLOWED_HOSTS = new Set(['1.2026-lord.pics', 'www.2026-lord.pics']);
 const ALLOWED_ORIGINS = new Set(['https://relocpe.github.io']);
 const MAX_CANDIDATES = 20;
+const NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_NEGATIVE_CACHE_ENTRIES = 128;
+const negativeCache = new Map();
+
+class LordFilmNetworkError extends Error {
+  constructor() {
+    super('LordFilm network request failed');
+    this.name = 'LordFilmNetworkError';
+  }
+}
 
 function corsHeaders(request) {
   const origin = request.headers.get('Origin');
@@ -44,10 +54,19 @@ async function fetchLordFilm(input, fetcher) {
   let url = new URL(input);
   for (let hop = 0; hop < 4; hop += 1) {
     if (!isAllowedUrl(url)) throw new Error('Unapproved LordFilm host');
-    const response = await fetcher(url.href, {
-      headers: { Accept: 'text/html, text/css;q=0.9' },
-      redirect: 'manual',
-    });
+    let response;
+    try {
+      response = await fetcher(url.href, {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'ru-RU,ru;q=0.9',
+          Referer: `${url.origin}/`,
+        },
+        redirect: 'manual',
+      });
+    } catch {
+      throw new LordFilmNetworkError();
+    }
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       return { response, url };
     }
@@ -78,72 +97,30 @@ function decodeHtml(text) {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
-function unescapeCss(value) {
-  return value.replace(/\\([0-9a-f]{1,6})\s?|\\(.)/gi, (_, hex, escaped) => {
-    if (!hex) return escaped || '';
-    const point = parseInt(hex, 16);
-    return point <= 0x10ffff ? String.fromCodePoint(point) : '';
-  });
-}
-
-function cssContents(css) {
-  const map = new Map();
-  const source = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const rules = /([^{}]+)\{([^{}]*)\}/g;
-  const contentRule = /(?:^|;)\s*content\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/i;
-  for (const [, selectors, declarations] of source.matchAll(rules)) {
-    const content = declarations.match(contentRule);
-    if (!content) continue;
-    const value = unescapeCss(content[1].slice(1, -1));
-    if (!value) continue;
-    for (const selector of selectors.split(',')) {
-      const match = selector.match(/\.([a-z0-9_-]+)\s*:{1,2}(?:before|after)\b/i);
-      if (match) map.set(match[1], value);
-    }
-  }
-  return map;
-}
-
-function iconText(markup, contents) {
-  let text = '';
-  for (const match of markup.matchAll(/<i\b[^>]*class=(["'])([^"']+)\1[^>]*>\s*<\/i>/gi)) {
-    for (const className of match[2].split(/\s+/)) {
-      text += contents.get(className) || '';
-    }
-  }
-  return decodeHtml(text).trim();
-}
-
 function resultItems(html) {
-  const marker = html.indexOf('id="Teasers-search"');
-  if (marker < 0) return [];
-  const listStart = html.indexOf('<ul', marker);
+  const marker = html.match(/\bid\s*=\s*(["'])Teasers-search\1/i);
+  if (!marker) return [];
+  const listStart = html.indexOf('<ul', marker.index);
   const listEnd = html.indexOf('</ul>', listStart);
   if (listStart < 0 || listEnd < 0) return [];
   const list = html.slice(listStart, listEnd);
   const items = [];
   for (const [, item] of list.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)) {
-    const link = item.match(/\bhref=(["'])\/(\d+)\1/i);
-    const bold = item.match(/<b\b[^>]*>([\s\S]*?)<\/b>/i);
-    if (!link || !bold) continue;
-    const spanStart = bold[1].search(/<span\b/i);
-    const titleMarkup = spanStart < 0 ? bold[1] : bold[1].slice(0, spanStart);
-    const yearMarkup = spanStart < 0 ? '' : (bold[1].slice(spanStart).match(/<span\b[^>]*>([\s\S]*?)<\/span>/i) || [])[1] || '';
-    items.push({ id: link[2], titleMarkup, yearMarkup });
-  }
-  return items;
-}
-
-function stylesheetUrl(html, baseUrl) {
-  for (const [tag] of html.matchAll(/<link\b[^>]*>/gi)) {
-    const attrs = attributes(tag);
-    if (!attrs.rel?.toLowerCase().split(/\s+/).includes('stylesheet') || !attrs.href) continue;
-    const url = new URL(attrs.href, baseUrl);
-    if (isAllowedUrl(url) && url.pathname.startsWith('/assets/') && /\.css$/i.test(url.pathname)) {
-      return url;
+    for (const [anchor] of item.matchAll(/<a\b[^>]*>/gi)) {
+      const href = attributes(anchor).href;
+      if (!href) continue;
+      let url;
+      try {
+        url = new URL(href, LORD_FILM_ORIGIN);
+      } catch {
+        continue;
+      }
+      if (!isAllowedUrl(url)) continue;
+      const id = url.pathname.match(/^\/(\d+)\/?$/)?.[1];
+      if (id) items.push({ id });
     }
   }
-  return null;
+  return [...new Map(items.map((item) => [item.id, item])).values()];
 }
 
 function normalizedTitle(title) {
@@ -170,12 +147,14 @@ function pageDetails(html) {
   const title = meta.get('og:title') || '';
   const originalTitle = meta.get('ya:original_name') || '';
   const releaseDate = meta.get('video:release_date') || '';
+  const pageTitleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const pageTitle = pageTitleMatch ? decodeHtml(pageTitleMatch[1]) : '';
   const yearMatch = releaseDate.match(/\b(18|19|20)\d{2}\b/)
     || title.match(/\b(18|19|20)\d{2}\b/);
   const ogType = (meta.get('og:type') || '').toLowerCase();
-  const type = ogType === 'video.movie' ? 'movie'
-    : ['video.tv_show', 'video.episode'].includes(ogType) ? 'tv'
-      : '';
+  const titleIdentifiesSeries = /(?:сериал|телесериал|tv\s*show|tv\s*series)/iu.test(pageTitle);
+  const type = ['video.tv_show', 'video.episode'].includes(ogType) || titleIdentifiesSeries ? 'tv'
+    : ogType === 'video.movie' ? 'movie' : '';
   return {
     titles: [title, originalTitle].map(normalizedTitle).filter(Boolean),
     year: yearMatch ? Number(yearMatch[0]) : null,
@@ -185,6 +164,48 @@ function pageDetails(html) {
 
 function fallbackResult(searchUrl, reason) {
   return { url: searchUrl.href, matched: false, reason };
+}
+
+function unavailableResult(searchUrl, statuses = []) {
+  const result = fallbackResult(searchUrl, 'search-unavailable');
+  if (statuses.length) result.upstreamStatuses = statuses;
+  return result;
+}
+
+async function negativeCacheKey(input) {
+  const keyMaterial = JSON.stringify([
+    normalizedTitle(input.title),
+    normalizedTitle(input.originalTitle),
+    Number(input.year),
+    input.type,
+  ]);
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(keyMaterial),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function getNegativeCache(key, now = Date.now()) {
+  const entry = negativeCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    negativeCache.delete(key);
+    return null;
+  }
+  return entry.result;
+}
+
+function setNegativeCache(key, result, now = Date.now()) {
+  for (const [cachedKey, entry] of negativeCache) {
+    if (entry.expiresAt <= now) negativeCache.delete(cachedKey);
+  }
+  while (negativeCache.size >= MAX_NEGATIVE_CACHE_ENTRIES) {
+    negativeCache.delete(negativeCache.keys().next().value);
+  }
+  negativeCache.set(key, { result, expiresAt: now + NEGATIVE_CACHE_TTL_MS });
 }
 
 export async function resolveLordFilm(input, fetcher = fetch) {
@@ -203,39 +224,40 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     const queryTitles = [...new Set([title, originalTitle].filter(Boolean))];
     const wantedTitles = new Set(queryTitles.map(normalizedTitle).filter(Boolean));
     const cardsById = new Map();
-    const styles = new Map();
     let pageBase;
+    const searchStatuses = [];
 
     for (const queryTitle of queryTitles) {
-      const queryUrl = new URL('/search', LORD_FILM_ORIGIN);
-      queryUrl.searchParams.set('q', `${queryTitle} (${year})`);
-      const { response, url } = await fetchLordFilm(queryUrl, fetcher);
-      if (!response.ok) continue;
-      const html = (await response.text()).slice(0, 1_500_000);
-      const rawItems = resultItems(html);
-      if (!rawItems.length) continue;
-
-      const cssUrl = stylesheetUrl(html, url);
-      if (!cssUrl) continue;
-      let styleMap = styles.get(cssUrl.href);
-      if (!styleMap) {
-        const cssResponse = await fetchLordFilm(cssUrl, fetcher);
-        if (!cssResponse.response.ok) continue;
-        styleMap = cssContents((await cssResponse.response.text()).slice(0, 2_000_000));
-        styles.set(cssUrl.href, styleMap);
-      }
-      pageBase = url;
-      for (const item of rawItems) {
-        const cardTitle = normalizedTitle(iconText(item.titleMarkup, styleMap));
-        const cardYearText = iconText(item.yearMarkup, styleMap);
-        const cardYear = Number((cardYearText.match(/\b(?:18|19|20)\d{2}\b/) || [])[0]);
-        if (wantedTitles.has(cardTitle) && (!cardYear || cardYear === year)) {
-          cardsById.set(item.id, item);
+      for (const query of [`${queryTitle} (${year})`, queryTitle]) {
+        const queryUrl = new URL('/search', LORD_FILM_ORIGIN);
+        queryUrl.searchParams.set('q', query);
+        const { response, url } = await fetchLordFilm(queryUrl, fetcher);
+        if (!response.ok) {
+          console.warn('LordFilm search returned a non-success status.', JSON.stringify({
+            status: response.status,
+            host: url.hostname,
+            contentType: response.headers.get('content-type'),
+            server: response.headers.get('server'),
+            cfRay: response.headers.get('cf-ray'),
+            cfMitigated: response.headers.get('cf-mitigated'),
+          }));
+          searchStatuses.push(response.status);
+          return unavailableResult(search, searchStatuses);
         }
+        const html = (await response.text()).slice(0, 1_500_000);
+        const rawItems = resultItems(html);
+        if (!rawItems.length) continue;
+        pageBase = url;
+        for (const item of rawItems) cardsById.set(item.id, item);
+        break;
       }
     }
 
-    if (!cardsById.size) return fallbackResult(search, 'no-exact-title');
+    if (!cardsById.size) {
+      return searchStatuses.length
+        ? unavailableResult(search, searchStatuses)
+        : fallbackResult(search, 'no-exact-title');
+    }
     if (cardsById.size > MAX_CANDIDATES) return fallbackResult(search, 'too-many-matches');
 
     const matches = [];
@@ -256,6 +278,9 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     }
     return { url: `${LORD_FILM_ORIGIN}/${matches[0]}`, matched: true, reason: 'exact-match' };
   } catch (error) {
+    if (error instanceof LordFilmNetworkError) {
+      return unavailableResult(search);
+    }
     console.error('LordFilm resolver failed; falling back to search.', error);
     return fallbackResult(search, 'upstream-unavailable');
   }
@@ -279,6 +304,12 @@ export default {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       return json({ error: 'Invalid request' }, 400, request);
     }
-    return json(await resolveLordFilm(input), 200, request);
+    const cacheKey = await negativeCacheKey(input);
+    const cached = getNegativeCache(cacheKey);
+    if (cached) return json(cached, 200, request);
+
+    const result = await resolveLordFilm(input);
+    if (result.reason === 'search-unavailable') setNegativeCache(cacheKey, result);
+    return json(result, 200, request);
   },
 };
