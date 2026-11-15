@@ -15,9 +15,10 @@ function searchPage(cards) {
   return `<html><head><link href="/assets/site.css" rel="stylesheet"></head><body><div id="Teasers-search"><ul class="m">${cards}</ul></div></body></html>`;
 }
 
-function detailPage({ title, originalTitle, year, type }) {
+function detailPage({ title, originalTitle, year, type, pageTitle }) {
   const ogType = type === 'movie' ? 'video.movie' : 'video.tv_show';
-  return `<html><head><meta property="og:title" content="${title} (${year})"><meta property="ya:original_name" content="${originalTitle}"><meta property="video:release_date" content="${year}-01-01"><meta property="og:type" content="${ogType}"></head></html>`;
+  const titleTag = pageTitle ? `<title>${pageTitle}</title>` : '';
+  return `<html><head>${titleTag}<meta property="og:title" content="${title} (${year})"><meta property="ya:original_name" content="${originalTitle}"><meta property="video:release_date" content="${year}-01-01"><meta property="og:type" content="${ogType}"></head></html>`;
 }
 
 function mockFetch({ cards, details }) {
@@ -53,7 +54,125 @@ test('returns a direct URL for one exact title, year, and type match', async () 
 test('falls back to search when there are no results', async () => {
   const result = await resolveLordFilm(request, mockFetch({ cards: [], details: {} }));
   assert.equal(result.matched, false);
+  assert.equal(result.reason, 'no-exact-title');
   assert.match(result.url, /^https:\/\/1\.2026-lord\.pics\/search\?q=/);
+});
+
+test('reports an unavailable upstream search instead of a missing title', async () => {
+  let calls = 0;
+  const result = await resolveLordFilm(request, async () => {
+    calls += 1;
+    return new Response('', { status: 500 });
+  });
+  assert.equal(result.matched, false);
+  assert.equal(result.reason, 'search-unavailable');
+  assert.deepEqual(result.upstreamStatuses, [500]);
+  assert.equal(calls, 1);
+});
+
+test('retries without the year when the year-qualified search has no cards', async () => {
+  const calls = [];
+  const result = await resolveLordFilm({
+    title: 'Чужак',
+    originalTitle: '',
+    year: 2020,
+    type: 'tv',
+  }, async (input) => {
+    const url = new URL(input);
+    if (url.pathname === '/search') {
+      const query = url.searchParams.get('q');
+      calls.push(query);
+      if (query === 'Чужак (2020)') return new Response(searchPage(''));
+      return new Response(searchPage('<li><a href="/22385">Чужак</a></li>'));
+    }
+    return new Response(detailPage({
+      title: 'Чужак',
+      originalTitle: 'The Outsider',
+      year: 2020,
+      type: 'movie',
+      pageTitle: 'Чужак (сериал 2020, 1 сезон) смотреть онлайн бесплатно',
+    }));
+  });
+  assert.deepEqual(calls, ['Чужак (2020)', 'Чужак']);
+  assert.deepEqual(result, {
+    url: 'https://1.2026-lord.pics/22385',
+    matched: true,
+    reason: 'exact-match',
+  });
+});
+
+test('maps search connection failures to search-unavailable without retrying', async () => {
+  let calls = 0;
+  const result = await resolveLordFilm({
+    title: 'Network failure title',
+    originalTitle: '',
+    year: 2020,
+    type: 'movie',
+  }, async () => {
+    calls += 1;
+    throw new TypeError('fetch failed');
+  });
+  assert.equal(result.reason, 'search-unavailable');
+  assert.equal(calls, 1);
+});
+
+test('caches search failures within the Worker isolate', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response('', { status: 500 });
+  };
+  const input = {
+    title: 'negative cache test',
+    originalTitle: '',
+    year: 2020,
+    type: 'movie',
+  };
+  const makeRequest = (title) => new Request('https://resolver.test/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, title }),
+  });
+  try {
+    const first = await worker.fetch(makeRequest(input.title));
+    const second = await worker.fetch(makeRequest('different cache title'));
+    const third = await worker.fetch(makeRequest('different cache title'));
+    assert.equal((await first.json()).reason, 'search-unavailable');
+    assert.equal((await second.json()).reason, 'search-unavailable');
+    assert.equal((await third.json()).reason, 'search-unavailable');
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('does not cache ordinary no-result responses', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(searchPage(''));
+  };
+  const makeRequest = () => new Request('https://resolver.test/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'ordinary no-result cache test',
+      originalTitle: '',
+      year: 2020,
+      type: 'movie',
+    }),
+  });
+  try {
+    const first = await worker.fetch(makeRequest());
+    const second = await worker.fetch(makeRequest());
+    assert.equal((await first.json()).reason, 'no-exact-title');
+    assert.equal((await second.json()).reason, 'no-exact-title');
+    assert.equal(calls, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('falls back to search when more than one exact result exists', async () => {
@@ -80,6 +199,27 @@ test('does not match a page with the wrong type', async () => {
     },
   }));
   assert.equal(result.matched, false);
+});
+
+test('recognizes a series when LordFilm incorrectly labels its Open Graph type as a movie', async () => {
+  const tvRequest = { title: 'Чужак', originalTitle: 'The Outsider', year: 2020, type: 'tv' };
+  const result = await resolveLordFilm(tvRequest, mockFetch({
+    cards: [{ id: '22385', title: 'Чужак: 1 сезон', year: 2020 }],
+    details: {
+      22385: detailPage({
+        title: 'Чужак',
+        originalTitle: 'The Outsider',
+        year: 2020,
+        type: 'movie',
+        pageTitle: 'Чужак (сериал 2020, 1 сезон) смотреть онлайн бесплатно',
+      }),
+    },
+  }));
+  assert.deepEqual(result, {
+    url: 'https://1.2026-lord.pics/22385',
+    matched: true,
+    reason: 'exact-match',
+  });
 });
 
 test('does not follow redirects to arbitrary hosts', async () => {
