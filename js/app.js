@@ -712,7 +712,7 @@ result.addEventListener('click', (e) => {
   }
   if (act === 'lord') {
     const q = encodeURIComponent(curT?.ru || curT?.t || '');
-    window.location.href = `https://lordfilm.biz/search?q=${q}`;
+    window.location.href = `https://1.2026-lord.pics/search?q=${q}`;
   }
 });
 // ---------- Поделиться ----------
