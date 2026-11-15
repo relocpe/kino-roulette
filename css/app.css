@@ -362,3 +362,9 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .nodlg dialog.modal[open] { box-shadow: 0 0 0 100vmax rgb(0 0 0 / .55); }
 /* липкий низ шторки не должен перекрывать сфокусированное поле */
 .picker, .cpop { scroll-padding-bottom: 96px; }
+/* телефоны: грейд и зерно одним слоем на всю ленту вместо SVG-фильтра и зерна на каждой карточке */
+.lgrade, .lgrain { display: none; }
+.lowfx .strip { filter: var(--lgF, none) !important; }
+.lowfx .lgrade { display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, var(--lgSh, #000), var(--lgHi, #fff)); mix-blend-mode: soft-light; opacity: var(--lgA, 0); }
+.lowfx .lgrain { display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: var(--grain) 0 0 / var(--gS, 128px) calc(var(--gS, 128px) * 8); mix-blend-mode: overlay; opacity: var(--gA, .15); animation: grain24 .333s steps(8) infinite; }
+.fx-still .lgrain { animation: none; }

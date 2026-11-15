@@ -49,7 +49,8 @@ const T0 = performance.now();
 const NOADAPT = /[?&]noadapt/.test(location.search);
 // телефоны (в том числе встроенный браузер Telegram на iOS): фон в 0.35×, быстрее деградация, карточки без SVG-фильтров
 const LOW = matchMedia('(pointer: coarse)').matches || /iP(hone|ad|od)/.test(navigator.userAgent);
-const RS = LOW ? 0.35 : 0.5, SLOW_N = LOW ? 10 : 30;
+const RS = LOW ? 0.35 : 0.5, SLOW_N = LOW ? 20 : 30;
+if (LOW) { document.documentElement.classList.add('lowfx'); const r = document.getElementById('reel'); if (r) { const a = document.createElement('div'); a.className = 'lgrade'; const b = document.createElement('div'); b.className = 'lgrain'; r.querySelector('.vig')?.before(a, b); } }
 
 // ---------- SVG-фильтры карточек ----------
 const NS = 'http://www.w3.org/2000/svg';
@@ -164,7 +165,7 @@ addEventListener('resize', resize, { passive: true });
 
 // ---------- кадр ----------
 const fxwrap = $('.fxwrap'), reelEl = $('#reel'), strip = $('#strip'), vig = $('#vig');
-let raf = 0, last = 0, slowN = 0, reelR = null, reelRT = 0, idleT = 0;
+let raf = 0, last = 0, slowN = 0, fastN = 0, thr = false, reelR = null, reelRT = 0, idleT = 0;
 const cssVals = new Map();
 const setVar = (k, v) => { if (cssVals.get(k) !== v) { cssVals.set(k, v); root.style.setProperty(k, v); } };
 addEventListener('scroll', () => (reelR = null), { passive: true });
@@ -180,8 +181,15 @@ function phaseAmt(now) {
 function frame(now) {
   raf = 0;
   const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
-  // деградация: 30 кадров подряд дольше 20ms — подпись выключается, грейд и зерно остаются
-  if (animate() && !NOADAPT) { if (dt > 0.02) { if (++slowN >= SLOW_N && !slow) { slow = true; } } else slowN = 0; }
+  // деградация: N кадров подряд дольше 36ms (ниже ~28 к/с) — подпись выключается, грейд и зерно остаются.
+  // Кадры после нашей же паузы (24 к/с в покое) не считаем: раньше именно они ложно включали деградацию,
+  // и через секунду после загрузки жанровые подписи и «вау» на остановке пропадали насовсем.
+  // Если потом 3 с всё плавно — подпись возвращается.
+  const wasThr = thr; thr = false;
+  if (animate() && !NOADAPT && !wasThr) {
+    if (dt > 0.036) { fastN = 0; if (++slowN >= SLOW_N && !slow) slow = true; }
+    else { slowN = 0; if (dt < 0.024 && slow && ++fastN > 180) { slow = false; fastN = 0; } }
+  }
   const t = (now - T0) / 1000;
   // грейд: кроссфейд 600ms ease-in-out
   if (xf0 >= 0) {
@@ -204,6 +212,13 @@ function frame(now) {
   if (!LOW) {
     setA(F.sm, 'values', matrix(kS, deSat > 0 ? lerp(satS, 0, deSat) : satS));
     setA(F.cm, 'values', matrix(Math.min(0.25, kS) * 0.6, 1 + (cur.sat - 1) * 0.25));
+  } else {
+    // телефоны: тот же грейд без SVG-фильтров — CSS saturate/contrast на ленте (GPU) и один тонирующий слой тень→свет
+    const sat = deSat > 0 ? lerp(satS, 0, deSat) : satS;
+    setVar('--lgF', `saturate(${sat.toFixed(2)}) contrast(${(1 + kS * 0.18).toFixed(2)})`);
+    setVar('--lgA', (kS * 0.55).toFixed(2));
+    setVar('--lgSh', `rgb(${cur.sh.map((x) => Math.round(x * 255)).join(' ')})`);
+    setVar('--lgHi', `rgb(${cur.hi.map((x) => Math.round(x * 255)).join(' ')})`);
   }
   // подписи на карточках
   let sideBlur = 0, cBlur = 0;
@@ -234,7 +249,7 @@ function frame(now) {
   // виньетка (у ужасов дышит ±0.05 за 4s) и зерно карточек
   const vv = cur.vig + (sig === 1 ? 0.05 * Math.sin(ts * Math.PI * 2 / 4) * sA : 0);
   setVar('--vig', (vv * (0.6 + 0.4 * amt)).toFixed(2));
-  if (!LOW) { setVar('--gA', (cur.gr * 5 * (0.35 + 0.65 * amt)).toFixed(2)); setVar('--gS', `${Math.round(128 * cur.gs)}px`); }
+  setVar('--gA', (cur.gr * 5 * (0.35 + 0.65 * amt)).toFixed(2)); setVar('--gS', `${Math.round(128 * cur.gs)}px`);
   // фон
   if (glOk) {
     if (!reelR || now - reelRT > 1000) { reelR = reelEl.getBoundingClientRect(); reelRT = now; }
@@ -251,7 +266,7 @@ function frame(now) {
   const busy = xf0 >= 0 || sig !== sigNext || sigA < 1 || ph === 'land' || Math.abs(amt - target) > 0.002 || whip > 0 || wowK > 0;
   // в покое и на результате хватает 24 к/с (зерно и так 24 к/с): не гоняем GPU на 60
   if (animate() || busy) {
-    if (!busy && (ph === 'idle' || ph === 'result')) { raf = -1; idleT = setTimeout(() => { raf = requestAnimationFrame(frame); }, 1000 / 24 - 4); }
+    if (!busy && (ph === 'idle' || ph === 'result')) { raf = -1; idleT = setTimeout(() => { thr = true; raf = requestAnimationFrame(frame); }, 1000 / 24 - 4); }
     else raf = requestAnimationFrame(frame);
   }
 }

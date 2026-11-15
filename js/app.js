@@ -1,6 +1,6 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
-import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=10';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=11';
 import { findTrailer, ytSearch } from './trailer.js?v=10';
 import * as V from './views.js?v=13';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
