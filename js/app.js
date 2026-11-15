@@ -1,6 +1,6 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=11';
-import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=11';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease } from './fx.js?v=1';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=15';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
@@ -228,17 +228,20 @@ function say(msg, btn) {
 }
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 // играет один жанр — старший по приоритету среди выбранных; на остановке — среди жанров выпавшего тайтла
-const selG = () => pairs().map(([g]) => (g.animeOnly ? 'anime' : g.id));
+// уточнение «Нуар» играет свой пресет; аниме-жанры — пресет аниме
+const selG = () => pairs().map(([g, s]) => (s?.id === 'noir' ? 'noir' : g.animeOnly ? 'anime' : g.id));
 const IMDB2G = {}; for (const g of GENRES) for (const n of [].concat(g.q?.genres || [])) IMDB2G[n] = g.id;
 function titleG(t) { const ids = (t.g || []).map((n) => IMDB2G[n]).filter(Boolean); if (t.src === 'al') ids.push('anime'); return ids; }
-function applyFx() { const sel = selG(); setGenre(sel.length ? top1(sel) : prefs.mode === 'anime' ? 'anime' : 'none'); }
-function landFx(t) { const sel = selG(); if (!sel.length) return setGenre(prefs.mode === 'anime' ? 'anime' : 'none'); const both = titleG(t).filter((x) => sel.includes(x)); setGenre(top1(both.length ? both : sel)); }
+// главный — первый выбранный жанр (в режиме «Аниме» — всегда пресет аниме, жанры добавляют тинт и атмосферу)
+const fxList = (sel) => (prefs.mode === 'anime' ? ['anime', ...sel] : sel);
+function applyFx() { setGenre(fxList(selG())); }
+function landFx(t) { const sel = selG(), tg = titleG(t); const both = sel.filter((x) => tg.includes(x)); setGenre(fxList(both.length ? both : sel)); }
 showRating(); syncUI(); applyFx();
 
 // поповер над полем пульта на десктопе, шторка снизу на мобилке (там — все разделы сразу)
 const DIALOGS = [picker];
 const anyOpen = () => DIALOGS.some((d) => d.open && !d.classList.contains('out'));
-const POPW = { type: 300, genre: 560, years: 520, rate: 400 };
+const POPW = { type: 300, genre: 560, years: 520, rate: 400, all: 560 };
 function place(d, from) {
   const pop = !!from && !mobile() && d === picker;
   d.classList.toggle('pop', pop);
@@ -307,10 +310,13 @@ function filters() {
 const stage = $('#stage'), reel = $('#reel'), strip = $('#strip'), result = $('#result');
 let CW = 0, P = 0, CX = 0, K = 0, cards = [];
 let pos = 0, items = new Map(), display = [];
+let driftRaf = 0, driftLast = 0, dMove = null, dHold = 0, dTimer = 0;
 function measure() {
   const r = reel.getBoundingClientRect();
   const probe = document.createElement('div'); probe.style.width = 'var(--cw)'; reel.append(probe); CW = probe.offsetWidth || 160; probe.remove();
+  const idx = P > 0 ? Math.round(pos / P) : 0;
   P = CW + Math.round(CW * 0.09); CX = r.width / 2 - CW / 2;
+  if (!spinning && P > 0) { endMove(); pos = idx * P; } // в покое карточка всегда ровно в рамке
   const need = Math.ceil(r.width / P) + 8; // запас карточек справа: src ставится заранее, за ~0.4 с до появления даже на полной скорости
   if (need !== K) {
     K = need; strip.textContent = '';
@@ -394,15 +400,29 @@ function retape() { tapeReady = seedsFor().then((s) => { display = s; return bui
 let tapeReady = seedsFor().then((s) => { display = s; return buildTape(s); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
 
-// покой: лента медленно дрейфует (только transform), стоит на паузе в фоне, при reduced-motion и во время крутки/результата
-let driftRaf = 0, driftLast = 0;
+// покой: лента шагает — карточка стоит ровно в рамке 2.6 с, затем переезд ровно на одну карточку за 0.9 с.
+// Только transform; пауза в фоне, при reduced-motion и во время крутки/результата.
+const HOLD = 2600, MOVE = 900, eMove = ease('cubic-bezier(.45,0,.55,1)');
+function endMove() { if (driftRaf > 0) cancelAnimationFrame(driftRaf); driftRaf = 0; dMove = null; dHold = 0; clearTimeout(dTimer); dTimer = 0; $('#gate')?.classList.remove('mv'); }
 const driftOn = () => !spinning && result.hidden && V.route.name === 'roulette' && !document.hidden && !reduce.matches && tape.length > 0 && P > 0;
 function drift(now) {
-  driftRaf = 0; if (!driftOn()) return;
-  const dt = Math.min(0.05, (now - driftLast) / 1000); driftLast = now;
-  pos += (P / 9) * dt; paint(); driftRaf = requestAnimationFrame(drift);
+  driftRaf = 0;
+  if (!driftOn()) { endMove(); if (!spinning && P > 0) { pos = Math.round(pos / P) * P; paint(); } return; }
+  if (dMove) {
+    const u = Math.min(1, (now - dMove.t0) / MOVE); pos = dMove.from + P * eMove(u); paint();
+    if (u < 1) { driftRaf = requestAnimationFrame(drift); return; }
+    pos = dMove.from + P; dMove = null; paint(); $('#gate')?.classList.remove('mv'); dHold = now + HOLD;
+  }
+  if (!dHold) dHold = now + HOLD;
+  if (now < dHold) { dTimer = setTimeout(() => { dTimer = 0; driftRaf = requestAnimationFrame(drift); }, dHold - now); driftRaf = -1; return; }
+  dHold = 0; pos = Math.round(pos / P) * P; dMove = { from: pos, t0: now }; $('#gate')?.classList.add('mv');
+  driftRaf = requestAnimationFrame(drift);
 }
-function kickDrift() { if (!driftRaf && driftOn()) { driftLast = performance.now(); driftRaf = requestAnimationFrame(drift); } }
+function kickDrift() {
+  if (driftRaf || !driftOn()) return;
+  pos = Math.round(pos / P) * P; paint(); // старт всегда с ровной карточки в рамке
+  driftLast = performance.now(); driftRaf = requestAnimationFrame(drift);
+}
 document.addEventListener('visibilitychange', kickDrift);
 setInterval(kickDrift, 800);
 
@@ -419,12 +439,12 @@ async function spin() {
   if (picker.open) closePanel(picker);
   say('');
   if (!result.hidden) await collapse();
-  cancelAnimationFrame(driftRaf); driftRaf = 0;
+  endMove();
   if (!tape.length) await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
   reel.classList.remove('landed');
   applyFx(); phase('spin');
   const P0 = plan(); let lastQ = -1;
-  // квантование картинки барабана (война 24 к/с, мелодрама 8 к/с)
+  // ступенчатая печать барабана (военный 24 к/с, мелодрама 12 к/с)
   const draw = (now) => { if (P0.fps) { const q = Math.floor(now / (1000 / P0.fps)); if (q === lastQ) return; lastQ = q; } paint(); };
   scrollTo({ top: 0, behavior: reduce.matches ? 'auto' : 'smooth' });
 
@@ -471,17 +491,12 @@ async function spin() {
     if (T >= va && T < vb) items.set(T, win.t);
     cards.forEach((c) => { if (c.vi != null && Math.abs(c.vi - T) <= 6 && !(c.vi >= va && c.vi < vb)) c.vi = null; });
     const p0 = pos, dist = T * P - p0, D = (4 * dist) / vNow * 1000;
-    // кривая торможения по жанру: обычная, рапид в конце (мелодрама), почти стоп-кадр + доворот (боевик), перелёт и возврат (комедия)
     const kind = P0.land;
     const quart = (u) => 1 - Math.pow(1 - u, 4);
     let curve = quart, total = D;
-    if (kind === 'rapid' && D > 1600) { const a = D - 1200, cA = D - 480; curve = (u) => { const tt = u * D; const tc = tt < a ? tt * (cA / a) : cA + (tt - a) * 0.4; return quart(Math.min(1, tc / D)); }; }
-    if (kind === 'slowmo') {
-      // почти стоп-кадр ×0.2 за 300ms до остановки, потом доворот 120ms
-      const rem = Math.min(0.5, (P * 0.35) / dist), pA = 1 - rem, pB = pA + rem * 0.25, a = Math.max(400, D - 300); total = a + 420;
-      curve = (u) => { const tt = u * total; if (tt < a) return pA * (1 - Math.pow(1 - tt / a, 3)); if (tt < a + 300) return pA + (pB - pA) * ((tt - a) / 300); return pB + (1 - pB) * (1 - Math.pow(1 - (tt - a - 300) / 120, 3)); };
-    }
-    if (kind === 'overshoot') { const ov = (P * 0.18) / dist; total = D + 220; curve = (u) => { const tt = u * total; if (tt < D) return quart(tt / D) * (1 + ov); const k = (tt - D) / 220; return 1 + ov * (1 - k * k * (3 - 2 * k)); }; }
+    // триллер: жёсткое торможение без отскока (Финчер); комедия: механическая остановка строго по центру, без доводки
+    if (kind === 'hard') { total = D * 1.25; curve = (u) => 1 - Math.pow(1 - u, 5); } // та же стартовая скорость, длинный «хвост» короче
+    if (kind === 'mech') { total = D * 0.525; curve = (u) => 0.45 * u + 0.55 * (1 - Math.pow(1 - u, 3)); }
     await new Promise((done) => {
       const s = performance.now(); let pv = pos, pt = s;
       const step = (now) => {
@@ -598,7 +613,9 @@ function render(t, full) {
   curT = t;
   const my = token;
   const title = t.ru || ruCached(t.id) || t.t;
-  const orig = [title !== t.t ? t.t : null, t.o && t.o !== (t.ru || t.t) ? t.o : null].filter(Boolean)[0];
+  // оригинал под русским — только если отличается не одним регистром
+const diff = (a, b) => !!a && !!b && a.trim().toLowerCase() !== b.trim().toLowerCase();
+  const orig = [diff(t.t, title) ? t.t : null, diff(t.o, title) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
@@ -609,11 +626,11 @@ function render(t, full) {
   // имена людей — по-русски из Wikidata (по nm-id), если там есть; иначе оригинальное написание
   const ruN = (names, ids) => names.map((n, i) => ruCached(ids?.[i]) || n);
   const dirs = t.src === 'al' ? [] : ruN((t.directors || []).slice(0, 2), t.dirIds), cast = t.src === 'al' ? [] : ruN((t.stars || []).slice(0, 3), t.starIds);
-  // описание: сюжет из ру-вики → вводная ру-вики без фраз о происхождении → английский сюжет с пометкой
+  // описание: сюжет из ру-вики → вводная ру-вики без фраз о происхождении → английский сюжет (lang=en)
   const ruPlot = (t.plotRu ? cleanWiki(t.plotRu) : '') || plotFromLead(cleanWiki(t.wiki || '')), lead = t.wiki ? stripOrigin(cleanWiki(t.wiki)) : '';
   // английский — только когда точно известно, что русского нет (после загрузки деталей), без мелькания
   const txt = ruPlot || lead || (full ? t.p : ''), isEn = !ruPlot && !lead && !!txt;
-  const desc = txt ? `${isEn ? '<p class="elabel">Описание на английском</p>' : ''}<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
+  const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
   const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
@@ -654,7 +671,7 @@ function render(t, full) {
     setN('.fact.dir b', (t.directors || []).slice(0, 2), t.dirIds); setN('.fact.cast b', (t.stars || []).slice(0, 3), t.starIds);
     const a = result.querySelector('#where a[data-kp]'); if (a) a.href = kpURL(t, title);
     const ru = ruCached(t.id), h = result.querySelector('.info h2');
-    if (ru && !t.ru && h && h.textContent !== ru) { h.textContent = ru; if (!result.querySelector('.orig')) h.insertAdjacentHTML('afterend', `<p class="orig" lang="en">${esc(t.t)}</p>`); }
+    if (ru && !t.ru && h && h.textContent !== ru) { h.textContent = ru; if (!result.querySelector('.orig') && diff(t.t, ru)) h.insertAdjacentHTML('afterend', `<p class="orig" lang="en">${esc(t.t)}</p>`); }
   });
   const d = $('#desc'); if (d) requestAnimationFrame(() => { if (d.scrollHeight > d.clientHeight + 2) result.querySelector('.moreDesc').hidden = false; });
   if (t.i) { const bd = $('#backdrop'); bd.style.backgroundImage = `url("${poster(t.i, 300)}")`; }
