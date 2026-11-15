@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=10';
 import { findTrailer, ytSearch } from './trailer.js?v=10';
-import * as V from './views.js?v=12';
+import * as V from './views.js?v=13';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
 import { storyBlob, shareLink, shareImage } from './share.js?v=1';
 import { watchedIds, getLists } from './store.js?v=11';
@@ -713,7 +713,7 @@ result.addEventListener('click', (e) => {
 // ---------- Поделиться ----------
 async function openShare(t) {
   if (!t) return;
-  const d = $('#shareDlg'), title = t.ru || ruCached(t.id) || t.t, url = new URL('title/' + t.id, document.baseURI).href;
+  const d = $('#shareDlg'), title = t.ru || ruCached(t.id) || t.t, url = new URL('?t=' + t.id, document.baseURI).href;
   const meta = [kindOf(t), t.y].filter(Boolean).join(' · ');
   d.innerHTML = `<div class="af shr"><div class="ahead"><h2>Поделиться</h2><button class="px" type="button" data-close aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
     <div class="shprev load" aria-label="Картинка для сторис"><span>Рисую картинку…</span></div>

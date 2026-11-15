@@ -651,7 +651,9 @@ export function initViews(hooks) {
   H = hooks;
   drawAvatar(); syncButtons();
   S.init();
-  // старые ссылки с GitHub Pages 404 → путь
+  // ссылки «Поделиться» вида ?t=tt123 открываются с кодом 200 (у глубоких путей на Pages статус 404, и Telegram может не показать превью)
+  const sp = new URLSearchParams(location.search), tq = sp.get('t');
+  if (tq && /^(tt\d+|al\d+)$/.test(tq)) history.replaceState({}, '', BASE + 'title/' + tq);
   show(parse(rel()));
   requestAnimationFrame(moveDot);
 }
