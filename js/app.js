@@ -618,7 +618,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть на LordFilm">LordFilm ↗</button>
+        <button class="btn" type="button" data-act="lord" aria-label="Смотреть фильм на LordFilm">СМОТРЕТЬ</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
@@ -712,7 +712,7 @@ result.addEventListener('click', (e) => {
   }
   if (act === 'lord') {
     const q = encodeURIComponent(curT?.ru || curT?.t || '');
-    window.open(`https://lordfilm.biz/search?q=${q}`, '_blank', 'noopener');
+    window.location.href = `https://lordfilm.biz/search?q=${q}`;
   }
 });
 // ---------- Поделиться ----------
