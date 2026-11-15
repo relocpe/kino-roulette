@@ -3,6 +3,7 @@ import { GENRES, GENRE_RU } from './chips.js?v=9';
 import { getJSON, norm, normAnime, poster } from './api.js?v=9';
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=1';
+import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -162,17 +163,25 @@ function fillMoods(root) {
 }
 
 // ---------- фильтры каталога ----------
-const DECS = [[0, 1969, 'до 70-х'], [1970, 1979, '70-е'], [1980, 1989, '80-е'], [1990, 1999, '90-е'], [2000, 2009, '00-е'], [2010, 2019, '10-е'], [2020, 2029, '20-е']];
+const DECS = [[0, 1969, 'до 70-х'], [1970, 1979, '70-е'], [1980, 1989, '80-е'], [1990, 1999, '90-е'], [2000, 2009, '00-е'], [2010, 2019, '10-е'], [2020, YEAR_RANGE_MAX, '20-е']];
 const cat = { q: '', mode: 'all', genres: [], from: undefined, to: undefined, rating: 0, sort: 'rating' };
+const yearLabel = (f) => {
+  if (!f.from && !f.to) return 'Любые';
+  const decade = DECS.find((d) => d[0] === (f.from || 0) && d[1] === (f.to || YEAR_RANGE_MAX));
+  if (decade) return decade[2];
+  if (f.from && f.to && Number(f.from) === Number(f.to)) return String(f.from);
+  return `${f.from || '…'}–${f.to || '…'}`;
+};
 const fieldVals = (f) => ({
   type: { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы' }[f.mode],
   genre: f.genres.length ? f.genres.map((id) => GENRES.find((g) => g.id === id)?.label).slice(0, 2).join(', ') + (f.genres.length > 2 ? ` +${f.genres.length - 2}` : '') : 'Любой',
-  years: f.from || f.to ? (DECS.find((d) => d[0] === (f.from || 0) && d[1] === f.to)?.[2] || `${f.from || '…'}–${f.to || '…'}`) : 'Любые',
+  years: yearLabel(f),
   rate: f.rating ? `от ${f.rating}` : 'Любой',
 });
 const nFilters = (f) => (f.mode !== 'all') + !!f.genres.length + !!(f.from || f.to) + !!f.rating;
 function filterRow(f, { onChange, readonly = false, sort = true } = {}) {
   const v = fieldVals(f);
+  let yearInputsChanged = false;
   const fld = (k, lbl) => `<button class="cf" type="button" data-k="${k}"${readonly ? ' disabled' : ''}><small>${lbl}</small><span>${esc(v[k])}</span></button>`;
   const wrap = document.createElement('div'); wrap.className = 'crow';
   wrap.innerHTML = `<div class="cfs">${fld('type', 'Что')}${fld('genre', 'Жанр')}${fld('years', 'Годы')}${fld('rate', 'Рейтинг')}</div>
@@ -187,10 +196,31 @@ function filterRow(f, { onChange, readonly = false, sort = true } = {}) {
     const H2 = { type: 'Что', genre: 'Жанры', years: 'Годы', rate: 'Рейтинг' };
     d.innerHTML = `<div class="cpin">${secs.map((s) => `<section data-s="${s}"><h3 class="slabel">${H2[s]}${s === 'genre' ? ` <span class="cnt">${f.genres.length ? f.genres.length + ' из 3' : ''}</span>` : ''}</h3>${body(s)}</section>`).join('')}
       <div class="pfoot"><button class="ghost" type="button" data-x="reset">Сбросить</button><button class="ok" type="button" data-x="done">${k === 'all' ? 'Показать' : 'Готово'}</button></div></div>`;
+    const yearRangeHost = d.querySelector('[data-year-range-host]');
+    if (yearRangeHost) {
+      mountYearRange(yearRangeHost, {
+        from: f.from,
+        to: f.to,
+        onInput: ({ from, to }) => {
+          f.from = from;
+          f.to = to;
+          yearInputsChanged = true;
+          const low = from || 0, high = to || YEAR_RANGE_MAX;
+          yearRangeHost.parentElement.querySelectorAll('.dec [data-a]').forEach((chip) => {
+            chip.setAttribute('aria-pressed', String(+chip.dataset.a === low && +chip.dataset.b === high));
+          });
+          refresh();
+        },
+        onChange: () => {
+          if (yearInputsChanged) onChange?.();
+          yearInputsChanged = false;
+        },
+      });
+    }
     function body(s) {
       if (s === 'type') return `<div class="opts">${[['all', 'Фильмы и сериалы'], ['movie', 'Фильмы'], ['series', 'Сериалы']].map(([m, l]) => `<button type="button" role="radio" data-mode="${m}" aria-checked="${f.mode === m}">${l}</button>`).join('')}</div>`;
       if (s === 'genre') return `<div class="glist">${GENRES.map((g) => `<div class="grp${f.genres.length >= 3 && !f.genres.includes(g.id) ? ' off' : ''}"><div class="grow"><button type="button" class="gopt" data-g="${g.id}" aria-checked="${f.genres.includes(g.id)}"><i class="cb"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>${esc(g.label)}</span></button></div></div>`).join('')}</div>`;
-      if (s === 'years') return `<div class="dec">${DECS.map(([a, b, l]) => `<button type="button" class="chip" data-a="${a}" data-b="${b}" aria-pressed="${(f.from || 0) === a && f.to === b}">${l}</button>`).join('')}</div>`;
+      if (s === 'years') return `<div class="dec">${DECS.map(([a, b, l]) => `<button type="button" class="chip" data-a="${a}" data-b="${b}" aria-pressed="${(f.from || 0) === a && (f.to || YEAR_RANGE_MAX) === b}">${l}</button>`).join('')}</div><div data-year-range-host></div>`;
       return `<div class="opts">${[[0, 'Любой'], [6, 'от 6'], [7, 'от 7'], [7.5, 'от 7.5'], [8, 'от 8']].map(([r, l]) => `<button type="button" role="radio" data-r="${r}" aria-checked="${(f.rating || 0) === r}">${l}</button>`).join('')}</div>`;
     }
     d.onclick = (e) => {

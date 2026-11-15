@@ -2,10 +2,11 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=10';
 import { findTrailer, ytSearch } from './trailer.js?v=10';
-import * as V from './views.js?v=13';
+import * as V from './views.js?v=14';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
 import { storyBlob, shareLink, shareImage } from './share.js?v=1';
 import { watchedIds, getLists } from './store.js?v=11';
+import { mountYearRange } from './year-range.js?v=1';
 
 const $ = (s) => document.querySelector(s);
 const LORD_RESOLVER = 'https://kino-roulette-lordfilm-resolver.samevamp.workers.dev/resolve';
@@ -141,6 +142,21 @@ function syncDec() {
     b.setAttribute('aria-pressed', String(!!inr)); b.classList.toggle('mid', !!(inr && r[0] !== r[1] && d !== r[0] && d !== r[1]));
   });
 }
+const syncYearSlider = mountYearRange($('#yearRange'), {
+  from: prefs.from,
+  to: prefs.to,
+  onInput: ({ from, to }) => {
+    prefs.from = from ?? '';
+    prefs.to = to ?? '';
+    const decade = DECS.find(([d]) => (
+      d === 1900 ? !from && to === 1969
+        : d === 2020 ? from === 2020 && !to
+          : from === d && to === d + 9
+    ));
+    prefs.dec = decade ? [decade[0]] : [];
+    changed();
+  },
+});
 
 // рейтинг
 const rating = $('#rating');
@@ -188,6 +204,7 @@ function genreVal() {
 function yearsVal() {
   const r = decRange();
   if (r) return r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])} – ${decLabel(r[1])}`;
+  if (prefs.from && prefs.to && Number(prefs.from) === Number(prefs.to)) return String(prefs.from);
   return prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : 'Любые';
 }
 function rateVal() {
@@ -204,7 +221,7 @@ function syncFields() {
   set('#fType', 'Что', TYPE_V[prefs.mode]); set('#fGenre', 'Жанр', genreVal()); set('#fYears', 'Годы', yearsVal()); set('#fRate', 'Рейтинг', rateVal()); set('#fSum', 'Настройки', sumVal());
 }
 function syncUI() {
-  syncChips(); syncDec(); syncFields();
+  syncChips(); syncDec(); syncYearSlider(prefs.from, prefs.to); syncFields();
   document.querySelectorAll('#known button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.known === '1') === !!prefs.known)));
   document.querySelectorAll('#types button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
@@ -619,7 +636,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть фильм на LordFilm">СМОТРЕТЬ</button>
+        <button class="btn" type="button" data-act="lord" aria-label="Смотреть фильм на LordFilm">Смотреть</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
