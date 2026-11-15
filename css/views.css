@@ -252,11 +252,14 @@ body.inroom .view { min-height: 100dvh; }
   .tabbar a svg { width: 22px; height: 22px; }
   .tabbar a.on { color: var(--ink); }
   body[data-route="roulette"] .pult { bottom: calc(56px + 8px + env(safe-area-inset-bottom)); }
-  body[data-route="roulette"] .main { padding-bottom: calc(150px + 56px + env(safe-area-inset-bottom)); }
+  body[data-route="roulette"] .main { padding-bottom: calc(126px + 56px + env(safe-area-inset-bottom)); }
   body[data-route="roulette"] .toast { bottom: calc(56px + 8px + 118px + 10px + env(safe-area-inset-bottom)); }
   body[data-route="roulette"].has-result .toast { bottom: calc(56px + 8px + 66px + 10px + env(safe-area-inset-bottom)); }
   body:not([data-route="roulette"]) .toast { bottom: calc(56px + 12px + env(safe-area-inset-bottom)); }
   body[data-route="title"] .info { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  /* результат: контент не уходит под пульт и таб-бар; под пультом — подложка в цвет фона */
+  body[data-route="roulette"] .info { padding-bottom: calc(56px + 8px + 64px + 32px + env(safe-area-inset-bottom)); }
+  body[data-route="roulette"].has-result::after { content: ''; position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; height: calc(56px + 8px + 64px + 28px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #0C0B0A 55%, rgb(12 11 10 / 0)); pointer-events: none; }
   body.inroom .toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
   .view { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
   .wrap { padding: 4px 16px 0; }
@@ -281,7 +284,6 @@ body.inroom .view { min-height: 100dvh; }
   .mspin { height: 44px; padding: 0 18px; font-size: 14px; }
   .vh { font-size: 26px; line-height: 32px; }
   .plaque { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .actions .ib2 { flex: 0 0 48px; height: 48px; }
   .stile { flex-basis: 120px; }
   .sarr { display: none; }
   .sim { margin-top: 44px; }
@@ -293,14 +295,15 @@ body.inroom .view { min-height: 100dvh; }
   .rcode { font-size: 48px; }
   .tog { padding-top: 6dvh; }
 }
-.lacts { display: inline-flex; gap: 8px; }
+/* ♡ и «уже смотрел» — в том же ряду, что и остальные кнопки, иконками 52×52 */
+.lacts { display: contents; }
+.actions .ib2, .actions .btn.sq { flex: 0 0 52px; width: 52px; height: 52px; }
+@media (min-width: 761px) { .actions { gap: 8px; } .actions .btn:not(.sq) { padding-inline: 18px; } }
 .mtxt { min-width: 0; max-width: 100%; }
 .mhead p { white-space: normal; }
 @media (max-width: 760px) {
   .actions { flex-wrap: wrap; }
-  .actions .btn { flex: 1 1 calc(50% - 4px); }
-  .lacts { flex: 1 0 100%; }
-  .lacts .ib2 { flex: 1 1 0; height: 44px; }
+  .actions .btn:not(.sq) { flex: 1 1 calc(50% - 8px); height: 52px; }
 }
 @media (pointer: coarse) {
   .tb { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgb(12 11 10 / .78); }

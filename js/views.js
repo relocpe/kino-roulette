@@ -1,8 +1,8 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
-import { GENRES, GENRE_RU } from './chips.js?v=9';
-import { getJSON, norm, normAnime, poster } from './api.js?v=9';
+import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?v=11';
 import * as S from './store.js?v=11';
-import { ruCached, localize, ruTitles } from './ru.js?v=1';
+import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -79,9 +79,12 @@ async function alq(query, variables) {
   return d;
 }
 const AFMT = { movie: ['MOVIE'], series: ['TV', 'TV_SHORT', 'ONA', 'OVA'], all: ['TV', 'TV_SHORT', 'MOVIE', 'ONA', 'OVA'] };
+AFMT.anime = AFMT.all;
+// жанры каталога → жанры/теги AniList (режим «Аниме»)
+const alOf = (f, k) => { const a = [...new Set((f.genres || []).flatMap((id) => GENRES.find((g) => g.id === id)?.al?.[k] || []))]; return a.length ? a : undefined; };
 async function alPage(page, f) {
-  const d = await alq(`query($p:Int,$f:[MediaFormat],$s:[MediaSort],$sc:Int,$a:FuzzyDateInt,$b:FuzzyDateInt){Page(page:$p,perPage:40){pageInfo{total hasNextPage} media(type:ANIME,isAdult:false,format_in:$f,sort:$s,averageScore_greater:$sc,startDate_greater:$a,startDate_lesser:$b){${ALF}}}}`,
-    { p: page, f: AFMT[f.mode || 'all'], s: [f.sort === 'year' ? 'START_DATE_DESC' : f.sort === 'pop' ? 'POPULARITY_DESC' : 'SCORE_DESC'], sc: f.rating ? Math.round(f.rating * 10) - 1 : undefined, a: f.from ? f.from * 10000 : undefined, b: f.to ? (f.to + 1) * 10000 : undefined });
+  const d = await alq(`query($p:Int,$f:[MediaFormat],$s:[MediaSort],$sc:Int,$a:FuzzyDateInt,$b:FuzzyDateInt,$g:[String],$tg:[String]){Page(page:$p,perPage:40){pageInfo{total hasNextPage} media(type:ANIME,isAdult:false,format_in:$f,sort:$s,genre_in:$g,tag_in:$tg,minimumTagRank:60,averageScore_greater:$sc,startDate_greater:$a,startDate_lesser:$b){${ALF}}}}`,
+    { g: alOf(f, 'g'), tg: alOf(f, 'tag'), p: page, f: AFMT[f.mode || 'all'], s: [f.sort === 'year' ? 'START_DATE_DESC' : f.sort === 'pop' ? 'POPULARITY_DESC' : 'SCORE_DESC'], sc: f.rating ? Math.round(f.rating * 10) - 1 : undefined, a: f.from ? f.from * 10000 : undefined, b: f.to ? (f.to + 1) * 10000 : undefined });
   return { list: d.Page.media.map(normAnime), total: d.Page.pageInfo.total, next: d.Page.pageInfo.hasNextPage ? page + 1 : null };
 }
 const SORTS = { rating: ['SORT_BY_USER_RATING', 'DESC'], pop: ['SORT_BY_POPULARITY', 'ASC'], year: ['SORT_BY_RELEASE_DATE', 'DESC'] };
@@ -93,12 +96,15 @@ async function fetchPage(f, tok) {
     let list = (d.titles || []).filter((x) => /movie|tvSeries|tvMiniSeries/.test(x.type)).map(norm);
     return { list, total: list.length, next: null };
   }
-  if (f.genres?.includes('anime')) return alPage(tok || 1, f);
+  if (f.genres?.includes('anime')) f = { ...f, mode: 'anime', genres: f.genres.filter((x) => x !== 'anime') }; // старые ссылки и комнаты
+  if (f.mode === 'anime') return alPage(tok || 1, f);
+  await animeReady;
   const gq = [...new Set((f.genres || []).flatMap((id) => [].concat(GENRES.find((g) => g.id === id)?.q?.genres || []).slice(0, 1)))];
   const [sortBy, sortOrder] = SORTS[f.sort || 'rating'];
   const p = { types: TYPES[f.mode || 'all'], genres: gq, startYear: f.from, endYear: f.to, minAggregateRating: f.rating || undefined, minVoteCount: f.votes || (f.sort === 'year' ? 2000 : 15000), sortBy, sortOrder };
   const d = await getJSON(`${B}/titles?${qs(p)}${tok ? '&pageToken=' + encodeURIComponent(tok) : ''}`);
-  return { list: (d.titles || []).map(norm), total: d.totalCount, next: d.nextPageToken || null };
+  // аниме с IMDb в «Фильмах» и «Сериалах» не показываем — для него есть режим «Аниме»
+  return { list: (d.titles || []).map(norm).filter((t) => !isAnime(t)), total: d.totalCount, next: d.nextPageToken || null };
 }
 export async function getTitle(id) {
   if (/^al\d+$/.test(id)) { const d = await alq(`query($id:Int){Media(id:$id,type:ANIME){${ALF}}}`, { id: +id.slice(2) }); return normAnime(d.Media); }
@@ -173,7 +179,7 @@ const yearLabel = (f) => {
   return `${f.from || '…'}–${f.to || '…'}`;
 };
 const fieldVals = (f) => ({
-  type: { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы' }[f.mode],
+  type: { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы', anime: 'Аниме' }[f.mode],
   genre: f.genres.length ? f.genres.map((id) => GENRES.find((g) => g.id === id)?.label).slice(0, 2).join(', ') + (f.genres.length > 2 ? ` +${f.genres.length - 2}` : '') : 'Любой',
   years: yearLabel(f),
   rate: f.rating ? `от ${f.rating}` : 'Любой',
@@ -218,14 +224,14 @@ function filterRow(f, { onChange, readonly = false, sort = true } = {}) {
       });
     }
     function body(s) {
-      if (s === 'type') return `<div class="opts">${[['all', 'Фильмы и сериалы'], ['movie', 'Фильмы'], ['series', 'Сериалы']].map(([m, l]) => `<button type="button" role="radio" data-mode="${m}" aria-checked="${f.mode === m}">${l}</button>`).join('')}</div>`;
-      if (s === 'genre') return `<div class="glist">${GENRES.map((g) => `<div class="grp${f.genres.length >= 3 && !f.genres.includes(g.id) ? ' off' : ''}"><div class="grow"><button type="button" class="gopt" data-g="${g.id}" aria-checked="${f.genres.includes(g.id)}"><i class="cb"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>${esc(g.label)}</span></button></div></div>`).join('')}</div>`;
+      if (s === 'type') return `<div class="opts">${[['all', 'Фильмы и сериалы'], ['movie', 'Фильмы'], ['series', 'Сериалы'], ['anime', 'Аниме']].map(([m, l]) => `<button type="button" role="radio" data-mode="${m}" aria-checked="${f.mode === m}">${l}</button>`).join('')}</div>`;
+      if (s === 'genre') return `<div class="glist">${GENRES.filter((g) => genreOk(g, f.mode)).map((g) => `<div class="grp${f.genres.length >= 3 && !f.genres.includes(g.id) ? ' off' : ''}"><div class="grow"><button type="button" class="gopt" data-g="${g.id}" aria-checked="${f.genres.includes(g.id)}"><i class="cb"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>${esc(g.label)}</span></button></div></div>`).join('')}</div>`;
       if (s === 'years') return `<div class="dec">${DECS.map(([a, b, l]) => `<button type="button" class="chip" data-a="${a}" data-b="${b}" aria-pressed="${(f.from || 0) === a && (f.to || YEAR_RANGE_MAX) === b}">${l}</button>`).join('')}</div><div data-year-range-host></div>`;
       return `<div class="opts">${[[0, 'Любой'], [6, 'от 6'], [7, 'от 7'], [7.5, 'от 7.5'], [8, 'от 8']].map(([r, l]) => `<button type="button" role="radio" data-r="${r}" aria-checked="${(f.rating || 0) === r}">${l}</button>`).join('')}</div>`;
     }
     d.onclick = (e) => {
       const b = e.target.closest('button'); if (!b) { if (e.target === d) d.close(); return; }
-      if (b.dataset.mode) f.mode = b.dataset.mode;
+      if (b.dataset.mode) { f.mode = b.dataset.mode; f.genres = f.genres.filter((id) => genreOk(GENRES.find((g) => g.id === id), f.mode)); }
       else if (b.dataset.g) { const g = b.dataset.g; f.genres = f.genres.includes(g) ? f.genres.filter((x) => x !== g) : f.genres.length < 3 ? [...f.genres, g] : f.genres; }
       else if (b.dataset.a) { const a = +b.dataset.a, z = +b.dataset.b; const on = (f.from || 0) === a && f.to === z; f.from = on ? undefined : a || 1900; f.to = on ? undefined : z; if (!on && a === 0) f.from = undefined; }
       else if (b.dataset.r) f.rating = +b.dataset.r;
@@ -330,7 +336,7 @@ function renderCatalog() {
     <h2 class="hcap">Подборки</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
   fillMoods(view);
   let stop = null;
-  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'тайтл', 'тайтла', 'тайтлов')}` : ''; } }); };
+  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'название', 'названия', 'названий')}` : ''; } }); };
   const row = filterRow(cat, { onChange: run }); $('#frow').replaceWith(row);
   const q = $('#q'); let deb = 0;
   q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); run(); }, 250); };
@@ -415,7 +421,7 @@ function drawAuth() {
     try {
       const r = await S.auth(mode, v, p);
       close();
-      toast(r.merged ? `Перенесли ${r.merged} ${plural(r.merged, 'тайтл', 'тайтла', 'тайтлов')} в аккаунт` : reg ? `Аккаунт создан. Привет, ${r.user.nickname}!` : `Привет, ${r.user.nickname}!`, null, 3200);
+      toast(r.merged ? `Списки перенесли в аккаунт: ${r.merged} ${plural(r.merged, 'название', 'названия', 'названий')}` : reg ? `Аккаунт создан. Привет, ${r.user.nickname}!` : `Привет, ${r.user.nickname}!`, null, 3200);
     } catch (err) {
       if (err.code === 'nickname_taken') eN.textContent = 'Ник занят';
       else if (err.code === 'bad_nickname') eN.textContent = '3–20 символов: латиница, цифры и _';
