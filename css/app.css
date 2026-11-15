@@ -309,12 +309,10 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
   .gopt { height: 44px; padding: 0 4px; gap: 14px; }
   .gopt.sub { height: 40px; padding-left: 34px; }
   .opts { margin: 0 -4px; }
-  .sec[data-sec="type"] .opts { grid-template-columns: repeat(3, 1fr); gap: 0; margin: 0; padding: 3px; border-radius: 12px; background: var(--surface-2); }
+  .sec[data-sec="type"] .opts { grid-template-columns: repeat(2, 1fr); gap: 0; margin: 0; padding: 3px; border-radius: 12px; background: var(--surface-2); }
   .sec[data-sec="type"] .opts button { justify-content: center; height: 38px; padding: 0 4px; border-radius: 9px; font-size: 14px; color: var(--ink-2); }
   .sec[data-sec="type"] .opts button::after { display: none; }
   .sec[data-sec="type"] .opts button[aria-checked="true"] { background: #2A2A2A; color: #fff; font-weight: 500; }
-  .sec[data-sec="type"] .opts button[data-mode="all"] { order: 3; }
-  .sec[data-sec="type"] .opts button[data-mode="all"]::before { content: 'Всё'; } .sec[data-sec="type"] .opts button[data-mode="all"] { font-size: 0; } .sec[data-sec="type"] .opts button[data-mode="all"]::before { font-size: 14px; }
   .dec { overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
   .dec::-webkit-scrollbar { display: none; }
   .dec .chip { flex: 0 0 64px; }
@@ -368,3 +366,6 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .lowfx .lgrade { display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, var(--lgSh, #000), var(--lgHi, #fff)); mix-blend-mode: soft-light; opacity: var(--lgA, 0); }
 .lowfx .lgrain { display: block; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: var(--grain) 0 0 / var(--gS, 128px) calc(var(--gS, 128px) * 8); mix-blend-mode: overlay; opacity: var(--gA, .15); animation: grain24 .333s steps(8) infinite; }
 .fx-still .lgrain { animation: none; }
+/* режим «Аниме»: жанры без уточнений IMDb; скрытые жанры не занимают место */
+.grp[hidden] { display: none; }
+.grp.nosub .gchev, .grp.nosub .gsubs { display: none; }

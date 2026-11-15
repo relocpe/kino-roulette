@@ -1,5 +1,12 @@
-import { LISTS, byId } from './chips.js?v=9';
-const ANIME = byId.anime;
+import { LISTS, ANIME, byId } from './chips.js?v=10';
+
+// Аниме — отдельный режим «Что». Тайтлы IMDb, которые на самом деле аниме (по Wikidata: аниме-сериал/фильм/OVA),
+// в «Фильмах» и «Сериалах» не показываем. Плюс страховка по карточке: Animation + страна Япония.
+let ATT = new Set();
+export const animeReady = fetch(new URL('../data/anime-tt.json?v=1', import.meta.url)).then((r) => r.json()).then((a) => { ATT = new Set(a.map((n) => 'tt' + String(n).padStart(7, '0'))); }).catch(() => {});
+export const isAnime = (t) => !!t && (t.src === 'al' || String(t.id || '').startsWith('al') || ATT.has(t.id) || ((t.g || []).includes('Animation') && (t.countries || []).includes('JP')));
+// подходит ли тайтл к режиму «Что»: в «Аниме» — только аниме, в остальных — ни одного
+export const fitsMode = (t, mode) => (mode === 'anime' ? !!t && (t.src === 'al' || String(t.id || '').startsWith('al')) : !isAnime(t));
 
 const B = 'https://api.tiffara.com';
 const IMG = 'https://m.media-amazon.com/images/M/';
@@ -72,7 +79,8 @@ const meet = (arr, want) => !want || want.some((x) => arr.includes(x));
 // Проверка по данным из списка: тип, годы, рейтинг, жанр из группы «Жанры», базовые требования поджанра.
 export function matchLocal(t, g, s, f) {
   if (!t || !t.i) return false;
-  if (g?.src === 'anilist' || t.src === 'al') return g?.src === 'anilist' || !g ? matchAnime(t, g, s, f) : false;
+  if (f.mode === 'anime') return t.src === 'al' && matchAnime(t, g, s, f);
+  if (isAnime(t) || g?.src === 'anilist') return false;
   const kinds = s?.kinds || (s?.series ? SERIES : null);
   if (!KIND[f.mode].includes(t.k)) return false;
   if (kinds && !kinds.includes(t.k)) return false;
@@ -95,6 +103,7 @@ export function matchLocal(t, g, s, f) {
 // Полная проверка по карточке тайтла (с интересами IMDb и страной).
 export function matchFull(d, g, s, f) {
   if (!matchLocal(d, g, s, f)) return false;
+  if (f.mode !== 'anime' && isAnime(d)) return false;
   if (!s || !d.interests) return true;
   const ids = d.interests;
   if (s.noI && s.noI.some((x) => ids.includes(x))) return false;
@@ -194,6 +203,7 @@ export function normAnime(m) {
   };
 }
 const AFMT = { movie: ['MOVIE'], series: ['TV', 'TV_SHORT', 'ONA', 'OVA'], all: ['TV', 'TV_SHORT', 'MOVIE', 'ONA', 'OVA'] };
+AFMT.anime = AFMT.all;
 const ASORT = [['POPULARITY_DESC', 0, 3], ['SCORE_DESC', 0, 2], ['START_DATE_DESC', 0, 2], ['START_DATE', 0, 1], ['TRENDING_DESC', 0, 1], ['FAVOURITES_DESC', 0, 1], ['ID', 0, 1], ['ID_DESC', 0, 1]];
 const lastPages = load('kr:alpages');
 function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } }
@@ -244,19 +254,27 @@ const banks = new Map();
 // Логика: ИЛИ между выбранными жанрами; поджанр сужает только свой жанр.
 // pairs: [[жанр|null, поджанр|null], ...]. Возвращает пул [{t, g, s}].
 export async function getPool(P, f) {
+  await animeReady;
   let pairs = P.length ? P.slice() : [[null, null]];
+  // режим «Аниме»: выбранные жанры переводим в жанры/теги AniList (уточнения IMDb тут не действуют)
+  if (f.mode === 'anime') {
+    const ok = P.filter(([g]) => g?.al).map(([g]) => [ANIME, { id: 'al_' + g.id, al: g.al }]);
+    if (P.length && !ok.length) return { pool: [], conflict: 'Для аниме эти жанры не подходят. Выбери другие или сними жанры.' };
+    pairs = ok.length ? ok : [[ANIME, null]];
+  } else {
+    pairs = pairs.filter(([g]) => !g?.animeOnly && g?.src !== 'anilist');
+    if (!pairs.length) return { pool: [], conflict: 'Эти жанры есть только у аниме. Переключи «Что» на «Аниме».' };
+  }
   if (f.mode === 'movie') {
     const ok = pairs.filter(([, s]) => !s?.series);
-    if (!ok.length) return { pool: [], conflict: 'Мини-сериалы и ситкомы бывают только среди сериалов. Переключи на «Сериалы» или «Всё».' };
+    if (!ok.length) return { pool: [], conflict: 'Мини-сериалы и ситкомы бывают только среди сериалов. Переключи на «Сериалы» или «Фильмы и сериалы».' };
     pairs = ok;
   }
   if (f.mode === 'series') {
     const ok = pairs.filter(([, s]) => !s?.movie);
-    if (!ok.length) return { pool: [], conflict: 'Аниме-фильмы бывают только среди фильмов. Переключи на «Фильмы» или «Всё».' };
+    if (!ok.length) return { pool: [], conflict: 'Это уточнение бывает только у фильмов. Переключи на «Фильмы» или «Фильмы и сериалы».' };
     pairs = ok;
   }
-  // без жанра — крутим по всему каталогу, иногда и по аниме
-  if (!P.length && f.anyAnime !== false && Math.random() < 0.2) pairs = [[null, null], [ANIME, null]];
   if (pairs.length === 1) pairs.push(pairs[0]);
   pairs.sort(() => Math.random() - 0.5);
   let offline = false;

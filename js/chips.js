@@ -2,25 +2,37 @@
 // q: параметры /titles (массивы = несколько значений). alt: варианты, из которых берётся случайный (ИЛИ).
 // list: курируемый список IMDb id, если в API нет такого фильтра.
 export const GENRES = [
-  { id: 'horror', label: 'Ужасы', q: { genres: 'Horror' }, fx: 'horror', accent: '#c23b2a' },
-  { id: 'thriller', label: 'Триллер', q: { genres: 'Thriller' }, fx: 'thriller', accent: '#e0402e' },
-  { id: 'scifi', label: 'Фантастика', q: { genres: 'Sci-Fi' }, fx: 'scifi', accent: '#6ea8ff' },
-  { id: 'fantasy', label: 'Фэнтези', q: { genres: 'Fantasy' }, fx: 'fantasy', accent: '#b18cff' },
-  { id: 'action', label: 'Боевик', q: { genres: 'Action' }, fx: 'action', accent: '#ff8a2a' },
-  { id: 'adventure', label: 'Приключения', q: { genres: 'Adventure' }, fx: 'adventure', accent: '#e8b04a' },
-  { id: 'comedy', label: 'Комедия', q: { genres: 'Comedy' }, fx: 'comedy', accent: '#ffd23f' },
-  { id: 'drama', label: 'Драма', q: { genres: 'Drama' }, fx: 'drama', accent: '#8fb3c9' },
-  { id: 'romance', label: 'Мелодрама', q: { genres: 'Romance' }, fx: 'romance', accent: '#ff7aa2' },
-  { id: 'crime', label: 'Криминал', q: { genres: 'Crime' }, fx: 'crime', accent: '#e8e2d4' },
-  { id: 'mystery', label: 'Мистика и загадки', q: { genres: 'Mystery' }, fx: 'mystery', accent: '#c9d6e8' },
+  { id: 'horror', label: 'Ужасы', q: { genres: 'Horror' }, al: { g: ['Horror'] }, fx: 'horror', accent: '#c23b2a' },
+  { id: 'thriller', label: 'Триллер', q: { genres: 'Thriller' }, al: { g: ['Thriller'] }, fx: 'thriller', accent: '#e0402e' },
+  { id: 'scifi', label: 'Фантастика', q: { genres: 'Sci-Fi' }, al: { g: ['Sci-Fi'] }, fx: 'scifi', accent: '#6ea8ff' },
+  { id: 'fantasy', label: 'Фэнтези', q: { genres: 'Fantasy' }, al: { g: ['Fantasy'] }, fx: 'fantasy', accent: '#b18cff' },
+  { id: 'action', label: 'Боевик', q: { genres: 'Action' }, al: { g: ['Action'] }, fx: 'action', accent: '#ff8a2a' },
+  { id: 'adventure', label: 'Приключения', q: { genres: 'Adventure' }, al: { g: ['Adventure'] }, fx: 'adventure', accent: '#e8b04a' },
+  { id: 'comedy', label: 'Комедия', q: { genres: 'Comedy' }, al: { g: ['Comedy'] }, fx: 'comedy', accent: '#ffd23f' },
+  { id: 'drama', label: 'Драма', q: { genres: 'Drama' }, al: { g: ['Drama'] }, fx: 'drama', accent: '#8fb3c9' },
+  { id: 'romance', label: 'Мелодрама', q: { genres: 'Romance' }, al: { g: ['Romance'] }, fx: 'romance', accent: '#ff7aa2' },
+  { id: 'crime', label: 'Криминал', q: { genres: 'Crime' }, al: { tag: ['Crime'] }, fx: 'crime', accent: '#e8e2d4' },
+  { id: 'mystery', label: 'Мистика и загадки', q: { genres: 'Mystery' }, al: { g: ['Mystery', 'Supernatural'] }, fx: 'mystery', accent: '#c9d6e8' },
   { id: 'animation', label: 'Мультфильмы', q: { genres: 'Animation' }, fx: 'animation', accent: '#ff6ad5' },
-  { id: 'family', label: 'Семейное', q: { genres: 'Family' }, fx: 'family', accent: '#7fd3ff' },
+  { id: 'family', label: 'Семейное', q: { genres: 'Family' }, al: { tag: ['Kids'] }, fx: 'family', accent: '#7fd3ff' },
   { id: 'documentary', label: 'Документальное', q: { genres: 'Documentary' }, fx: 'documentary', accent: '#e8c690' },
   { id: 'western', label: 'Вестерн', q: { genres: 'Western' }, fx: 'western', accent: '#d9944a' },
-  { id: 'war', label: 'Военное', q: { genres: 'War' }, fx: 'war', accent: '#e0703a' },
-  { id: 'anime', label: 'Аниме', src: 'anilist', fx: 'anime', accent: '#ff8fb8' },
-  { id: 'music', label: 'Музыка', q: { genres: ['Music', 'Musical'] }, alt: [{ genres: 'Music' }, { genres: 'Musical' }], fx: 'music', accent: '#ff4fb0' },
+  { id: 'war', label: 'Военное', q: { genres: 'War' }, al: { tag: ['War'] }, fx: 'war', accent: '#e0703a' },
+  { id: 'music', label: 'Музыка', q: { genres: ['Music', 'Musical'] }, alt: [{ genres: 'Music' }, { genres: 'Musical' }], al: { g: ['Music'] }, fx: 'music', accent: '#ff4fb0' },
+  // только в режиме «Аниме» (AniList)
+  { id: 'shonen', label: 'Сёнен', al: { tag: ['Shounen'] }, animeOnly: true, fx: 'anime', accent: '#ff9f43' },
+  { id: 'seinen', label: 'Сэйнэн', al: { tag: ['Seinen'] }, animeOnly: true, fx: 'noir', accent: '#e8e2d4' },
+  { id: 'isekai', label: 'Исекай', al: { tag: ['Isekai'] }, animeOnly: true, fx: 'fantasy', accent: '#b18cff' },
+  { id: 'mecha', label: 'Меха', al: { g: ['Mecha'] }, animeOnly: true, fx: 'cyberpunk', accent: '#6ea8ff' },
+  { id: 'slice', label: 'Повседневность', al: { g: ['Slice of Life'] }, animeOnly: true, fx: 'family', accent: '#7fd3ff' },
+  { id: 'sports', label: 'Спорт', al: { g: ['Sports'] }, animeOnly: true, fx: 'action', accent: '#ff8a2a' },
 ];
+// источник «Аниме» (режим «Что → Аниме»): AniList; в списке жанров его нет
+export const ANIME = { id: 'anime', label: 'Аниме', src: 'anilist', fx: 'anime', accent: '#ff8fb8' };
+// жанр доступен в режиме: в «Аниме» — только жанры с соответствием на AniList, в остальных — без аниме-only
+export const genreOk = (g, mode) => !!g && (mode === 'anime' ? !!g.al : !g.animeOnly);
+// аниме-уточнения прежних версий → жанр режима «Аниме»
+export const A_SUB2G = { a_shonen: 'shonen', a_seinen: 'seinen', a_isekai: 'isekai', a_mecha: 'mecha', a_slice: 'slice', a_horror: 'horror', a_romance: 'romance' };
 
 // need: хотя бы один из жанров IMDb; anyI: хотя бы один из интересов IMDb (проверяется по карточке тайтла);
 // noI: исключающие интересы; kinds: допустимые типы; series: только сериалы.
@@ -62,7 +74,6 @@ export const LISTS = {
 export const ALL = [...GENRES, ...MOODS];
 // какие уточнения показываются под каждым жанром (поджанр сужает только свой жанр)
 export const SUBS = {
-  anime: ['a_shonen', 'a_seinen', 'a_isekai', 'a_mecha', 'a_slice', 'a_horror', 'a_romance', 'a_movie'],
   horror: ['psycho', 'slasher', 'cult'],
   thriller: ['psycho', 'twist', 'detective'],
   scifi: ['cyberpunk', 'postapoc', 'dystopia'],
@@ -78,7 +89,7 @@ export const SUBS = {
   war: ['mini'],
 };
 export const isGenre = new Set(GENRES.map((c) => c.id));
-export const byId = Object.fromEntries(ALL.map((c) => [c.id, c]));
+export const byId = Object.fromEntries([...ALL, ANIME].map((c) => [c.id, c]));
 
 export const GENRE_RU = {
   Action: 'боевик', Adult: 'для взрослых', Adventure: 'приключения', Animation: 'мультфильм', Biography: 'биография',

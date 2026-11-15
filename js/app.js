@@ -1,10 +1,10 @@
-import { GENRES, SUBS, byId, GENRE_RU, isGenre } from './chips.js?v=9';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters } from './api.js?v=9';
+import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=10';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=11';
-import { findTrailer, ytSearch } from './trailer.js?v=10';
-import * as V from './views.js?v=13';
+import { findTrailer, ytSearch } from './trailer.js?v=11';
+import * as V from './views.js?v=14';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
-import { storyBlob, shareLink, shareImage } from './share.js?v=1';
+import { storyBlob, shareLink, shareImage } from './share.js?v=2';
 import { watchedIds, getLists } from './store.js?v=11';
 
 const $ = (s) => document.querySelector(s);
@@ -18,12 +18,15 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MAX = 3;
 let spinning = false;
-const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime', 'anime'];
+const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime'];
 
 const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null }, load(LS.prefs, {}));
 // v6: весь каталог по умолчанию — рейтинг «любой», «Всё подряд»
 if (!prefs.v6) { prefs.rating = 0; prefs.known = false; prefs.v6 = true; }
-prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id)).slice(0, MAX);
+// v7: «Аниме» — режим «Что», а не жанр: старый выбор жанра «Аниме» и его уточнений переносим в режим
+if ((prefs.sel || []).includes('anime')) { prefs.mode = 'anime'; prefs.sel = [...prefs.sel.filter((x) => x !== 'anime'), A_SUB2G[prefs.sub?.anime]].filter(Boolean); }
+if (!['all', 'movie', 'series', 'anime'].includes(prefs.mode)) prefs.mode = 'all';
+prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id) && genreOk(byId[id], prefs.mode)).slice(0, MAX);
 prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
 save(LS.prefs, prefs);
 delete prefs.multi;
@@ -104,8 +107,11 @@ function changed() { syncUI(); savePrefs(); applyFx(); if (document.body.classLi
 
 function syncChips() {
   const full = prefs.sel.length >= MAX;
+  const am = prefs.mode === 'anime';
   document.querySelectorAll('#genres .grp').forEach((grp) => {
     const g = grp.dataset.g, on = prefs.sel.includes(g);
+    // в «Аниме» — только жанры, которые есть на AniList, и без уточнений IMDb; в остальных режимах — без аниме-жанров
+    grp.hidden = !genreOk(byId[g], prefs.mode); grp.classList.toggle('nosub', am);
     grp.querySelector('.gopt').setAttribute('aria-checked', String(on));
     grp.classList.toggle('off', full && !on);
     const ch = grp.querySelector('.gchev'); if (!ch) return;
@@ -116,7 +122,7 @@ function syncChips() {
 }
 
 // режим
-document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { prefs.mode = b.dataset.mode; changed(); if (picker.dataset.sec === 'type') closePanel(picker); }));
+document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { const was = prefs.mode; prefs.mode = b.dataset.mode; prefs.sel = prefs.sel.filter((id) => genreOk(byId[id], prefs.mode)); changed(); if (was !== prefs.mode) retape(); if (picker.dataset.sec === 'type') closePanel(picker); }));
 
 // десятилетия: одно или диапазон
 const NOW = new Date().getFullYear();
@@ -175,9 +181,9 @@ $('#pReset').addEventListener('click', () => {
 });
 $('#pDone').addEventListener('click', () => { const all = picker.dataset.sec === 'all'; closePanel(picker); if (all) setTimeout(spin, reduce.matches ? 0 : 220); });
 
-const pairs = () => prefs.sel.map((g) => [byId[g], byId[prefs.sub[g]] || null]);
+const pairs = () => prefs.sel.map((g) => [byId[g], prefs.mode === 'anime' ? null : byId[prefs.sub[g]] || null]);
 // значения полей пульта
-const TYPE_V = { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы' };
+const TYPE_V = { all: 'Фильмы и сериалы', movie: 'Фильмы', series: 'Сериалы', anime: 'Аниме' };
 const low = (x) => subLabel(x).toLowerCase();
 function genreVal() {
   const P = pairs();
@@ -210,7 +216,7 @@ function syncUI() {
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
   $('#noWatched').setAttribute('aria-checked', String(noWatched()));
   const bad = pairs().filter(([, s]) => (prefs.mode === 'movie' && s?.series) || (prefs.mode === 'series' && s?.movie));
-  const warn = bad.length ? bad.map(([g, s]) => (s.id === 'a_movie' ? 'Аниме-фильмы' : s.label)).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
+  const warn = bad.length ? bad.map(([, s]) => s.label).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
   if (warn) $('#hint').textContent = warn;
   if (!spinning) say(warn);
 }
@@ -222,11 +228,11 @@ function say(msg, btn) {
 }
 // эффект — по первому выбранному жанру (его уточнение главное, жанр фоном)
 // играет один жанр — старший по приоритету среди выбранных; на остановке — среди жанров выпавшего тайтла
-const selG = () => pairs().map(([g]) => g.id);
+const selG = () => pairs().map(([g]) => (g.animeOnly ? 'anime' : g.id));
 const IMDB2G = {}; for (const g of GENRES) for (const n of [].concat(g.q?.genres || [])) IMDB2G[n] = g.id;
 function titleG(t) { const ids = (t.g || []).map((n) => IMDB2G[n]).filter(Boolean); if (t.src === 'al') ids.push('anime'); return ids; }
-function applyFx() { setGenre(top1(selG())); }
-function landFx(t) { const sel = selG(); if (!sel.length) return setGenre('none'); const both = titleG(t).filter((x) => sel.includes(x)); setGenre(top1(both.length ? both : sel)); }
+function applyFx() { const sel = selG(); setGenre(sel.length ? top1(sel) : prefs.mode === 'anime' ? 'anime' : 'none'); }
+function landFx(t) { const sel = selG(); if (!sel.length) return setGenre(prefs.mode === 'anime' ? 'anime' : 'none'); const both = titleG(t).filter((x) => sel.includes(x)); setGenre(top1(both.length ? both : sel)); }
 showRating(); syncUI(); applyFx();
 
 // поповер над полем пульта на десктопе, шторка снизу на мобилке (там — все разделы сразу)
@@ -336,19 +342,22 @@ function warm(src, ms = 2500) {
 }
 const isWarm = (t) => !!decoded.get(reelSrc(t))?.ok;
 function visRange() { const first = Math.floor((pos - CX) / P) - 1; return [first, first + K]; }
-async function buildTape(list, n = 24) {
+let tapeGen = 0;
+async function buildTape(list, n = 24, regrow = false) {
   const pool = list.filter((t) => t?.i).sort(() => Math.random() - 0.5).slice(0, n);
   if (!pool.length) return;
+  let rg = regrow; const gen = regrow ? ++tapeGen : tapeGen;
   const commit = (next) => {
+    if (gen !== tapeGen) return; // режим уже сменили ещё раз
     // видимые и запасные кадры закрепляем, чтобы смена ленты ничего не перерисовала на глазах
     const had = tape.length > 0;
-    if (had && K) { const [a, b] = visRange(); for (let v = a; v < b; v++) if (!items.has(v)) items.set(v, itemAt(v)); }
-    tape = next;
+    if (had && K && !rg) { const [a, b] = visRange(); for (let v = a; v < b; v++) if (!items.has(v)) items.set(v, itemAt(v)); }
+    tape = next; if (rg) items.clear();
     const lo = visRange()[0] - 40; for (const k of items.keys()) if (k < lo) items.delete(k);
-    paint(!had); kickDrift();
+    paint(!had || rg); rg = false; kickDrift();
   };
   // первый раз (медленная сеть) лента растёт по мере декодирования; в ленту попадают только готовые постеры
-  const grow = !tape.length, got = [];
+  const grow = !tape.length || regrow, got = []; // regrow: смена режима «Что» — лента меняется, как только готовы первые постеры
   await Promise.all(pool.map((t) => warm(reelSrc(t), 15000).then((ok) => { if (!ok) return; got.push(t); if (grow && got.length >= 4) commit([...got]); })));
   if (!grow && got.length >= Math.min(6, pool.length)) commit(got);
   else if (!tape.length) commit(pool); // ничего не загрузилось: покажем заглушки с названиями
@@ -379,7 +388,10 @@ function paint(force) {
   reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
 }
 addEventListener('resize', () => measure(), { passive: true });
-let tapeReady = seedPosters().then((s) => { display = s; return buildTape(s); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
+// лента-заполнитель — только из тайтлов текущего режима «Что» (аниме не мелькает в «Фильмах», и наоборот)
+const seedsFor = () => Promise.all([seedPosters(), animeReady]).then(([s]) => s.filter((t) => fitsMode(t, prefs.mode)));
+function retape() { tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, 24, true); }).catch(() => {}); }
+let tapeReady = seedsFor().then((s) => { display = s; return buildTape(s); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
 
 // покой: лента медленно дрейфует (только transform), стоит на паузе в фоне, при reduced-motion и во время крутки/результата
@@ -489,7 +501,7 @@ async function spin() {
   await new Promise((r) => setTimeout(r, reduce.matches ? 0 : hold));
   showResult(win.t, win.s || win.g, win.g, center?.getBoundingClientRect());
   phase('result');
-  tapeReady = buildTape([...display, ...tape]);
+  tapeReady = buildTape([...display, ...tape].filter((t) => fitsMode(t, prefs.mode)));
   finish(); setSpin('Ещё раз'); say(note);
   if (note) setTimeout(() => { if ($('#status').textContent === note) say(''); }, 6000);
 }
