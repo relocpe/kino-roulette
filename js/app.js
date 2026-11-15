@@ -711,8 +711,12 @@ result.addEventListener('click', (e) => {
     if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
   }
   if (act === 'lord') {
-    const q = encodeURIComponent(curT?.ru || curT?.t || '');
-    window.location.href = `https://1.2026-lord.pics/search?q=${q}`;
+    const t = curT;
+    if (!t) return;
+    const q = encodeURIComponent(t.ru || t.t || '');
+    const goToFilm = () => { window.location.href = `https://1.2026-lord.pics/search?q=${q}`; };
+    if (watchedIds().has(t.id)) goToFilm();
+    else V.act('watched', t.id).then(goToFilm, goToFilm);
   }
 });
 // ---------- Поделиться ----------
