@@ -1,10 +1,10 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=10';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=11';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, top1, genreNow } from './grade.js?v=11';
-import { findTrailer, ytSearch } from './trailer.js?v=11';
-import * as V from './views.js?v=14';
-import { ruTitles, ruCached, kpCached } from './ru.js?v=1';
-import { storyBlob, shareLink, shareImage } from './share.js?v=2';
+import { findTrailer, ytSearch } from './trailer.js?v=12';
+import * as V from './views.js?v=15';
+import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
+import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=11';
 
 const $ = (s) => document.querySelector(s);
@@ -558,7 +558,7 @@ const ico = {
   redo: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 const KIND_RU = { movie: 'Фильм', tvMovie: 'Телефильм', tvSeries: 'Сериал', tvMiniSeries: 'Мини-сериал' };
-const kindOf = (t) => (t.src === 'al' ? (t.k === 'movie' ? 'Аниме-фильм' : 'Аниме-сериал') : KIND_RU[t.k] || 'Тайтл');
+const kindOf = (t) => (t.src === 'al' ? (t.k === 'movie' ? 'Аниме-фильм' : 'Аниме-сериал') : KIND_RU[t.k] || 'Фильм');
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
 // чистим вики-мусор: транскрипции, произношения, скобки с иероглифами, сноски
@@ -591,7 +591,7 @@ function showResult(t, chipId, gId, fromRect) {
   render(t, false);
   open(fromRect);
   if (V.route.name === 'roulette' || V.route.name === 'title') V.setUrl('title/' + t.id);
-  details(t).then((d) => { if (my === token) { render(d, true); patchHistory(d); } }).catch(() => {});
+  details(t).then((d) => { if (my === token) { render(d, true); patchHistory(d); } }).catch(() => { if (my === token) render(t, true); });
 }
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor"/></svg>';
 function render(t, full) {
@@ -602,13 +602,17 @@ function render(t, full) {
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
   const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
-  const wantG = [].concat(byId[curG]?.q?.genres || []);
+  // выбранные жанры — первыми (в «Аниме» — их соответствия на AniList)
+  const wantG = [].concat(byId[curG]?.q?.genres || [], t.src === 'al' ? prefs.sel.flatMap((id) => byId[id]?.al?.g || []) : []);
   const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
   const kick = [kindOf(t), years, genres ? genres[0].toUpperCase() + genres.slice(1) : ''].filter(Boolean);
-  const dirs = t.src === 'al' ? [] : (t.directors || []).slice(0, 2), cast = t.src === 'al' ? [] : (t.stars || []).slice(0, 3);
+  // имена людей — по-русски из Wikidata (по nm-id), если там есть; иначе оригинальное написание
+  const ruN = (names, ids) => names.map((n, i) => ruCached(ids?.[i]) || n);
+  const dirs = t.src === 'al' ? [] : ruN((t.directors || []).slice(0, 2), t.dirIds), cast = t.src === 'al' ? [] : ruN((t.stars || []).slice(0, 3), t.starIds);
   // описание: сюжет из ру-вики → вводная ру-вики без фраз о происхождении → английский сюжет с пометкой
   const ruPlot = (t.plotRu ? cleanWiki(t.plotRu) : '') || plotFromLead(cleanWiki(t.wiki || '')), lead = t.wiki ? stripOrigin(cleanWiki(t.wiki)) : '';
-  const txt = ruPlot || lead || t.p, isEn = !ruPlot && !lead && !!t.p;
+  // английский — только когда точно известно, что русского нет (после загрузки деталей), без мелькания
+  const txt = ruPlot || lead || (full ? t.p : ''), isEn = !ruPlot && !lead && !!txt;
   const desc = txt ? `${isEn ? '<p class="elabel">Описание на английском</p>' : ''}<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
@@ -616,7 +620,7 @@ function render(t, full) {
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
   const facts = [
     t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
-    dur ? fact(isSeries ? 'Сезоны' : 'Длительность', esc(dur)) : '',
+    dur ? fact(isSeries ? (t.seasons ? 'Сезоны' : 'Серии') : 'Длительность', esc(dur)) : '',
     dirs.length ? fact(dirs.length > 1 ? 'Режиссёры' : 'Режиссёр', esc(dirs.join(', ')), ' dir') : '',
     cast.length ? fact('В ролях', esc(cast.join(', ')), ' cast') : '',
   ].join('');
@@ -643,8 +647,11 @@ function render(t, full) {
   V.remember(t); V.syncButtons(result);
   if (full) loadSimilar(t);
   // точная ссылка на Кинопоиск (Wikidata P2603) и русское название, если их ещё нет в кэше
-  ruTitles([t.id]).then(() => {
+  const nmIds = [...(t.dirIds || []).slice(0, 2), ...(t.starIds || []).slice(0, 3)];
+  ruTitles([t.id, ...nmIds]).then(() => {
     if (curT?.id !== t.id) return;
+    const setN = (sel, names, ids) => { const b = result.querySelector(sel); if (b && names?.length) b.textContent = ruN(names, ids).join(', '); };
+    setN('.fact.dir b', (t.directors || []).slice(0, 2), t.dirIds); setN('.fact.cast b', (t.stars || []).slice(0, 3), t.starIds);
     const a = result.querySelector('#where a[data-kp]'); if (a) a.href = kpURL(t, title);
     const ru = ruCached(t.id), h = result.querySelector('.info h2');
     if (ru && !t.ru && h && h.textContent !== ru) { h.textContent = ru; if (!result.querySelector('.orig')) h.insertAdjacentHTML('afterend', `<p class="orig" lang="en">${esc(t.t)}</p>`); }
@@ -806,7 +813,7 @@ async function openTrailer(t, from) {
   if (!t) return;
   tBack = from;
   const my = ++tReq;
-  $('#tmTitle').textContent = t.ru || t.t;
+  $('#tmTitle').textContent = t.ru || ruCached(t.id) || t.t;
   $('#tmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу трейлер…</div>';
   $('#tmYt').href = ytSearch(t);
   tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === (prefs.tlang || 'ru'))));
@@ -817,7 +824,7 @@ async function openTrailer(t, from) {
   if (my !== tReq || !tm.open) return;
   tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
   if (!r) { $('#tmFrame').innerHTML = `<div class="tm-load">Трейлер не нашёлся. <a href="${ytSearch(t)}" target="_blank" rel="noopener">Поискать на YouTube</a></div>`; return; }
-  $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || t.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+  $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || ruCached(t.id) || t.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   $('#tmFrame').dataset.vid = r.id;
   $('#tmYt').href = `https://www.youtube.com/watch?v=${r.id}`;
 }
@@ -864,8 +871,8 @@ V.initViews({
       const t = cached || await V.getTitle(id);
       if (my !== titleReq) return;
       landFx(t); showResult(t, null, null, null); phase('result');
-    } catch (err) { if (my === titleReq && (navigator.onLine === false || err?.name === 'TypeError' || err?.name === 'AbortError')) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Нет связи</h2><p class="desc">Не получилось загрузить тайтл. Проверь интернет.</p><div class="actions"><button class="btn primary" type="button" id="tRetry">Повторить</button></div></div>'; $('#tRetry').onclick = () => V.navigate('title/' + id, { replace: true }); return; }
-      if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Не нашли такой тайтл</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
+    } catch (err) { if (my === titleReq && (navigator.onLine === false || err?.name === 'TypeError' || err?.name === 'AbortError')) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Нет связи</h2><p class="desc">Не получилось загрузить страницу. Проверь интернет.</p><div class="actions"><button class="btn primary" type="button" id="tRetry">Повторить</button></div></div>'; $('#tRetry').onclick = () => V.navigate('title/' + id, { replace: true }); return; }
+      if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Такой страницы нет</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
   },
   leave() {},
   spinWith(m) {

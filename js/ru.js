@@ -1,6 +1,7 @@
 // Русские названия и ID Кинопоиска пачками из Wikidata (SPARQL, без ключей), с кэшем в localStorage.
-// cache[id] = [русское название | '', kinopoisk id | ''] ; id — tt… (IMDb) или al… (AniList)
-const KEY = 'kr:ru2', EP = 'https://query.wikidata.org/sparql?format=json&query=';
+// Для аниме русское название берём с Шикимори (официальный открытый API, по MAL id) — там оно есть почти всегда.
+// cache[id] = [русское название | '', kinopoisk id | ''] ; id — tt… (IMDb), nm… (люди IMDb) или al… (AniList)
+const KEY = 'kr:ru3', EP = 'https://query.wikidata.org/sparql?format=json&query=';
 let cache = {};
 try { cache = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch {}
 const save = () => { try { const k = Object.keys(cache); if (k.length > 6000) k.slice(0, k.length - 6000).forEach((x) => delete cache[x]); localStorage.setItem(KEY, JSON.stringify(cache)); } catch {} };
@@ -9,9 +10,38 @@ const clean = (s) => s.replace(/\s*\((фильм|телесериал|сериа
 export const ruCached = (id) => cache[id]?.[0] || '';
 export const kpCached = (id) => cache[id]?.[1] || '';
 export const known = (id) => id in cache;
+// AniList id → MAL id (= id Шикимори); заполняется при разборе ответов AniList
+const MAL = new Map();
+export const noteMal = (alId, mal) => { if (mal) MAL.set(alId, +mal); };
+const SHIKI = 'https://shikimori.io/api';
+// BB-коды Шикимори: [anime=1]Название[/anime] → Название; спойлеры убираем целиком
+export const cleanShiki = (s) => String(s || '').replace(/\[spoiler[^\]]*\][\s\S]*?\[\/spoiler\]/gi, '').replace(/\[\/?[a-z_]+(=[^\]]*)?\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+async function shikiNames(ids) {
+  const m = ids.filter((id) => MAL.has(id));
+  if (!m.length) return {};
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+    const q = `{ animes(ids: "${m.map((id) => MAL.get(id)).join(',')}", limit: 50) { id russian } }`;
+    const r = await fetch(SHIKI + '/graphql', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
+    clearTimeout(t); if (!r.ok) return {};
+    const by = {}; for (const a of (await r.json()).data?.animes || []) by[a.id] = a.russian;
+    return Object.fromEntries(m.map((id) => [id, by[MAL.get(id)] || '']));
+  } catch { return {}; }
+}
+// одно аниме целиком: русское название и описание
+export async function shikiAnime(mal) {
+  if (!mal) return null;
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 7000);
+    const r = await fetch(`${SHIKI}/animes/${mal}`, { signal: ctl.signal }); clearTimeout(t);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return { ru: cyr(d.russian) ? d.russian : null, plot: cyr(d.description) ? cleanShiki(d.description) : null };
+  } catch { return null; }
+}
 const queue = new Map(); let timer = 0;
 export function ruTitles(ids) {
-  const want = [...new Set(ids)].filter((id) => /^(tt\d+|al\d+)$/.test(id || '') && !(id in cache));
+  const want = [...new Set(ids)].filter((id) => /^(tt\d+|nm\d+|al\d+)$/.test(id || '') && !(id in cache));
   if (!want.length) return Promise.resolve();
   const ps = want.map((id) => {
     if (!queue.has(id)) { let res; const p = new Promise((r) => (res = r)); queue.set(id, { p, res }); }
@@ -22,13 +52,14 @@ export function ruTitles(ids) {
 }
 async function flush() {
   const ids = [...queue.keys()].filter((id) => !queue.get(id).sent);
-  for (let i = 0; i < ids.length; i += 60) batch(ids.slice(i, i + 60));
+  for (let i = 0; i < ids.length; i += 50) batch(ids.slice(i, i + 50));
 }
 async function batch(ids) {
   ids.forEach((id) => (queue.get(id).sent = true));
   const vals = ids.map((id) => `"${id.startsWith('al') ? id.slice(2) : id}"`).join(' ');
   const q = `SELECT ?k ?l ?kp WHERE { VALUES ?k { ${vals} } { ?i wdt:P345 ?k } UNION { ?i wdt:P8729 ?k } OPTIONAL { ?i rdfs:label ?l FILTER(lang(?l) = "ru") } OPTIONAL { ?i wdt:P2603 ?kp } }`;
   let rows = null;
+  const shiki = shikiNames(ids.filter((id) => id.startsWith('al')));
   try {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
     const r = await fetch(EP + encodeURIComponent(q), { signal: ctl.signal, headers: { Accept: 'application/sparql-results+json' } });
@@ -42,6 +73,8 @@ async function batch(ids) {
       if (!f[0] && cyr(b.l?.value)) f[0] = clean(b.l.value);
       if (!f[1] && b.kp?.value) f[1] = b.kp.value;
     }
+    const sh = await shiki;
+    for (const id in sh) if (cyr(sh[id])) (found[id] ||= ['', ''])[0] = sh[id];
     ids.forEach((id) => (cache[id] = found[id] || ['', '']));
     save();
   }

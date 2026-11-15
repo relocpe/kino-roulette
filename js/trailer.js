@@ -1,5 +1,5 @@
 // Трейлер без ключей: Wikidata (P1651) → поиск через публичные Piped/Invidious с CORS → ссылка на поиск YouTube.
-import { getJSON } from './api.js?v=10';
+import { getJSON } from './api.js?v=11';
 
 const W = 'https://www.wikidata.org/w/api.php?format=json&origin=*';
 const PIPED = ['https://api.piped.private.coffee'];

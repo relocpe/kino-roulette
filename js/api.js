@@ -1,10 +1,14 @@
 import { LISTS, ANIME, byId } from './chips.js?v=10';
+import { noteMal, shikiAnime } from './ru.js?v=2';
 
 // Аниме — отдельный режим «Что». Тайтлы IMDb, которые на самом деле аниме (по Wikidata: аниме-сериал/фильм/OVA),
 // в «Фильмах» и «Сериалах» не показываем. Плюс страховка по карточке: Animation + страна Япония.
 let ATT = new Set();
 export const animeReady = fetch(new URL('../data/anime-tt.json?v=1', import.meta.url)).then((r) => r.json()).then((a) => { ATT = new Set(a.map((n) => 'tt' + String(n).padStart(7, '0'))); }).catch(() => {});
-export const isAnime = (t) => !!t && (t.src === 'al' || String(t.id || '').startsWith('al') || ATT.has(t.id) || ((t.g || []).includes('Animation') && (t.countries || []).includes('JP')));
+// романдзи в оригинальном названии IMDb (Sutîru Bôru Ran JoJo no Kimyô…): долгие гласные с циркумфлексом + японские частицы
+const ROMAJI = (o) => /[ôûîâēōū]/i.test(o || '') && /\b(no|wa|ga|ni|wo)\b/i.test(o || '');
+export const isAnime = (t) => !!t && (t.src === 'al' || String(t.id || '').startsWith('al') || ATT.has(t.id)
+  || ((t.g || []).includes('Animation') && ((t.countries || []).includes('JP') || ROMAJI(t.o))));
 // подходит ли тайтл к режиму «Что»: в «Аниме» — только аниме, в остальных — ни одного
 export const fitsMode = (t, mode) => (mode === 'anime' ? !!t && (t.src === 'al' || String(t.id || '').startsWith('al')) : !isAnime(t));
 
@@ -193,6 +197,7 @@ async function alFetch(vars) {
 }
 const stripHtml = (s) => String(s || '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/\(Source:[^)]*\)/gi, '').replace(/\n{2,}/g, '\n').trim();
 export function normAnime(m) {
+  noteMal('al' + m.id, m.idMal);
   return {
     id: 'al' + m.id, src: 'al', al: m.id, mal: m.idMal || undefined,
     t: m.title.english || m.title.romaji, o: m.title.english && m.title.romaji !== m.title.english ? m.title.romaji : m.title.native,
@@ -311,6 +316,9 @@ export async function core(id) {
     countries: (full.originCountries || []).map((x) => x.code),
     directors: (full.directors || []).map((d) => d.displayName),
     stars: (full.stars || []).map((d) => d.displayName),
+    // id людей IMDb (nm…) — по ним Wikidata даёт русское написание имени
+    dirIds: (full.directors || []).map((d) => d.id),
+    starIds: (full.stars || []).map((d) => d.id),
     meta: full.metacritic?.score,
   });
 }
@@ -318,9 +326,10 @@ export async function core(id) {
 // Детали: русское название, сезоны, описание из русской Википедии.
 export async function details(t) {
   if (t.src === 'al') {
-    const w = await wiki('P8729', t.al).catch(() => null);
+    // русское название и описание — с Шикимори (по MAL id), запасной вариант — Wikidata/ру-вики
+    const [w, sh] = await Promise.all([wiki('P8729', t.al).catch(() => null), shikiAnime(t.mal)]);
     const cyr = (x) => /[а-яё]/i.test(x || '');
-    return { ...t, ru: cyr(w?.label) ? w.label : null, wiki: w?.extract || null, plotRu: w?.plot || null, wikiUrl: w?.url || null };
+    return { ...t, ru: sh?.ru || (cyr(w?.label) ? w.label : null), wiki: w?.extract || null, plotRu: sh?.plot || w?.plot || null, plotSrc: sh?.plot ? 'shiki' : null, wikiUrl: w?.url || null };
   }
   const [full, akas, seasons, w] = await Promise.all([
     t.interests ? t : core(t.id).catch(() => null),

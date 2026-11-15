@@ -1,8 +1,8 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, isAnime, animeReady } from './api.js?v=10';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?v=11';
 import * as S from './store.js?v=11';
-import { ruCached, localize, ruTitles } from './ru.js?v=1';
+import { ruCached, localize, ruTitles } from './ru.js?v=2';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -306,7 +306,7 @@ function renderCatalog() {
     <h2 class="hcap">Подборки</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
   fillMoods(view);
   let stop = null;
-  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'тайтл', 'тайтла', 'тайтлов')}` : ''; } }); };
+  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'название', 'названия', 'названий')}` : ''; } }); };
   const row = filterRow(cat, { onChange: run }); $('#frow').replaceWith(row);
   const q = $('#q'); let deb = 0;
   q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); run(); }, 250); };
@@ -391,7 +391,7 @@ function drawAuth() {
     try {
       const r = await S.auth(mode, v, p);
       close();
-      toast(r.merged ? `Перенесли ${r.merged} ${plural(r.merged, 'тайтл', 'тайтла', 'тайтлов')} в аккаунт` : reg ? `Аккаунт создан. Привет, ${r.user.nickname}!` : `Привет, ${r.user.nickname}!`, null, 3200);
+      toast(r.merged ? `Списки перенесли в аккаунт: ${r.merged} ${plural(r.merged, 'название', 'названия', 'названий')}` : reg ? `Аккаунт создан. Привет, ${r.user.nickname}!` : `Привет, ${r.user.nickname}!`, null, 3200);
     } catch (err) {
       if (err.code === 'nickname_taken') eN.textContent = 'Ник занят';
       else if (err.code === 'bad_nickname') eN.textContent = '3–20 символов: латиница, цифры и _';

@@ -1,5 +1,5 @@
 // «Поделиться»: ссылка на /title/:id через системное меню и картинка для сторис 1080×1920 (постер, название, рейтинг, сайт)
-import { poster } from './api.js?v=10';
+import { poster } from './api.js?v=11';
 const SITE = 'relocpe.github.io/kino-roulette';
 const loadImg = (src) => new Promise((res) => {
   if (!src) return res(null);
