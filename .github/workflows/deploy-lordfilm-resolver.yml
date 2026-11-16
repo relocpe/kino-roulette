@@ -30,5 +30,11 @@ jobs:
             echo "::error::CLOUDFLARE_ACCOUNT_ID must be 32 hex chars (Account ID from Cloudflare dashboard, without 'Value:' or spaces)."
             exit 1
           fi
+          TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]' | sed 's/^Bearer[[:space:]]*//i')"
+          if [ "${#TOKEN}" -lt 20 ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN looks too short — paste the full token from Cloudflare API Tokens (no quotes or 'Bearer')."
+            exit 1
+          fi
+          export CLOUDFLARE_API_TOKEN="$TOKEN"
           export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
           npx --yes wrangler@4.163.0 deploy
