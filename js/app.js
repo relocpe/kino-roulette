@@ -670,7 +670,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть фильм на LordFilm">Смотреть</button>
+        <button class="btn" type="button" data-act="lord" aria-label="Смотреть на LordFilm в плеере сайта">Смотреть</button>
         <a class="btn" href="${lordSearchUrl}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm (внешний сайт) ${ico.ext}</a>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
@@ -772,45 +772,8 @@ result.addEventListener('click', (e) => {
   if (act === 'lord') {
     const t = curT;
     if (!t) return;
-    const title = t.ru || ruCached(t.id) || t.t || '';
-    const q = encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`);
-    const searchUrl = `https://1.2026-lord.pics/search?q=${q}`;
-    const originalLabel = b.textContent;
-    const goToFilm = async () => {
-      b.disabled = true; b.textContent = 'Ищу фильм…';
-      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
-      try {
-        const response = await fetch(LORD_RESOLVER, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            originalTitle: t.t || '',
-            year: t.y,
-            type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
-          }),
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
-        const result = await response.json();
-        const directUrl = /^https:\/\/1\.2026-lord\.pics\/\d+$/.test(result.url || '');
-        if (result.matched === true && directUrl) { window.location.href = result.url; return; }
-        if (result.reason === 'search-unavailable' || result.reason === 'upstream-unavailable') {
-          V.toast('Автопоиск не сработал — открываю выдачу LordFilm', null, 2500);
-        } else {
-          V.toast('Точного совпадения нет — открываю поиск LordFilm', null, 2500);
-        }
-      } catch (error) {
-        console.warn('LordFilm direct lookup failed; opening search results.', error);
-        V.toast('Не удалось найти страницу фильма — открываю поиск LordFilm', null, 2500);
-      } finally {
-        clearTimeout(timer);
-        b.disabled = false; b.textContent = originalLabel;
-      }
-      window.location.href = searchUrl;
-    };
     const markWatched = watchedIds().has(t.id) ? Promise.resolve() : V.act('watched', t.id);
-    markWatched.then(goToFilm, goToFilm);
+    markWatched.then(() => openLordWatch(t, b), () => openLordWatch(t, b));
   }
 });
 // ---------- Поделиться ----------
@@ -883,6 +846,77 @@ function closeTrailer() {
 tm.addEventListener('click', (e) => { if (e.target === tm || e.target.closest('[data-close]')) closeTrailer(); });
 tm.addEventListener('cancel', (e) => { e.preventDefault(); closeTrailer(); });
 tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { if ((prefs.tlang || 'ru') === b.dataset.lang && $('#tmFrame').dataset.vid) return; prefs.tlang = b.dataset.lang; savePrefs(); openTrailer(curT, tBack); }));
+
+// ---------- LordFilm: прямой плеер на сайте ----------
+const lm = $('#lmodal');
+const lordPageRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/\d+\/?$/;
+function closeLordModal() {
+  if (!lm?.open) return;
+  $('#lmFrame').innerHTML = '';
+  lm.close();
+  if (!tm.open) document.documentElement.classList.remove('locked');
+}
+lm?.addEventListener('click', (e) => { if (e.target === lm || e.target.closest('[data-lclose]')) closeLordModal(); });
+lm?.addEventListener('cancel', (e) => { e.preventDefault(); closeLordModal(); });
+
+function mountLordFrame(embedUrl, pageUrl, title) {
+  const frame = $('#lmFrame');
+  const src = embedUrl || pageUrl;
+  if (!src) {
+    frame.innerHTML = '<div class="tm-load" role="status">Не удалось собрать плеер.</div>';
+    return;
+  }
+  const note = embedUrl ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице LordFilm</p>';
+  frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+}
+
+async function openLordWatch(t, btn) {
+  const title = t.ru || ruCached(t.id) || t.t || '';
+  const searchUrl = `https://1.2026-lord.pics/search?q=${encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`)}`;
+  const originalLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Ищу фильм…';
+  $('#lmTitle').textContent = title;
+  $('#lmExt').href = searchUrl;
+  $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу фильм на LordFilm…</div>';
+  if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(LORD_RESOLVER, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        originalTitle: t.t || '',
+        year: t.y,
+        type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
+    const data = await response.json();
+    const pageUrl = lordPageRe.test(data.url || '') ? data.url : '';
+    if (data.matched === true && pageUrl) {
+      $('#lmExt').href = pageUrl;
+      mountLordFrame(data.embedUrl, pageUrl, title);
+      return;
+    }
+    if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
+      $('#lmFrame').innerHTML = `<div class="tm-load">LordFilm сейчас не отвечает. <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm</a></div>`;
+      V.toast('LordFilm недоступен — попробуй поиск вручную', null, 3200);
+      return;
+    }
+    $('#lmExt').href = data.url || searchUrl;
+    $('#lmFrame').innerHTML = `<div class="tm-load">Точного совпадения не нашли. Попробуй <a href="${esc(data.url || searchUrl)}" target="_blank" rel="noopener noreferrer">выдачу LordFilm</a> или уточни название.</div>`;
+    V.toast('Точной страницы нет — смотри выдачу LordFilm', null, 2800);
+  } catch (error) {
+    console.warn('LordFilm lookup failed.', error);
+    $('#lmFrame').innerHTML = `<div class="tm-load">Не получилось подключиться. <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Поиск на LordFilm</a></div>`;
+    V.toast('Не вышло найти плеер', null, 2800);
+  } finally {
+    clearTimeout(timer);
+    btn.disabled = false; btn.textContent = originalLabel;
+  }
+}
 
 // ---------- история ----------
 function remember(t, chip, g) {

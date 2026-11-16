@@ -1,5 +1,13 @@
 const LORD_FILM_ORIGIN = 'https://1.2026-lord.pics';
-const ALLOWED_HOSTS = new Set(['1.2026-lord.pics', 'www.2026-lord.pics']);
+const LORD_HOSTS = ['1.2026-lord.pics', 'www.2026-lord.pics'];
+const ALLOWED_HOSTS = new Set(LORD_HOSTS);
+const LORD_FETCH_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Cache-Control': 'no-cache',
+  Referer: `${LORD_FILM_ORIGIN}/`,
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+};
 const ALLOWED_ORIGINS = new Set(['https://relocpe.github.io']);
 const MAX_CANDIDATES = 20;
 const NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -57,11 +65,7 @@ async function fetchLordFilm(input, fetcher) {
     let response;
     try {
       response = await fetcher(url.href, {
-        headers: {
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'ru-RU,ru;q=0.9',
-          Referer: `${url.origin}/`,
-        },
+        headers: { ...LORD_FETCH_HEADERS, Referer: `${url.origin}/` },
         redirect: 'manual',
       });
     } catch {
@@ -120,7 +124,63 @@ function resultItems(html) {
       if (id) items.push({ id });
     }
   }
-  return [...new Map(items.map((item) => [item.id, item])).values()];
+  const deduped = [...new Map(items.map((item) => [item.id, item])).values()];
+  if (deduped.length) return deduped;
+  const fallback = [];
+  for (const [anchor] of html.matchAll(/<a\b[^>]*>/gi)) {
+    const href = attributes(anchor).href;
+    if (!href) continue;
+    let url;
+    try {
+      url = new URL(href, LORD_FILM_ORIGIN);
+    } catch {
+      continue;
+    }
+    if (!isAllowedUrl(url)) continue;
+    const id = url.pathname.match(/^\/(\d+)\/?$/)?.[1];
+    if (id) fallback.push({ id });
+  }
+  return [...new Map(fallback.map((item) => [item.id, item])).values()].slice(0, MAX_CANDIDATES);
+}
+
+export function extractEmbedUrl(html, pageUrl) {
+  const base = String(pageUrl || LORD_FILM_ORIGIN);
+  const pick = (raw) => {
+    const text = decodeHtml(String(raw || '').trim());
+    if (!text || /^javascript:/i.test(text) || /^data:/i.test(text)) return null;
+    try {
+      const url = new URL(text, base);
+      if (url.protocol !== 'https:') return null;
+      return url.href;
+    } catch {
+      return null;
+    }
+  };
+  const candidates = [];
+  const note = (raw) => { const url = pick(raw); if (url) candidates.push(url); };
+  const playerChunk = (html.match(/<div[^>]*(?:id|class)=["'][^"']*(?:pleer|player|video|iframe)[^"']*["'][^>]*>[\s\S]{0,12000}?<\/div>/gi) || []);
+  for (const chunk of [...playerChunk, html]) {
+    for (const m of chunk.matchAll(/<iframe\b[^>]*\bsrc\s*=\s*(["'])([\s\S]*?)\1/gi)) note(m[2]);
+    for (const m of chunk.matchAll(/\bdata-url\s*=\s*(["'])([\s\S]*?)\1/gi)) note(m[2]);
+  }
+  for (const m of html.matchAll(/["']file["']\s*:\s*["']([^"']+)["']/gi)) {
+    if (/\.(?:m3u8|mp4)(?:\?|$)/i.test(m[1])) note(m[1]);
+  }
+  const hostBlock = /^(?:1\.2026-lord\.pics|www\.2026-lord\.pics)$/;
+  const preferred = candidates.find((url) => {
+    try {
+      const host = new URL(url).hostname;
+      return !hostBlock.test(host);
+    } catch {
+      return false;
+    }
+  });
+  return preferred || candidates[0] || null;
+}
+
+function typeMatches(detailsType, wantedType) {
+  if (!detailsType) return true;
+  return detailsType === wantedType;
 }
 
 function normalizedTitle(title) {
@@ -226,57 +286,66 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     const cardsById = new Map();
     let pageBase;
     const searchStatuses = [];
+    let hadSuccessfulSearch = false;
 
-    for (const queryTitle of queryTitles) {
+    outer: for (const queryTitle of queryTitles) {
       for (const query of [`${queryTitle} (${year})`, queryTitle]) {
-        const queryUrl = new URL('/search', LORD_FILM_ORIGIN);
-        queryUrl.searchParams.set('q', query);
-        const { response, url } = await fetchLordFilm(queryUrl, fetcher);
-        if (!response.ok) {
-          console.warn('LordFilm search returned a non-success status.', JSON.stringify({
-            status: response.status,
-            host: url.hostname,
-            contentType: response.headers.get('content-type'),
-            server: response.headers.get('server'),
-            cfRay: response.headers.get('cf-ray'),
-            cfMitigated: response.headers.get('cf-mitigated'),
-          }));
-          searchStatuses.push(response.status);
-          return unavailableResult(search, searchStatuses);
+        for (const host of LORD_HOSTS) {
+          const queryUrl = new URL('/search', `https://${host}`);
+          queryUrl.searchParams.set('q', query);
+          const { response, url } = await fetchLordFilm(queryUrl, fetcher);
+          if (!response.ok) {
+            console.warn('LordFilm search returned a non-success status.', JSON.stringify({
+              status: response.status,
+              host: url.hostname,
+              contentType: response.headers.get('content-type'),
+              server: response.headers.get('server'),
+              cfRay: response.headers.get('cf-ray'),
+              cfMitigated: response.headers.get('cf-mitigated'),
+            }));
+            searchStatuses.push(response.status);
+            continue;
+          }
+          hadSuccessfulSearch = true;
+          const html = (await response.text()).slice(0, 1_500_000);
+          const rawItems = resultItems(html);
+          if (!rawItems.length) continue;
+          pageBase = url;
+          for (const item of rawItems) cardsById.set(item.id, item);
+          break outer;
         }
-        const html = (await response.text()).slice(0, 1_500_000);
-        const rawItems = resultItems(html);
-        if (!rawItems.length) continue;
-        pageBase = url;
-        for (const item of rawItems) cardsById.set(item.id, item);
-        break;
       }
     }
 
     if (!cardsById.size) {
-      return searchStatuses.length
-        ? unavailableResult(search, searchStatuses)
-        : fallbackResult(search, 'no-exact-title');
+      return hadSuccessfulSearch
+        ? fallbackResult(search, 'no-exact-title')
+        : unavailableResult(search, searchStatuses);
     }
     if (cardsById.size > MAX_CANDIDATES) return fallbackResult(search, 'too-many-matches');
 
     const matches = [];
+    let matchHtml = '';
     for (const item of cardsById.values()) {
       const detailUrl = new URL(`/${item.id}`, pageBase || LORD_FILM_ORIGIN);
       if (!isAllowedUrl(detailUrl)) continue;
       const { response } = await fetchLordFilm(detailUrl, fetcher);
       if (!response.ok) continue;
-      const details = pageDetails((await response.text()).slice(0, 1_500_000));
-      if (details.year !== year || details.type !== type) continue;
+      const html = (await response.text()).slice(0, 1_500_000);
+      const details = pageDetails(html);
+      if (details.year !== year || !typeMatches(details.type, type)) continue;
       if (details.titles.some((candidate) => wantedTitles.has(candidate))) {
         matches.push(item.id);
+        matchHtml = html;
       }
     }
 
     if (matches.length !== 1) {
       return fallbackResult(search, matches.length ? 'ambiguous-match' : 'no-exact-match');
     }
-    return { url: `${LORD_FILM_ORIGIN}/${matches[0]}`, matched: true, reason: 'exact-match' };
+    const pageUrl = `${new URL(pageBase || LORD_FILM_ORIGIN).origin}/${matches[0]}`;
+    const embedUrl = extractEmbedUrl(matchHtml, pageUrl);
+    return { url: pageUrl, matched: true, reason: 'exact-match', embedUrl };
   } catch (error) {
     if (error instanceof LordFilmNetworkError) {
       return unavailableResult(search);
