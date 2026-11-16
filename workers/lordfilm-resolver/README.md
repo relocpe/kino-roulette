@@ -14,6 +14,8 @@ After changing `workers/lordfilm-resolver/index.mjs`, redeploy the Worker — th
 
 Pushes to `main` that touch this folder also run `.github/workflows/deploy-lordfilm-resolver.yml` when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set in GitHub Actions secrets.
 
+`CLOUDFLARE_ACCOUNT_ID` must be the 32-character hex id from the same Cloudflare account that hosts `samevamp.workers.dev` (Workers & Pages → right sidebar), not a zone id and not the text `Value:` from a form label.
+
 Run its tests with:
 
 ```sh

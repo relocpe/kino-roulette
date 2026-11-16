@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'workers/lordfilm-resolver/**'
+      - '.github/workflows/deploy-lordfilm-resolver.yml'
   workflow_dispatch:
 
 jobs:
@@ -18,9 +19,16 @@ jobs:
         with:
           node-version: '22'
       - name: Deploy Cloudflare Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: workers/lordfilm-resolver
-          command: deploy
+        working-directory: workers/lordfilm-resolver
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]' | sed 's/^Value://i')"
+          if ! [[ "$ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID must be 32 hex chars (Account ID from Cloudflare dashboard, without 'Value:' or spaces)."
+            exit 1
+          fi
+          export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
+          npx --yes wrangler@4.163.0 deploy
