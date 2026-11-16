@@ -12,6 +12,8 @@ Successful responses may include `embedUrl` (iframe src extracted from the LordF
 
 After changing `workers/lordfilm-resolver/index.mjs`, redeploy the Worker — the GitHub Pages build does not deploy Workers automatically.
 
+Pushes to `main` that touch this folder also run `.github/workflows/deploy-lordfilm-resolver.yml` when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set in GitHub Actions secrets.
+
 Run its tests with:
 
 ```sh
