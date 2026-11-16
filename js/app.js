@@ -859,9 +859,16 @@ function closeLordModal() {
 lm?.addEventListener('click', (e) => { if (e.target === lm || e.target.closest('[data-lclose]')) closeLordModal(); });
 lm?.addEventListener('cancel', (e) => { e.preventDefault(); closeLordModal(); });
 
+function lordSearchUrl(title, year) {
+  const q = `${title}${year ? ` (${year})` : ''}`;
+  return `https://1.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
+}
+
 function mountLordFrame(embedUrl, pageUrl, title) {
   const frame = $('#lmFrame');
+  if (!frame) return;
   const src = embedUrl || pageUrl;
+  frame.classList.toggle('lord-browse', Boolean(!embedUrl && pageUrl));
   if (!src) {
     frame.innerHTML = '<div class="tm-load" role="status">Не удалось собрать плеер.</div>';
     return;
@@ -870,11 +877,21 @@ function mountLordFrame(embedUrl, pageUrl, title) {
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
 }
 
+function openLordInNewTab(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function openLordWatch(t, btn) {
   const title = t.ru || ruCached(t.id) || t.t || '';
-  const searchUrl = `https://1.2026-lord.pics/search?q=${encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`)}`;
+  const searchUrl = lordSearchUrl(title, t.y);
   const originalLabel = btn.textContent;
   btn.disabled = true; btn.textContent = 'Ищу фильм…';
+  if (!lm || !$('#lmTitle') || !$('#lmFrame')) {
+    openLordInNewTab(searchUrl);
+    V.toast('Открываю LordFilm в новой вкладке', null, 2400);
+    btn.disabled = false; btn.textContent = originalLabel;
+    return;
+  }
   $('#lmTitle').textContent = title;
   $('#lmExt').href = searchUrl;
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу фильм на LordFilm…</div>';
@@ -900,18 +917,19 @@ async function openLordWatch(t, btn) {
       mountLordFrame(data.embedUrl, pageUrl, title);
       return;
     }
+    const browseUrl = lordPageRe.test(data.url || '') ? data.url : searchUrl;
+    $('#lmExt').href = browseUrl;
+  mountLordFrame(null, browseUrl, title);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
-      $('#lmFrame').innerHTML = `<div class="tm-load">LordFilm сейчас не отвечает. <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm</a></div>`;
-      V.toast('LordFilm недоступен — попробуй поиск вручную', null, 3200);
+      V.toast('Открыли LordFilm в плеере — поиск с твоего браузера', null, 3200);
       return;
     }
-    $('#lmExt').href = data.url || searchUrl;
-    $('#lmFrame').innerHTML = `<div class="tm-load">Точного совпадения не нашли. Попробуй <a href="${esc(data.url || searchUrl)}" target="_blank" rel="noopener noreferrer">выдачу LordFilm</a> или уточни название.</div>`;
-    V.toast('Точной страницы нет — смотри выдачу LordFilm', null, 2800);
+    V.toast('Выбери точное совпадение в выдаче LordFilm', null, 2800);
   } catch (error) {
     console.warn('LordFilm lookup failed.', error);
-    $('#lmFrame').innerHTML = `<div class="tm-load">Не получилось подключиться. <a href="${esc(searchUrl)}" target="_blank" rel="noopener noreferrer">Поиск на LordFilm</a></div>`;
-    V.toast('Не вышло найти плеер', null, 2800);
+    $('#lmExt').href = searchUrl;
+    mountLordFrame(null, searchUrl, title);
+    V.toast('Открыли LordFilm в плеере', null, 2800);
   } finally {
     clearTimeout(timer);
     btn.disabled = false; btn.textContent = originalLabel;

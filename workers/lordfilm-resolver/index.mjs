@@ -2,9 +2,14 @@ const LORD_FILM_ORIGIN = 'https://1.2026-lord.pics';
 const LORD_HOSTS = ['1.2026-lord.pics', 'www.2026-lord.pics'];
 const ALLOWED_HOSTS = new Set(LORD_HOSTS);
 const LORD_FETCH_HEADERS = {
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
   'Cache-Control': 'no-cache',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
   Referer: `${LORD_FILM_ORIGIN}/`,
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
 };
@@ -58,14 +63,52 @@ function isAllowedUrl(url) {
   return url.protocol === 'https:' && ALLOWED_HOSTS.has(url.hostname);
 }
 
-async function fetchLordFilm(input, fetcher) {
+function cookieHeaderFromResponse(response) {
+  if (typeof response.headers.getSetCookie === 'function') {
+    return response.headers.getSetCookie()
+      .map((part) => part.split(';')[0].trim())
+      .filter(Boolean)
+      .join('; ');
+  }
+  const single = response.headers.get('set-cookie');
+  return single ? single.split(';')[0].trim() : '';
+}
+
+function searchRequestUrls(host, query) {
+  const origin = `https://${host}`;
+  const dle = new URLSearchParams({
+    do: 'search',
+    subaction: 'search',
+    search_start: '0',
+    full_search: '0',
+    story: query,
+  });
+  return [
+    new URL(`/search?${new URLSearchParams({ q: query })}`, origin),
+    new URL(`/index.php?${dle}`, origin),
+    new URL(`/?${dle}`, origin),
+  ];
+}
+
+async function warmLordFilmHost(host, fetcher, cookies = '') {
+  const origin = `https://${host}`;
+  const { response } = await fetchLordFilm(`${origin}/`, fetcher, cookies);
+  return cookieHeaderFromResponse(response) || cookies;
+}
+
+async function fetchLordFilm(input, fetcher, cookie = '') {
   let url = new URL(input);
   for (let hop = 0; hop < 4; hop += 1) {
     if (!isAllowedUrl(url)) throw new Error('Unapproved LordFilm host');
     let response;
     try {
       response = await fetcher(url.href, {
-        headers: { ...LORD_FETCH_HEADERS, Referer: `${url.origin}/` },
+        headers: {
+          ...LORD_FETCH_HEADERS,
+          Referer: `${url.origin}/`,
+          'Sec-Fetch-Site': url.pathname === '/' ? 'none' : 'same-origin',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
         redirect: 'manual',
       });
     } catch {
@@ -287,13 +330,17 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     let pageBase;
     const searchStatuses = [];
     let hadSuccessfulSearch = false;
+    const hostCookies = new Map();
 
     outer: for (const queryTitle of queryTitles) {
       for (const query of [`${queryTitle} (${year})`, queryTitle]) {
         for (const host of LORD_HOSTS) {
-          const queryUrl = new URL('/search', `https://${host}`);
-          queryUrl.searchParams.set('q', query);
-          const { response, url } = await fetchLordFilm(queryUrl, fetcher);
+          if (!hostCookies.has(host)) {
+            hostCookies.set(host, await warmLordFilmHost(host, fetcher));
+          }
+          const cookie = hostCookies.get(host) || '';
+          for (const queryUrl of searchRequestUrls(host, query)) {
+          const { response, url } = await fetchLordFilm(queryUrl, fetcher, cookie);
           if (!response.ok) {
             console.warn('LordFilm search returned a non-success status.', JSON.stringify({
               status: response.status,
@@ -307,12 +354,15 @@ export async function resolveLordFilm(input, fetcher = fetch) {
             continue;
           }
           hadSuccessfulSearch = true;
+          const refreshed = cookieHeaderFromResponse(response);
+          if (refreshed) hostCookies.set(host, refreshed);
           const html = (await response.text()).slice(0, 1_500_000);
           const rawItems = resultItems(html);
           if (!rawItems.length) continue;
           pageBase = url;
           for (const item of rawItems) cardsById.set(item.id, item);
           break outer;
+          }
         }
       }
     }
@@ -329,7 +379,11 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     for (const item of cardsById.values()) {
       const detailUrl = new URL(`/${item.id}`, pageBase || LORD_FILM_ORIGIN);
       if (!isAllowedUrl(detailUrl)) continue;
-      const { response } = await fetchLordFilm(detailUrl, fetcher);
+      const detailHost = detailUrl.hostname;
+      if (!hostCookies.has(detailHost)) {
+        hostCookies.set(detailHost, await warmLordFilmHost(detailHost, fetcher));
+      }
+      const { response } = await fetchLordFilm(detailUrl, fetcher, hostCookies.get(detailHost) || '');
       if (!response.ok) continue;
       const html = (await response.text()).slice(0, 1_500_000);
       const details = pageDetails(html);

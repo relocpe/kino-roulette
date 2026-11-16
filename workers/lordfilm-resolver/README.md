@@ -16,6 +16,8 @@ Pushes to `main` that touch this folder also run `.github/workflows/deploy-lordf
 
 `CLOUDFLARE_ACCOUNT_ID` must be the 32-character hex id from the same Cloudflare account that hosts `samevamp.workers.dev` (Workers & Pages → right sidebar), not a zone id and not the text `Value:` from a form label.
 
+`CLOUDFLARE_API_TOKEN` must be the raw token string from **Create Token** (shown once). No `Bearer`, no quotes, no line breaks.
+
 Run its tests with:
 
 ```sh
