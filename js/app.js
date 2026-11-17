@@ -3,7 +3,7 @@ import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fit
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=23';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=1';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=2';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';

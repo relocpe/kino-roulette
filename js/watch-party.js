@@ -118,7 +118,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
     const url = `${WATCH_PARTY_API.replace(/^http/, 'ws')}/watch/${roomId}`;
     try { ws?.close(); } catch {}
     ws = new WebSocket(url);
-    ws.onopen = () => { reconnect = 0; send({ type: 'join', uid: who.uid, nick: who.nick, auth: who.auth }); };
+    ws.onopen = () => { reconnect = 0; send({ type: 'join', uid: who.uid, nick: who.nick, auth: who.auth }); paintMembers([{ nick: who.nick, host: false }]); };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       if (m.type === 'hello') {
@@ -158,7 +158,10 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
       if (m.type === 'host') onToast?.(`Ведущий: ${m.nick}`, null, 2000);
     };
     ws.onclose = () => {
+      const el = id('#wpMembers');
+      if (el) el.textContent = 'Связь оборвалась, переподключаемся…';
       if (++reconnect < 6) setTimeout(() => connect(roomId), 1200 * reconnect);
+      else onToast?.('Чат недоступен — обнови страницу', null, 4000);
     };
   };
 
