@@ -22,6 +22,30 @@ export function preferEmbeds(urls) {
 }
 
 // Alloha молчит, пока в адресе нет api=1. YouTube не принимает команды без enablejsapi.
+// Kodik стартует с start_from, Alloha со start, и оба ждут autoplay=1 в адресе.
+// postMessage «play» чужой плеер часто молча игнорирует, пока его сам не ткнут.
+export function playbackUrl(url, { at = 0, playing = false } = {}) {
+  const prepared = prepareEmbedUrl(url);
+  try {
+    const u = new URL(prepared);
+    const sec = Math.max(0, Math.floor(Number(at) || 0));
+    const kind = playerKind(u.href);
+    if (playing) u.searchParams.set('autoplay', '1');
+    if (sec > 0) {
+      if (kind === 'kodik') u.searchParams.set('start_from', String(sec));
+      else if (kind === 'youtube' || kind === 'alloha' || kind === 'vibix') u.searchParams.set('start', String(sec));
+      else if (kind === 'playerjs') u.searchParams.set('time', String(sec));
+      else {
+        u.searchParams.set('start', String(sec));
+        u.searchParams.set('start_from', String(sec));
+      }
+    }
+    return u.href;
+  } catch {
+    return prepared;
+  }
+}
+
 export function prepareEmbedUrl(url) {
   try {
     const u = new URL(url, 'https://relocpe.github.io');
@@ -188,10 +212,16 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     try { return re.test(new URL(origin).hostname); } catch { return false; }
   };
 
+  const foreignPlayer = (origin) => {
+    try {
+      const host = new URL(origin).hostname;
+      return !!host && host !== location.hostname;
+    } catch { return false; }
+  };
   const onMessage = (ev) => {
-    if (!fromThisPlayer(ev.source, ev.origin)) return;
     const tick = parsePlayerMessage(ev.data);
     if (!tick) return;
+    if (!fromThisPlayer(ev.source, ev.origin) && !foreignPlayer(ev.origin)) return;
     heard = true;
     if (tick.duration) duration = tick.duration;
     if (tick.at != null) at = tick.at;

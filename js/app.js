@@ -4,9 +4,9 @@ import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, 
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=34';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
-import { bindEmbed, preferEmbeds, prepareEmbedUrl, shouldSnapGuest } from './player-bridge.js?v=9';
+import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { hostChange, guestNeedsSeek, localPosition, HOST_SEEK_PLAYING } from './sync-policy.js?v=3';
+import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=4';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
@@ -866,7 +866,7 @@ async function openTrailer(t, from) {
   if (my !== tReq || !tm.open) return;
   tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
   if (!r || !/^[\w-]{11}$/.test(String(r.id))) { $('#tmFrame').innerHTML = `<div class="tm-load">Трейлер не нашёлся. <a href="${ytSearch(t)}" target="_blank" rel="noopener">Поискать на YouTube</a></div>`; return; }
-  $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || ruCached(t.id) || t.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+  $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || ruCached(t.id) || t.t)}" allow="autoplay *; encrypted-media *; picture-in-picture *; fullscreen *" allowfullscreen></iframe>`;
   $('#tmFrame').dataset.vid = r.id;
   $('#tmYt').href = `https://www.youtube.com/watch?v=${r.id}`;
 }
@@ -956,7 +956,7 @@ function watchRoom(id, panel, frame, titleEl) {
   let lastHostSent = 0;
   let lastGuestSeek = 0;
   let localTick = null;
-  let stallSince = 0;
+  let hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: 0 };
   let readyTimer = 0;
   let attachBridge = () => {};
 
@@ -1106,24 +1106,47 @@ function watchRoom(id, panel, frame, titleEl) {
 
   const sharedNow = (s) => (s?.playing && s.wall ? s.at + (Date.now() - s.wall) / 1000 : (s?.at || 0));
 
+  const armGuest = (at) => {
+    const iframe = frame.querySelector('iframe');
+    if (!iframe || !bridge) return;
+    const base = iframe.dataset.baseSrc || iframe.src;
+    const next = playbackUrl(base, { at, playing: true });
+    if (iframe.dataset.autostart !== '1' && next && next !== iframe.src) {
+      iframe.dataset.baseSrc = base;
+      iframe.dataset.autostart = '1';
+      iframe.src = next;
+      bridgeIframe = null;
+      setTimeout(attachBridge, 0);
+      return;
+    }
+    bridge.command(true, at);
+  };
+
   const applyGuest = (s, { snap = false, force = false } = {}) => {
     if (!s || ctl.isHost() || !bridge) return;
     const now = sharedNow(s);
-    const playing = !!s.playing;
-    const playEdge = guestPlaying !== null && guestPlaying !== playing;
-    const first = !appliedOnce;
-    guestPlaying = playing;
+    const cmd = guestCommand({
+      roomPlaying: !!s.playing,
+      roomAt: now,
+      localPlaying: localTick?.playing ?? null,
+      localAt: localTick ? localPosition(localTick) : null,
+      snap: snap || force,
+      sinceSeekMs: Date.now() - lastGuestSeek,
+    });
+    guestPlaying = !!s.playing;
     appliedOnce = true;
-    if (!shouldSnapGuest({ snap, force, playEdge, first, playing })) return;
-    bridge.command(playing, now);
+    if (!cmd) return;
     lastGuestSeek = Date.now();
-    guestAnchor = { at: now, wall: Date.now(), playing };
+    guestAnchor = { at: cmd.at, wall: Date.now(), playing: cmd.playing };
+    if (cmd.playing) armGuest(cmd.at);
+    else bridge.command(false, cmd.at);
   };
 
-  const hostAt = () => (bridge?.heard() && localTick ? localPosition(localTick) : ctl.clock());
+  const hostAt = () => (bridge?.heard() && localTick && Number.isFinite(localTick.at) ? localPosition(localTick) : ctl.clock());
 
   const hostPush = (at, playing, snap) => {
     lastHostSent = Date.now();
+    hostState = { ...hostState, sentAt: at, sentPlaying: !!playing, sentWall: lastHostSent };
     ctl.pushSync(at, playing, snap);
   };
 
@@ -1136,6 +1159,7 @@ function watchRoom(id, panel, frame, titleEl) {
     guestAnchor = null;
     guestPlaying = null;
     localTick = null;
+    hostState = { ...hostState, tick: null, stallSince: 0 };
     setReady(false);
     bridge = bindEmbed(iframe, {
       onReady() {
@@ -1149,37 +1173,19 @@ function watchRoom(id, panel, frame, titleEl) {
         }
       },
       onTick(t) {
-        const prev = localTick;
-        const at = Number.isFinite(t.at) ? t.at : (prev ? localPosition(prev) : ctl.clock());
-        let playing = t.playing != null ? t.playing : (prev?.playing ?? false);
-        let explicit = !!t.explicit;
-        // часть плееров шлёт только время: движение — это play, замер — пауза
-        if (t.playing == null && prev && Number.isFinite(t.at)) {
-          const delta = t.at - prev.at;
-          const wall = Math.max(0.001, (Date.now() - prev.wall) / 1000);
-          if (delta > 0.45 && delta < wall + 2) {
-            playing = true;
-            if (!prev.playing) explicit = true;
-            stallSince = 0;
-          } else if (prev.playing && Math.abs(delta) < 0.35) {
-            if (!stallSince) stallSince = Date.now();
-            if (Date.now() - stallSince > 2200) { playing = false; explicit = true; }
-          } else stallSince = 0;
-        } else stallSince = 0;
-        localTick = { at, wall: Date.now(), playing };
-        window.__wpLocalAt = at;
-        window.__wpLocalPlaying = playing;
+        const step = noteHostTick(hostState, t, Date.now());
+        localTick = step.state.tick;
+        window.__wpLocalAt = localTick?.at;
+        window.__wpLocalPlaying = !!localTick?.playing;
         if (t.duration) ctl.setDuration(t.duration);
-        if (!ctl.isHost() || !playerReady) return;
-        const change = hostChange({
-          at,
-          playing,
-          explicit,
-          expected: ctl.clock(),
-          sentPlaying: ctl.playing(),
-          sinceSentMs: Date.now() - lastHostSent,
-        });
-        if (change) hostPush(change.at, change.playing, true);
+        if (!ctl.isHost() || !playerReady || !step.emit) {
+          hostState = step.emit
+            ? { ...step.state, sentAt: hostState.sentAt, sentPlaying: hostState.sentPlaying, sentWall: hostState.sentWall }
+            : step.state;
+          return;
+        }
+        hostState = step.state;
+        hostPush(step.emit.at, step.emit.playing, true);
       },
     });
   };
@@ -1222,13 +1228,19 @@ function watchRoom(id, panel, frame, titleEl) {
     ctl.pushSync(ctl.clock(), true, false);
   }, 5000);
   const follow = setInterval(() => {
-    if (ctl.isHost() || !bridge?.heard() || !localTick || !playerReady) return;
+    if (ctl.isHost() || !bridge || !playerReady) return;
     const s = ctl.syncState();
-    const expected = sharedNow(s);
-    const local = localPosition(localTick);
-    if (!guestNeedsSeek({ expected, local, roomPlaying: !!s.playing, localPlaying: !!localTick.playing, sinceSeekMs: Date.now() - lastGuestSeek })) return;
-    bridge.command(!!s.playing, expected);
+    const cmd = guestCommand({
+      roomPlaying: !!s?.playing,
+      roomAt: sharedNow(s),
+      localPlaying: localTick?.playing ?? null,
+      localAt: localTick ? localPosition(localTick) : null,
+      sinceSeekMs: Date.now() - lastGuestSeek,
+    });
+    if (!cmd) return;
     lastGuestSeek = Date.now();
+    if (cmd.playing) armGuest(cmd.at);
+    else bridge.command(false, cmd.at);
   }, 2000);
   return () => { alive = false; gen += 1; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }
@@ -1319,7 +1331,7 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lm
   if (list.length > 1) {
     frame.classList.remove('lord-browse');
     const pick = list.map((u, i) => `<button type="button" class="${i ? '' : 'active'}" data-lsrc="${esc(u)}" role="tab">Плеер ${i + 1}</button>`).join('');
-    frame.innerHTML = `<div class="lm-pick" role="tablist">${pick}</div><iframe src="${esc(list[0])}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    frame.innerHTML = `<div class="lm-pick" role="tablist">${pick}</div><iframe src="${esc(list[0])}" title="Плеер: ${esc(title)}" allow="autoplay *; encrypted-media *; picture-in-picture *; fullscreen *" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
     const iframe = frame.querySelector('iframe');
     frame.querySelectorAll('[data-lsrc]').forEach((btn) => btn.addEventListener('click', () => {
       if (btn.classList.contains('active')) return;
@@ -1340,7 +1352,7 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lm
     return;
   }
   const note = list[0] ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице источника</p>';
-  frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+  frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay *; encrypted-media *; picture-in-picture *; fullscreen *" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 }
 
 async function resolveWatchPayload(payload, signal) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parsePlayerMessage, playerKind, preferEmbeds, prepareEmbedUrl, shouldSnapGuest } from './player-bridge.js';
+import { parsePlayerMessage, playbackUrl, playerKind, preferEmbeds, prepareEmbedUrl, shouldSnapGuest } from './player-bridge.js';
 
 describe('player bridge', () => {
   it('reads playerjs time', () => {
@@ -35,6 +35,15 @@ describe('player bridge', () => {
     assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_time_update', value: 42 }), { at: 42, duration: null, playing: undefined });
     assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_seek', value: { time: 90 } }), { at: 90, explicit: true });
     assert.equal(parsePlayerMessage({ key: 'kodik_player_ad_started' }), null);
+  });
+  it('builds an autostart address so the guest player begins without a click', () => {
+    const kodik = playbackUrl('https://kodik.info/video/1/abc', { at: 8, playing: true });
+    assert.match(kodik, /autoplay=1/);
+    assert.match(kodik, /start_from=8/);
+    const alloha = playbackUrl('https://abalone.thealloha.club/?token_movie=a', { at: 12, playing: true });
+    assert.match(alloha, /api=1/);
+    assert.match(alloha, /autoplay=1/);
+    assert.match(alloha, /start=12/);
   });
   it('turns on the alloha and youtube control flags', () => {
     assert.match(prepareEmbedUrl('https://abalone.thealloha.club/?token_movie=a'), /[?&]api=1/);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hostChange, guestNeedsSeek, localPosition } from './sync-policy.js';
+import { hostChange, guestNeedsSeek, guestCommand, localPosition, noteHostTick } from './sync-policy.js';
 
 describe('host change', () => {
   it('sends a seek made inside the player (2:14 while the room is at 1:00)', () => {
@@ -47,6 +47,65 @@ describe('guest drift', () => {
     assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: false }), true);
     assert.equal(guestNeedsSeek({ expected: 80.5, local: 80, roomPlaying: false }), false);
     assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: true, sinceSeekMs: 3000 }), false);
+  });
+});
+
+describe('host play actually reaches the room', () => {
+  const run = (samples) => {
+    let state = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: 0 };
+    const emits = [];
+    for (const sample of samples) {
+      const step = noteHostTick(state, sample.tick, sample.ms);
+      state = step.state;
+      if (step.emit) emits.push(step.emit);
+    }
+    return emits;
+  };
+  it('does not pause the guest on the first timestamp, then starts them when time moves', () => {
+    const emits = run([
+      { ms: 1000, tick: { at: 8 } },
+      { ms: 2000, tick: { at: 9.1 } },
+    ]);
+    assert.equal(emits.some((e) => e.playing === false), false);
+    assert.deepEqual(emits.at(-1), { at: 9.1, playing: true });
+  });
+  it('starts the room on a real play event even without a timestamp', () => {
+    const emits = run([{ ms: 500, tick: { playing: true, explicit: true } }]);
+    assert.deepEqual(emits, [{ at: 0, playing: true }]);
+  });
+  it('sends a pause the host actually pressed', () => {
+    let state = noteHostTick({ tick: null, stallSince: 0, sentAt: 80, sentPlaying: true, sentWall: 0 }, { at: 80, playing: false, explicit: true }, 5000).state;
+    const step = noteHostTick(state, { at: 80, playing: false, explicit: true }, 5000);
+    assert.equal(step.emit, null);
+    const fresh = noteHostTick({ tick: { at: 80, wall: 0, playing: true }, stallSince: 0, sentAt: 80, sentPlaying: true, sentWall: 0 }, { at: 80, playing: false, explicit: true }, 5000);
+    assert.deepEqual(fresh.emit, { at: 80, playing: false });
+  });
+  it('sends a seek while the host stays paused', () => {
+    const step = noteHostTick(
+      { tick: { at: 80, wall: 0, playing: false }, stallSince: 0, sentAt: 80, sentPlaying: false, sentWall: 0 },
+      { at: 200, explicit: true },
+      4000,
+    );
+    assert.deepEqual(step.emit, { at: 200, playing: false });
+  });
+});
+
+describe('guest starts when the host is playing', () => {
+  it('plays from a cold player', () => {
+    assert.deepEqual(guestCommand({ roomPlaying: true, roomAt: 8, localPlaying: null }), { playing: true, at: 8 });
+  });
+  it('does not poke a cold player while the room is paused', () => {
+    assert.equal(guestCommand({ roomPlaying: false, roomAt: 0, localPlaying: null, snap: true }), null);
+  });
+  it('pauses a guest who is still going', () => {
+    assert.deepEqual(guestCommand({ roomPlaying: false, roomAt: 80, localPlaying: true }), { playing: false, at: 80 });
+  });
+  it('leaves a guest who is already in sync', () => {
+    assert.equal(guestCommand({ roomPlaying: true, roomAt: 30, localPlaying: true, localAt: 29 }), null);
+  });
+  it('retries play after a missed command, not on every tick', () => {
+    assert.equal(guestCommand({ roomPlaying: true, roomAt: 8, localPlaying: false, sinceSeekMs: 200 }), null);
+    assert.deepEqual(guestCommand({ roomPlaying: true, roomAt: 9, localPlaying: false, sinceSeekMs: 1600 }), { playing: true, at: 9 });
   });
 });
 
