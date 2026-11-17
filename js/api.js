@@ -280,12 +280,12 @@ async function fallbackPair(g, s) {
   return ids.map((id) => sn.titles[id]).filter(Boolean).filter((t) => !isIndianTitle(t));
 }
 
-/** Постеры для ленты барабана под выбранные жанры: из встроенного каталога, по тем же правилам, что и подбор. */
+/** Постеры для ленты барабана: из встроенного каталога по тем же правилам, что и подбор (без жанров — любые фильмы и сериалы режима). */
 export async function genreTape(P, f) {
   await animeReady;
-  let pairs = P;
-  if (f.mode === 'anime') pairs = P.filter(([g]) => g?.al).map(([g]) => [ANIME, { id: 'al_' + g.id, al: g.al }]);
-  else pairs = P.filter(([g]) => !g?.animeOnly && g?.src !== 'anilist');
+  let pairs;
+  if (f.mode === 'anime') pairs = P.length ? P.filter(([g]) => g?.al).map(([g]) => [ANIME, { id: 'al_' + g.id, al: g.al }]) : [[ANIME, null]];
+  else pairs = P.length ? P.filter(([g]) => !g?.animeOnly && g?.src !== 'anilist') : [[null, null]];
   if (!pairs.length) return [];
   const collect = async (ff) => {
     const out = new Map();

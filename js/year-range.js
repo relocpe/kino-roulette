@@ -10,18 +10,21 @@ function clampYear(value, fallback) {
 }
 
 export function mountYearRange(host, { from, to, onInput, onChange } = {}) {
+  const span0 = YEAR_RANGE_MAX - YEAR_RANGE_MIN || 1;
+  const ticks = [1920, 1950, 1980, 2010, YEAR_RANGE_MAX].map((y) => `<span data-y="${y}" style="--t:${(y - YEAR_RANGE_MIN) / span0}">${y}</span>`).join('');
   host.innerHTML = `
     <div class="year-range" data-year-range>
-      <div class="year-range-values">
-        <label>От <output data-year-from-value></output></label>
-        <label>До <output data-year-to-value></output></label>
+      <div class="year-range-values" aria-hidden="true">
+        <div class="yr-val"><small>от</small><output data-year-from-value></output></div><i class="yr-dash"></i>
+        <div class="yr-val"><small>до</small><output data-year-to-value></output></div>
       </div>
       <div class="year-range-track" data-year-track>
         <div class="year-range-selected"></div>
         <input type="range" min="${YEAR_RANGE_MIN}" max="${YEAR_RANGE_MAX}" step="1" data-year-from aria-label="Год от">
         <input type="range" min="${YEAR_RANGE_MIN}" max="${YEAR_RANGE_MAX}" step="1" data-year-to aria-label="Год до">
       </div>
-      <div class="year-range-bounds" aria-hidden="true"><span>${YEAR_RANGE_MIN}</span><span>${YEAR_RANGE_MAX}</span></div>
+      <div class="year-range-ruler" aria-hidden="true"></div>
+      <div class="year-range-scale" aria-hidden="true">${ticks}</div>
     </div>`;
   const range = host.querySelector('[data-year-range]');
   const lower = range.querySelector('[data-year-from]');
@@ -41,10 +44,11 @@ export function mountYearRange(host, { from, to, onInput, onChange } = {}) {
   function sync() {
     const lo = Number(lower.value), hi = Number(upper.value);
     const span = YEAR_RANGE_MAX - YEAR_RANGE_MIN || 1;
-    range.style.setProperty('--year-from', `${((lo - YEAR_RANGE_MIN) / span) * 100}%`);
-    range.style.setProperty('--year-to', `${((hi - YEAR_RANGE_MIN) / span) * 100}%`);
-    lowerValue.textContent = lo > YEAR_RANGE_MIN ? lo : 'Любой';
-    upperValue.textContent = hi < YEAR_RANGE_MAX ? hi : 'сейчас';
+    range.style.setProperty('--year-from', String((lo - YEAR_RANGE_MIN) / span));
+    range.style.setProperty('--year-to', String((hi - YEAR_RANGE_MIN) / span));
+    lowerValue.textContent = lo;
+    upperValue.textContent = hi;
+    range.querySelectorAll('.year-range-scale span').forEach((t) => t.classList.toggle('in', +t.dataset.y >= lo && +t.dataset.y <= hi));
     lower.setAttribute('aria-valuetext', lo > YEAR_RANGE_MIN ? String(lo) : 'Любой год');
     upper.setAttribute('aria-valuetext', hi < YEAR_RANGE_MAX ? String(hi) : 'Текущий год');
   }
@@ -79,7 +83,7 @@ export function mountYearRange(host, { from, to, onInput, onChange } = {}) {
     const bounds = track.getBoundingClientRect();
     if (!bounds.width) return;
     event.preventDefault();
-    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left - 12) / (bounds.width - 24)));
     const year = Math.round(YEAR_RANGE_MIN + ratio * (YEAR_RANGE_MAX - YEAR_RANGE_MIN));
     const which = Math.abs(year - Number(lower.value)) <= Math.abs(year - Number(upper.value)) ? 'from' : 'to';
     (which === 'from' ? lower : upper).value = String(year);

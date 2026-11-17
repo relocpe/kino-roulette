@@ -3,7 +3,7 @@ import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
 import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=19';
 import * as S from './store.js?v=13';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
-import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
+import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=2';
 import { clearProgress } from './watch-progress.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -258,7 +258,7 @@ function filterRow(f, { onChange, readonly = false, sort = true } = {}) {
     }
     function body(s) {
       if (s === 'type') return `<div class="opts">${[['all', 'Фильмы и сериалы'], ['movie', 'Фильмы'], ['series', 'Сериалы'], ['anime', 'Аниме']].map(([m, l]) => `<button type="button" role="radio" data-mode="${m}" aria-checked="${f.mode === m}">${l}</button>`).join('')}</div>`;
-      if (s === 'genre') return `<div class="glist">${GENRES.filter((g) => genreOk(g, f.mode)).map((g) => `<div class="grp${f.genres.length >= 3 && !f.genres.includes(g.id) ? ' off' : ''}"><div class="grow"><button type="button" class="gopt" data-g="${g.id}" aria-checked="${f.genres.includes(g.id)}"><i class="cb"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>${esc(g.label)}</span></button></div></div>`).join('')}</div>`;
+      if (s === 'genre') return `<div class="glist">${GENRES.filter((g) => genreOk(g, f.mode)).map((g) => `<div class="grp${f.genres.length >= 3 && !f.genres.includes(g.id) ? ' off' : ''}" style="--gc:${g.accent}"><div class="grow"><button type="button" class="gopt" data-g="${g.id}" aria-checked="${f.genres.includes(g.id)}"><i class="cb"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>${esc(g.label)}</span></button></div></div>`).join('')}</div>`;
       if (s === 'years') return `<div class="dec">${DECS.map(([a, b, l]) => `<button type="button" class="chip" data-a="${a}" data-b="${b}" aria-pressed="${(f.from || 0) === a && (f.to || YEAR_RANGE_MAX) === b}">${l}</button>`).join('')}</div><div data-year-range-host></div>`;
       return `<div class="opts">${[[0, 'Любой'], [6, 'от 6'], [7, 'от 7'], [7.5, 'от 7.5'], [8, 'от 8']].map(([r, l]) => `<button type="button" role="radio" data-r="${r}" aria-checked="${(f.rating || 0) === r}">${l}</button>`).join('')}</div>`;
     }

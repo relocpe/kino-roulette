@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=30';
+import * as V from './views.js?v=31';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=10';
 import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
@@ -11,7 +11,7 @@ import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
 import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
-import { mountYearRange } from './year-range.js?v=1';
+import { mountYearRange } from './year-range.js?v=2';
 
 const $ = (s) => document.querySelector(s);
 const ZOMBI_RESOLVER = 'https://kino-roulette-zombi-resolver.samevamp.workers.dev/resolve';
@@ -78,8 +78,8 @@ function chipEl(c, cls = '') {
 const ordered = [...MAIN.map((id) => byId[id]), ...GENRES.filter((g) => !MAIN.includes(g.id))];
 const expanded = new Set(prefs.sel.filter((g) => SUBS[g]));
 for (const c of ordered) {
-  const grp = document.createElement('div'); grp.className = 'grp'; grp.dataset.g = c.id;
-  grp.innerHTML = `<div class="grow"><button type="button" class="gopt" role="checkbox" data-id="${c.id}">${CHECK}<span>${esc(c.label)}</span></button>${SUBS[c.id] ? `<button type="button" class="gchev" aria-expanded="false" aria-label="Уточнить: ${esc(c.label)}">${CHEV}</button>` : ''}</div>`
+  const grp = document.createElement('div'); grp.className = 'grp'; grp.dataset.g = c.id; grp.style.setProperty('--gc', c.accent);
+  grp.innerHTML = `<div class="grow"><button type="button" class="gopt" role="checkbox" data-id="${c.id}">${CHECK}<span>${esc(c.label)}</span></button>${SUBS[c.id] ? `<button type="button" class="gchev" aria-expanded="false" aria-label="Уточнить: ${esc(c.label)}"><span class="more">ещё ${SUBS[c.id].length}</span>${CHEV}</button>` : ''}</div>`
     + (SUBS[c.id] ? `<div class="gsubs"><div class="gsin">${SUBS[c.id].map((sid) => `<button type="button" class="gopt sub" role="checkbox" data-g="${c.id}" data-s="${sid}">${CHECK}<span>${esc(subLabel(byId[sid]))}</span></button>`).join('')}</div></div>` : '');
   $('#genres').append(grp);
 }
@@ -122,51 +122,39 @@ function syncChips() {
     grp.hidden = !genreOk(byId[g], prefs.mode); grp.classList.toggle('nosub', am);
     grp.querySelector('.gopt').setAttribute('aria-checked', String(on));
     grp.classList.toggle('off', full && !on);
+    grp.querySelector('.gopt').setAttribute('aria-disabled', String(full && !on));
     const ch = grp.querySelector('.gchev'); if (!ch) return;
     const ex = expanded.has(g); ch.setAttribute('aria-expanded', String(ex)); grp.classList.toggle('open', ex);
     grp.querySelectorAll('.gopt.sub').forEach((b) => { b.setAttribute('aria-checked', String(on && prefs.sub[g] === b.dataset.s)); b.tabIndex = ex ? 0 : -1; });
   });
   $('#gCount').textContent = prefs.sel.length ? `${prefs.sel.length} из ${MAX}` : '';
+  $('#gCount').classList.toggle('full', full);
 }
 
 // режим
 document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { const was = prefs.mode; prefs.mode = b.dataset.mode; prefs.sel = prefs.sel.filter((id) => genreOk(byId[id], prefs.mode)); changed(); if (picker.dataset.sec === 'type') closePanel(picker); }));
 
-// десятилетия: одно или диапазон
+// годы: быстрые пресеты и слайдер
 const NOW = new Date().getFullYear();
-const DECS = [[1900, 'до 70-х'], [1970, '70-е'], [1980, '80-е'], [1990, '90-е'], [2000, '00-е'], [2010, '10-е'], [2020, '20-е']];
-const decLabel = (d) => DECS.find((x) => x[0] === d)[1];
-DECS.forEach(([d, l]) => { const b = chipEl({ id: String(d), label: l }); b.addEventListener('click', () => pickDec(d)); $('#decades').append(b); });
-function decRange() { const D = prefs.dec || []; return D.length ? [Math.min(...D), Math.max(...D)] : null; }
-function pickDec(d) {
-  const D = prefs.dec || [];
-  if (D.length === 1 && D[0] === d) prefs.dec = [];
-  else if (D.length === 1) prefs.dec = [D[0], d].sort((a, b) => a - b);
-  else prefs.dec = [d];
-  const r = decRange();
-  prefs.from = r ? (r[0] === 1900 ? '' : r[0]) : '';
-  prefs.to = r ? (r[1] === 1900 ? 1969 : r[1] >= 2020 ? '' : r[1] + 9) : '';
-  changed();
-}
-function syncDec() {
-  const r = decRange();
-  document.querySelectorAll('#decades .chip').forEach((b) => {
-    const d = +b.dataset.id; const inr = r && d >= r[0] && d <= r[1];
-    b.setAttribute('aria-pressed', String(!!inr)); b.classList.toggle('mid', !!(inr && r[0] !== r[1] && d !== r[0] && d !== r[1]));
-  });
-}
+const PRESETS = [
+  { label: 'Любые', short: 'Любые', from: '', to: '' },
+  { label: 'Новинки 2020+', short: '2020+', from: 2020, to: '' },
+  { label: '2010-е', short: '10-е', from: 2010, to: 2019 },
+  { label: '2000-е', short: '00-е', from: 2000, to: 2009 },
+  { label: '90-е', short: '90-е', from: 1990, to: 1999 },
+  { label: '80-е', short: '80-е', from: 1980, to: 1989 },
+  { label: 'Классика до 1980', short: 'до 1980', from: '', to: 1979 },
+];
+const presetOf = () => PRESETS.find((p) => String(p.from) === String(prefs.from ?? '') && String(p.to) === String(prefs.to ?? ''));
+PRESETS.forEach((p, i) => { const b = chipEl({ id: String(i), label: p.label }); b.addEventListener('click', () => { prefs.from = p.from; prefs.to = p.to; prefs.dec = []; changed(); }); $('#decades').append(b); });
+function syncDec() { const cur = presetOf(); document.querySelectorAll('#decades .chip').forEach((b) => b.setAttribute('aria-pressed', String(PRESETS[+b.dataset.id] === cur))); }
 const syncYearSlider = mountYearRange($('#yearRange'), {
   from: prefs.from,
   to: prefs.to,
   onInput: ({ from, to }) => {
     prefs.from = from ?? '';
     prefs.to = to ?? '';
-    const decade = DECS.find(([d]) => (
-      d === 1900 ? !from && to === 1969
-        : d === 2020 ? from === 2020 && !to
-          : from === d && to === d + 9
-    ));
-    prefs.dec = decade ? [decade[0]] : [];
+    prefs.dec = [];
     changed();
   },
 });
@@ -215,8 +203,8 @@ function genreVal() {
   return P.slice(0, 2).map(([g]) => g.label).join(', ') + (P.length > 2 ? ` +${P.length - 2}` : '');
 }
 function yearsVal() {
-  const r = decRange();
-  if (r) return r[0] === r[1] ? decLabel(r[0]) : `${decLabel(r[0])} – ${decLabel(r[1])}`;
+  const p = presetOf();
+  if (p) return p === PRESETS[0] ? 'Любые' : p.short;
   if (prefs.from && prefs.to && Number(prefs.from) === Number(prefs.to)) return String(prefs.from);
   return prefs.from || prefs.to ? `${prefs.from || '…'}–${prefs.to || 'сейчас'}` : 'Любые';
 }
@@ -386,6 +374,10 @@ async function buildTape(list, n = TAPE_N, regrow = false) {
     tape = next; if (rg) items.clear();
     const lo = visRange()[0] - 40; for (const k of items.keys()) if (k < lo) items.delete(k);
     paint(!had || rg); rg = false; kickDrift();
+    if (decoded.size > TAPE_N * 2) {
+      const keep = new Set(tape.map(reelSrc)); for (const t of items.values()) keep.add(reelSrc(t));
+      for (const [k, e] of decoded) if (!keep.has(k) && !e.im.isConnected) decoded.delete(k);
+    }
   };
   // первый раз (медленная сеть) лента растёт по мере декодирования; в ленту попадают только готовые постеры
   const grow = !tape.length || regrow, got = []; // regrow: смена режима «Что» — лента меняется, как только готовы первые постеры
@@ -424,13 +416,14 @@ function paint(force) {
 }
 addEventListener('resize', () => measure(), { passive: true });
 // лента-заполнитель — только из тайтлов текущего режима «Что» (аниме не мелькает в «Фильмах», и наоборот)
-const TAPE_N = 64;
+const TAPE_N = innerWidth < 700 ? 72 : 112;
 async function seedsFor() {
   const [s] = await Promise.all([seedPosters(), animeReady]);
   const base = s.filter((t) => fitsMode(t, prefs.mode));
-  if (!prefs.sel.length) return base;
-  try { const g = await genreTape(pairs(), filters()); return g.length ? g : base; } catch { return base; }
+  if (!prefs.sel.length && !catalogWanted) return base;
+  try { const g = await genreTape(pairs(), filters()); return g.length >= 12 ? g : g.length ? g.concat(base) : base; } catch { return base; }
 }
+let catalogWanted = false;
 var tapeKey = '';
 const tapeKeyNow = () => JSON.stringify([prefs.mode, prefs.sel, prefs.sub, prefs.from, prefs.to, prefs.rating, prefs.known]);
 function retape() { tapeKey = tapeKeyNow(); tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, TAPE_N, true); }).catch(() => {}); }
@@ -438,6 +431,8 @@ var retapeTimer = 0;
 function scheduleRetape() { if (tapeKeyNow() === tapeKey) return; clearTimeout(retapeTimer); retapeTimer = setTimeout(() => { if (!spinning && tapeKeyNow() !== tapeKey) retape(); }, 250); }
 let tapeReady = (tapeKey = tapeKeyNow(), seedsFor()).then((s) => { display = s; return buildTape(s, TAPE_N); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
+// без жанров лента стартует со встроенной подборки, затем подменяется случайными фильмами и сериалами из всего каталога
+tapeReady.then(() => new Promise((r) => setTimeout(r, 2500))).then(() => { if (!spinning) { catalogWanted = true; retape(); } });
 
 // покой: лента шагает — карточка стоит ровно в рамке 2.6 с, затем переезд ровно на одну карточку за 0.9 с.
 // Только transform; пауза в фоне, при reduced-motion и во время крутки/результата.
@@ -503,7 +498,7 @@ async function spin() {
     phase('idle'); finish();
     if (ch.empty) {
       // что сильнее режет выборку: годы/рейтинг или жанры
-      const narrow = decRange() || prefs.from || prefs.to || Number(prefs.rating) || prefs.known;
+      const narrow = prefs.from || prefs.to || Number(prefs.rating) || prefs.known;
       say('Под такие фильтры ничего не нашлось', narrow ? ['Сбросить годы и рейтинг', () => { resetYears(); resetRate(); changed(); }] : ['Убрать жанры', () => { resetGenres(); changed(); }]);
     } else say(ch.error);
     return;

@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=13';
-import { BASE } from './views.js?v=30';
+import { BASE } from './views.js?v=31';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
