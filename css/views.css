@@ -81,6 +81,34 @@ body[data-route="list"] .wrap {
 .shelf .tlink { flex: none; white-space: nowrap; }
 .shelf .srow { padding-top: 12px; }
 .shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
+body[data-route="catalog"] {
+  --cat-gutter: max(32px, env(safe-area-inset-left));
+  --cat-gutter-r: max(32px, env(safe-area-inset-right));
+}
+body[data-route="catalog"] .shelves { gap: 36px; }
+body[data-route="catalog"] .shelf .srow {
+  margin-inline: calc(-1 * var(--cat-gutter)) calc(-1 * var(--cat-gutter-r));
+  padding: 12px var(--cat-gutter-r) 8px var(--cat-gutter);
+  scroll-padding-inline: var(--cat-gutter);
+  gap: 14px;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+}
+body[data-route="catalog"] .shelf .srow:active { cursor: grabbing; }
+body[data-route="catalog"] .moods {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  margin-inline: calc(-1 * var(--cat-gutter)) calc(-1 * var(--cat-gutter-r));
+  padding: 0 var(--cat-gutter-r) 4px var(--cat-gutter);
+  scroll-padding-inline: var(--cat-gutter);
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+body[data-route="catalog"] .moods::-webkit-scrollbar { display: none; }
+body[data-route="catalog"] .mood { flex: 0 0 min(200px, 42vw); height: 112px; scroll-snap-align: start; }
 
 /* строка фильтров */
 .crow { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; flex-wrap: wrap; }
@@ -263,6 +291,10 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
 @media (max-width: 1180px) { .moods { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; scrollbar-width: none; } }
 @media (max-width: 1000px) { .cfs { display: none; } .cfsum { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; } }
 @media (max-width: 760px) {
+  body[data-route="catalog"] {
+    --cat-gutter: max(16px, env(safe-area-inset-left));
+    --cat-gutter-r: max(16px, env(safe-area-inset-right));
+  }
   .nav { display: none; }
   .top { padding: 0 6px 0 16px; }
   #listBtn { display: none; }

@@ -208,17 +208,15 @@ function loadCurated() {
   if (!curatedTitles) curatedTitles = fetch('data/curated.json?v=1').then((r) => { if (!r.ok) throw new Error('curated'); return r.json(); }).then((d) => d.titles || []);
   return curatedTitles;
 }
-function shelfMoodsHTML(shelves) {
-  return `<div class="moods shelves-moods" role="list">${shelves.map((s) => `<a class="mood" role="listitem" href="catalog/list/${esc(s.id)}" data-nav data-shelf="${esc(s.id)}"><div class="mcol"></div><b>${esc(s.title)}</b></a>`).join('')}</div>`;
+const SHELF_PREVIEW = 14;
+function shelfCard(t) {
+  remember(t);
+  const title = t.ru || ruCached(t.id) || t.t || '';
+  const meta = tileMetaLine(t);
+  const src = t.i ? poster(t.i, 300) : '';
+  return `<a class="stile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}</div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
 }
-function fillShelfMoods(root, shelves) {
-  root.querySelectorAll('.mood[data-shelf]').forEach((a) => {
-    const s = shelves.find((x) => x.id === a.dataset.shelf);
-    if (!s) return;
-    a.querySelector('.mcol').innerHTML = collHTML(s.items.filter((t) => t.i).slice(0, 3).map((t) => poster(t.i, 300)), 3);
-  });
-}
-const shelfSkel = () => `<div class="moods">${Array.from({ length: 6 }, () => '<a class="mood sk" aria-hidden="true" tabindex="-1"><div class="mcol"></div><b></b></a>').join('')}</div>`;
+const shelfSkel = () => `<section class="shelf skel" aria-hidden="true"><div class="srow">${Array.from({ length: 6 }, () => '<div class="stile sk"><div class="tp"></div><b></b></div>').join('')}</div></section>`;
 let shelfGen = 0;
 function mountShelves(box) {
   const gen = ++shelfGen;
@@ -227,8 +225,10 @@ function mountShelves(box) {
   loadCurated().then((titles) => {
     if (gen !== shelfGen || !box.isConnected) return;
     const shelves = buildShelves(titles).filter((s) => s.items.length >= MIN_SHELF);
-    box.innerHTML = shelves.length ? `<h2 class="hcap">Подборки</h2>${shelfMoodsHTML(shelves)}` : '';
-    fillShelfMoods(box, shelves);
+    box.innerHTML = shelves.length ? `<h2 class="hcap">Подборки</h2><div class="shelves">${shelves.map((s) => {
+      const items = s.items.slice(0, SHELF_PREVIEW);
+      return `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow" tabindex="0" role="region" aria-label="${esc(s.title)}">${items.map(shelfCard).join('')}</div></section>`;
+    }).join('')}</div>` : '';
     localize(box);
   }).catch(() => {
     if (gen !== shelfGen || !box.isConnected) return;
