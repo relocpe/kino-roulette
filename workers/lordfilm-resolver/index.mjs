@@ -271,6 +271,23 @@ function typeMatches(detailsType, wantedType) {
   return detailsType === wantedType;
 }
 
+function titlesOverlap(detailsTitles, wantedTitles) {
+  const wanted = [...wantedTitles];
+  return detailsTitles.some((candidate) => wanted.some((needle) => {
+    if (!candidate || !needle) return false;
+    if (candidate === needle) return true;
+    return candidate.includes(needle) || needle.includes(candidate);
+  }));
+}
+
+function matchScore(details, wantedTitles, year, wantedType) {
+  let score = 0;
+  if (details.year === year) score += 2;
+  if (typeMatches(details.type, wantedType)) score += 1;
+  if (titlesOverlap(details.titles, wantedTitles)) score += 3;
+  return score;
+}
+
 function normalizedTitle(title) {
   return String(title || '')
     .normalize('NFKC')
@@ -300,7 +317,8 @@ function pageDetails(html) {
   const yearMatch = releaseDate.match(/\b(18|19|20)\d{2}\b/)
     || title.match(/\b(18|19|20)\d{2}\b/);
   const ogType = (meta.get('og:type') || '').toLowerCase();
-  const titleIdentifiesSeries = /(?:сериал|телесериал|tv\s*show|tv\s*series)/iu.test(pageTitle);
+  const titleIdentifiesSeries = /(?:сериал|телесериал|tv\s*show|tv\s*series)/iu.test(pageTitle)
+    || /(?:сериал|\d+\s*сезон)/iu.test(title);
   const type = ['video.tv_show', 'video.episode'].includes(ogType) || titleIdentifiesSeries ? 'tv'
     : ogType === 'video.movie' ? 'movie' : '';
   return {
@@ -425,6 +443,7 @@ export async function resolveLordFilm(input, fetcher = fetch) {
 
     const matches = [];
     let matchHtml = '';
+    const ranked = [];
     for (const item of cardsById.values()) {
       const detailUrl = new URL(`/${item.id}`, pageBase || LORD_FILM_ORIGIN);
       if (!isAllowedUrl(detailUrl)) continue;
@@ -438,18 +457,42 @@ export async function resolveLordFilm(input, fetcher = fetch) {
       if (!response.ok) continue;
       const html = (await response.text()).slice(0, 1_500_000);
       const details = pageDetails(html);
-      if (details.year !== year || !typeMatches(details.type, type)) continue;
-      if (details.titles.some((candidate) => wantedTitles.has(candidate))) {
+      const score = matchScore(details, wantedTitles, year, type);
+      ranked.push({ id: item.id, score, details, html });
+      const exactTitle = details.titles.some((candidate) => wantedTitles.has(candidate));
+      if (details.year === year && typeMatches(details.type, type) && (exactTitle || titlesOverlap(details.titles, wantedTitles))) {
         matches.push(item.id);
         matchHtml = html;
       }
     }
 
-    if (matches.length !== 1) {
-      return fallbackResult(search, matches.length ? 'ambiguous-match' : 'no-exact-match');
+    ranked.sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    const strong = ranked.filter((row) => row.score >= 5);
+
+    if (matches.length > 1 || strong.length > 1) {
+      return fallbackResult(search, 'ambiguous-match');
     }
-    const pageUrl = `${new URL(pageBase || LORD_FILM_ORIGIN).origin}/${matches[0]}`;
-    const embedUrl = extractEmbedUrl(matchHtml, pageUrl);
+
+    let chosenId = matches.length === 1 ? matches[0] : null;
+    let chosenHtml = matchHtml;
+    if (!chosenId && best?.score >= 5 && typeMatches(best.details.type, type)) {
+      chosenId = best.id;
+      chosenHtml = best.html;
+    }
+
+    if (!chosenId) {
+      const reason = matches.length > 1 ? 'ambiguous-match' : 'no-exact-match';
+      const result = fallbackResult(search, reason);
+      if (best?.score >= 3 && typeMatches(best.details.type, type)) {
+        result.url = `${new URL(pageBase || LORD_FILM_ORIGIN).origin}/${best.id}`;
+        result.lead = true;
+      }
+      return result;
+    }
+
+    const pageUrl = `${new URL(pageBase || LORD_FILM_ORIGIN).origin}/${chosenId}`;
+    const embedUrl = extractEmbedUrl(chosenHtml, pageUrl);
     return { url: pageUrl, matched: true, reason: 'exact-match', embedUrl };
   } catch (error) {
     if (error instanceof LordFilmNetworkError) {

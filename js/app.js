@@ -849,7 +849,7 @@ tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', ()
 
 // ---------- LordFilm: прямой плеер на сайте ----------
 const lm = $('#lmodal');
-const lordPageRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/\d+\/?$/;
+const lordPageRe = /^https:\/\/(?:www\.)?2026-lord\.pics\/\d+\/?$/;
 const lordSearchRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/search\b/;
 function closeLordModal() {
   if (!lm?.open) return;
@@ -862,7 +862,11 @@ lm?.addEventListener('cancel', (e) => { e.preventDefault(); closeLordModal(); })
 
 function lordSearchUrl(title, year) {
   const q = `${title}${year ? ` (${year})` : ''}`;
-  return `https://1.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
+  return `https://www.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
+}
+
+function lordFilmPageUrl(id) {
+  return `https://www.2026-lord.pics/${id}`;
 }
 
 function mountLordFrame(embedUrl, pageUrl, title) {
@@ -893,7 +897,13 @@ function mountLordSearchPanel(url, title, openTab = false) {
 }
 
 function openLordInNewTab(url) {
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 async function openLordWatch(t, btn) {
@@ -929,15 +939,16 @@ async function openLordWatch(t, btn) {
     if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
     const data = await response.json();
     const pageUrl = lordPageRe.test(data.url || '') ? data.url : '';
-    if (data.matched === true && pageUrl) {
+    const openFilm = pageUrl && (data.matched === true || data.lead === true);
+    if (openFilm) {
       $('#lmExt').href = pageUrl;
+      openLordInNewTab(pageUrl);
       mountLordFrame(data.embedUrl, pageUrl, title);
+      V.toast(data.matched ? 'Открыл страницу LordFilm' : 'Похоже на этот фильм — проверь вкладку LordFilm', null, 2800);
       return;
     }
-    const browseUrl = lordPageRe.test(data.url || '') ? data.url : searchUrl;
-    $('#lmExt').href = browseUrl;
-    if (lordPageRe.test(browseUrl)) mountLordFrame(null, browseUrl, title);
-    else mountLordSearchPanel(searchUrl, title, true);
+    $('#lmExt').href = searchUrl;
+    mountLordSearchPanel(searchUrl, title, true);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
       V.toast('Поиск LordFilm открыт в новой вкладке', null, 3200);
       return;
