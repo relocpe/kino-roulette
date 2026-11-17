@@ -38,16 +38,7 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 @media (max-width: 900px) {
   body.inroom .toast { left: 12px; right: 12px; bottom: calc(68px + env(safe-area-inset-bottom)); }
 }
-.wrap { max-width: 1280px; margin: 0 auto; padding: 8px 40px 0; }
-body[data-route="catalog"] .wrap.cat,
-body[data-route="mood"] .wrap,
-body[data-route="list"] .wrap {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: none;
-  margin-inline: 0;
-  padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right));
-}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 8px var(--gut) 0; }
 .vh { font-size: 32px; line-height: 38px; font-weight: 600; letter-spacing: -.02em; margin: 8px 0 20px; }
 .hcap, .sim h3, .wlbl { font-size: 13px; line-height: 18px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; margin: 28px 0 12px; }
 .empty { color: var(--ink-3); padding: 24px 0; }
@@ -73,56 +64,22 @@ body[data-route="list"] .wrap {
 .mood.sk { pointer-events: none; }
 .mood.sk .mcol { background: linear-gradient(90deg, var(--surface) 0, #1c1a17 40%, var(--surface) 80%) 0 0 / 300% 100%; animation: shim 1.2s linear infinite; }
 .mood.sk b { display: block; height: 14px; width: 72%; border-radius: 4px; background: linear-gradient(90deg, var(--surface) 0, #1c1a17 40%, var(--surface) 80%) 0 0 / 300% 100%; animation: shim 1.2s linear infinite; }
-.shelves { display: grid; gap: 28px; }
-.shelf .shd { align-items: flex-end; gap: 16px; }
+.shelves { display: grid; gap: 32px; }
+.shelf .shd { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 .shelf .shd > div { min-width: 0; }
 .shelf h2 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; }
 .shelf p { margin-top: 4px; max-width: 62ch; color: var(--ink-3); font-size: 14px; line-height: 20px; }
 .shelf .tlink { flex: none; white-space: nowrap; }
-.shelf .srow { padding-top: 12px; }
+.shelf .srow {
+  margin-inline: calc(-1 * var(--gut));
+  padding: 12px var(--gut) 8px;
+  scroll-padding-inline-start: var(--gut);
+  overscroll-behavior-x: contain;
+}
 .shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
-body[data-route="catalog"] {
-  --cat-gutter: max(32px, env(safe-area-inset-left));
-  --cat-gutter-r: max(32px, env(safe-area-inset-right));
-}
-body[data-route="catalog"] .shelves { gap: 36px; }
-body[data-route="catalog"] .shelf .srow {
-  margin-inline: calc(-1 * var(--cat-gutter)) calc(-1 * var(--cat-gutter-r));
-  padding: 12px var(--cat-gutter-r) 8px var(--cat-gutter);
-  scroll-padding-inline: var(--cat-gutter);
-  gap: 14px;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-  cursor: grab;
-}
-body[data-route="catalog"] .shelf .srow:active { cursor: grabbing; }
-body[data-route="catalog"] .shelf .stile {
-  flex: 0 0 clamp(156px, 18vw, 188px);
-}
-body[data-route="catalog"] .shelf .stile b {
-  margin-top: 10px;
-  font-size: 15px;
-  line-height: 20px;
-  font-weight: 600;
-}
-body[data-route="catalog"] .shelf .stile small {
-  font-size: 13px;
-  line-height: 18px;
-}
-body[data-route="catalog"] .shelf .tp { border-radius: 16px; }
-body[data-route="catalog"] .moods {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  margin-inline: calc(-1 * var(--cat-gutter)) calc(-1 * var(--cat-gutter-r));
-  padding: 0 var(--cat-gutter-r) 4px var(--cat-gutter);
-  scroll-padding-inline: var(--cat-gutter);
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-body[data-route="catalog"] .moods::-webkit-scrollbar { display: none; }
-body[data-route="catalog"] .mood { flex: 0 0 min(200px, 42vw); height: 112px; scroll-snap-align: start; }
+.cat .shelf .stile { flex: 0 0 176px; }
+.cat .shelf .stile b { margin-top: 10px; font-size: 15px; line-height: 20px; font-weight: 600; }
+.cat .shelf .stile small { font-size: 13px; line-height: 18px; }
 
 /* строка фильтров */
 .crow { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; flex-wrap: wrap; }
@@ -305,10 +262,6 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
 @media (max-width: 1180px) { .moods { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; scrollbar-width: none; } }
 @media (max-width: 1000px) { .cfs { display: none; } .cfsum { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; } }
 @media (max-width: 760px) {
-  body[data-route="catalog"] {
-    --cat-gutter: max(16px, env(safe-area-inset-left));
-    --cat-gutter-r: max(16px, env(safe-area-inset-right));
-  }
   .nav { display: none; }
   .top { padding: 0 6px 0 16px; }
   #listBtn { display: none; }
@@ -334,7 +287,7 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
   .mood b { font-size: 15px; left: 12px; bottom: 10px; }
   .shelf h2 { font-size: 18px; line-height: 24px; }
   .shelf .shd { align-items: flex-start; }
-  .shelf .srow { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .cat .shelf .stile { flex: 0 0 148px; }
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
   .tile b { font-size: 12px; line-height: 16px; margin-top: 6px; }
   .tile small { font-size: 11px; }

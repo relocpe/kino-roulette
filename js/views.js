@@ -208,7 +208,7 @@ function loadCurated() {
   if (!curatedTitles) curatedTitles = fetch('data/curated.json?v=1').then((r) => { if (!r.ok) throw new Error('curated'); return r.json(); }).then((d) => d.titles || []);
   return curatedTitles;
 }
-const SHELF_PREVIEW = 12;
+const SHELF_PREVIEW = 10;
 function shelfCard(t) {
   remember(t);
   const title = t.ru || ruCached(t.id) || t.t || '';
@@ -227,7 +227,7 @@ function mountShelves(box) {
     const shelves = buildShelves(titles).filter((s) => s.items.length >= MIN_SHELF);
     box.innerHTML = shelves.length ? `<h2 class="hcap">Подборки</h2><div class="shelves">${shelves.map((s) => {
       const items = s.items.slice(0, SHELF_PREVIEW);
-      return `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow" tabindex="0" role="region" aria-label="${esc(s.title)}">${items.map(shelfCard).join('')}</div></section>`;
+      return `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow">${items.map(shelfCard).join('')}</div></section>`;
     }).join('')}</div>` : '';
     localize(box);
   }).catch(() => {
