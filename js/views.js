@@ -559,20 +559,32 @@ export function fillSim(sec, list, onPick) {
 // ---------- Смотреть вместе ----------
 const WATCH_JOIN_KEY = 'kr:watchJoin';
 const WATCH_BOOT_KEY = 'kr:watchBoot';
+const WATCH_CREATED_KEY = 'kr:watchCreated';
 export function pendingWatchRoom() {
   try { return sessionStorage.getItem(WATCH_JOIN_KEY) || ''; } catch { return ''; }
 }
 export function setPendingWatchRoom(id) {
   try { if (id) sessionStorage.setItem(WATCH_JOIN_KEY, id); else sessionStorage.removeItem(WATCH_JOIN_KEY); } catch {}
 }
-export function setWatchBoot(t) {
+export function markWatchCreated(id) {
+  try { if (id) sessionStorage.setItem(WATCH_CREATED_KEY, id); else sessionStorage.removeItem(WATCH_CREATED_KEY); } catch {}
+}
+export function watchCreatedHere(id) {
+  try { return !!id && sessionStorage.getItem(WATCH_CREATED_KEY) === id; } catch { return false; }
+}
+export function setWatchBoot(t, roomId) {
   try {
     if (!t) sessionStorage.removeItem(WATCH_BOOT_KEY);
-    else sessionStorage.setItem(WATCH_BOOT_KEY, JSON.stringify({ id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }));
+    else sessionStorage.setItem(WATCH_BOOT_KEY, JSON.stringify({ roomId: roomId || '', id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }));
   } catch {}
 }
-export function peekWatchBoot() {
-  try { return JSON.parse(sessionStorage.getItem(WATCH_BOOT_KEY) || 'null'); } catch { return null; }
+export function peekWatchBoot(roomId) {
+  try {
+    const boot = JSON.parse(sessionStorage.getItem(WATCH_BOOT_KEY) || 'null');
+    if (!boot?.id) return null;
+    if (roomId && boot.roomId !== roomId) return null;
+    return boot;
+  } catch { return null; }
 }
 export function clearWatchBoot() {
   try { sessionStorage.removeItem(WATCH_BOOT_KEY); } catch {}

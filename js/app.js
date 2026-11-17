@@ -2,9 +2,10 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=18';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=28';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=8';
+import * as V from './views.js?v=29';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=9';
 import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=4';
+import { decideWatchOpen } from './watch-open.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -865,22 +866,49 @@ async function startWatchTogether(t) {
       const d = await createWatchRoom();
       id = d.roomId;
       V.setPendingWatchRoom(id);
+      V.markWatchCreated(id);
     } catch {
       V.toast('Комнату создать не вышло — сервер смотрянки ещё не развернут', null, 4000);
       return;
     }
+  } else {
+    V.markWatchCreated('');
   }
-  V.setWatchBoot(t);
+  V.setWatchBoot(t, id);
   V.navigate(`watch/${id}`);
 }
 
 function watchRoom(id, panel, frame, titleEl) {
   if (!panel || !frame) return () => {};
-  const boot = V.peekWatchBoot();
+  const boot = V.peekWatchBoot(id);
+  const pickedId = boot?.id || '';
   let booted = false;
+  let alive = true;
+  let openingOwn = false;
   let gen = 0;
 
   const setTitle = (text) => { if (titleEl) titleEl.textContent = text || 'Смотрим вместе'; };
+  if (boot) {
+    setTitle(boot.ru || ruCached(boot.id) || boot.t || 'Фильм');
+    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю выбранный фильм…</div>';
+  }
+
+  const openOwnRoom = async (film) => {
+    if (!alive || openingOwn) return;
+    openingOwn = true;
+    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю отдельную комнату для этого фильма…</div>';
+    try {
+      const d = await createWatchRoom();
+      if (!alive) return;
+      V.markWatchCreated(d.roomId);
+      V.setPendingWatchRoom(d.roomId);
+      V.setWatchBoot(film, d.roomId);
+      V.navigate(`watch/${d.roomId}`);
+    } catch {
+      openingOwn = false;
+      if (alive) V.toast('Комнату создать не вышло — сервер смотрянки ещё не развернут', null, 4000);
+    }
+  };
 
   const showWait = (isHost) => {
     gen += 1;
@@ -976,8 +1004,12 @@ function watchRoom(id, panel, frame, titleEl) {
       mountLordFrame(embed, page, title, embedUrls, frame);
       attachBridge();
       if (ctl.isHost()) {
-        lastFilm = { id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' };
+        const next = { id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' };
+        const changed = !lastFilm || lastFilm.id !== next.id;
+        lastFilm = next;
         ctl.publishFilm(lastFilm);
+        if (changed) ctl.pushSync(0, false, false);
+        if (pickedId && t.id === pickedId) V.clearWatchBoot();
       }
     } catch {
       if (my !== gen) return;
@@ -992,12 +1024,30 @@ function watchRoom(id, panel, frame, titleEl) {
   const ctl = openWatchPanel(roomRoot, {
     onToast: (text, _a, ms) => V.toast(text, null, ms),
     onHello(info) {
-      if (info.host && boot && !booted) {
-        booted = true;
-        V.clearWatchBoot();
-        playTitle(boot, ctl);
+      const decision = decideWatchOpen({
+        host: !!info.host,
+        createdHere: V.watchCreatedHere(id),
+        boot,
+        film: info.film,
+      });
+      if (decision === 'own-room') {
+        openOwnRoom(boot);
         return;
       }
+      if (decision === 'saved') {
+        booted = true;
+        V.clearWatchBoot();
+        showEmbed(info.film);
+        return;
+      }
+      if (decision === 'play-boot') {
+        if (!booted) {
+          booted = true;
+          playTitle(boot, ctl);
+        }
+        return;
+      }
+      if (pickedId && info.film?.id && info.film.id !== pickedId) return;
       if (info.film && showEmbed(info.film)) return;
       if (info.film?.id && !info.film.embedUrl && !info.film.pageUrl) {
         playTitle({ id: info.film.id, t: info.film.title, ru: info.film.title, y: info.film.year }, ctl);
@@ -1007,6 +1057,7 @@ function watchRoom(id, panel, frame, titleEl) {
       showWait(info.host);
     },
     onOpenPlayer(film) {
+      if (pickedId && film?.id && film.id !== pickedId) return;
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
     },
@@ -1131,7 +1182,7 @@ function watchRoom(id, panel, frame, titleEl) {
     if (heardAt != null && lastHostAt > 30 && heardAt < lastHostAt - 8) return;
     ctl.pushSync(heardAt != null ? heardAt : ctl.clock(), true, false);
   }, 5000);
-  return () => { clearInterval(beat); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
+  return () => { alive = false; clearInterval(beat); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
