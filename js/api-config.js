@@ -7,15 +7,18 @@ function readOverride(key) {
   try { return String(localStorage.getItem(key) || '').trim(); } catch { return ''; }
 }
 
-export function apiConfig() {
+function embedResolverUrl() {
+  const direct = readOverride('kr:embed');
+  if (direct) return direct;
+  if (readOverride('kr:embedResolver') !== '1') return '';
   const host = location.hostname;
   const origin = location.origin;
-  let embedResolver = readOverride('kr:embed') || CF_EMBED;
-  if (!readOverride('kr:embed') && (host === 'localhost' || host === '127.0.0.1')) {
-    embedResolver = 'http://127.0.0.1:8788/resolve';
-  } else if (!readOverride('kr:embed') && /\.vercel\.app$/i.test(host)) {
-    embedResolver = `${origin}/api/resolve`;
-  }
+  if (host === 'localhost' || host === '127.0.0.1') return 'http://127.0.0.1:8788/resolve';
+  if (/\.vercel\.app$/i.test(host)) return `${origin}/api/resolve`;
+  return CF_EMBED;
+}
+
+export function apiConfig() {
   const watchParty = readOverride('kr:party') || WATCH_PARTY;
-  return { embedResolver, kpMirror: KP_MIRROR, zombi: ZOMBI, watchParty };
+  return { embedResolver: embedResolverUrl(), kpMirror: KP_MIRROR, zombi: ZOMBI, watchParty };
 }

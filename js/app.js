@@ -2,8 +2,8 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle } from './api.js?v=21';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=41';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=19';
+import * as V from './views.js?v=42';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=20';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
@@ -14,7 +14,7 @@ import { watchedIds, getLists } from './store.js?v=14';
 import { watchButtonText, progressNote, touchProgress, clearProgress, markProgress, formatClock, getProgress } from './watch-progress.js?v=2';
 import { mountYearRange } from './year-range.js?v=2';
 import { isBeta, betaFromQuery, betaAttr } from './beta.js?v=1';
-import { apiConfig } from './api-config.js?v=1';
+import { apiConfig } from './api-config.js?v=2';
 
 const $ = (s) => document.querySelector(s);
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
@@ -1870,7 +1870,7 @@ function roomFilmFromHit(t, payload, hit, spot) {
 async function resolveWatchPayload(payload, signal) {
   const { embedResolver, kpMirror, zombi } = apiConfig();
   const chain = [
-    ...(payload.kinopoiskId ? [{ url: embedResolver, pageRe: /^https:\/\//, source: 'embed', ms: 6000 }] : []),
+    ...(payload.kinopoiskId && embedResolver ? [{ url: embedResolver, pageRe: /^https:\/\//, source: 'embed', ms: 4000 }] : []),
     ...(payload.kinopoiskId ? [{ url: kpMirror, pageRe: /^https:\/\//, source: 'kp-mirror', ms: 8000 }] : []),
     { url: zombi, pageRe: zombiPageRe, source: 'zombi', ms: 6000 },
   ];

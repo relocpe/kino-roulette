@@ -18,7 +18,13 @@
    - `EMBED_PROVIDER` — опционально `kodik,alloha`.
    - `CORS_ORIGINS` — опционально, через запятую, если фронт не на `*.vercel.app` и не GitHub Pages.
 
-На `*.vercel.app` клиент сам ходит на `${origin}/api/resolve`.
+Embed-resolver **по умолчанию выключен** (без токенов не тратим время на пустой API). Включить в консоли браузера:
+
+```js
+localStorage.setItem('kr:embedResolver', '1');
+```
+
+На Vercel с токенами в env тогда пойдёт `${origin}/api/resolve`. Свой URL: `localStorage.setItem('kr:embed', 'https://…/resolve')`.
 
 ## Локально
 
