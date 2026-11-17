@@ -71,13 +71,31 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 .shelf p { margin-top: 4px; max-width: 62ch; color: var(--ink-3); font-size: 14px; line-height: 20px; }
 .shelf .tlink { flex: none; white-space: nowrap; }
 .shelf .srow {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
   margin-inline: calc(-1 * var(--gut));
   padding: 12px var(--gut) 8px;
   scroll-padding-inline-start: var(--gut);
   overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }
+.shelf .srow::-webkit-scrollbar { display: none; }
 .shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
-.cat .shelf .stile { flex: 0 0 176px; }
+.cat .shelf .stile {
+  flex: none;
+  width: 176px;
+  min-width: 176px;
+  max-width: 176px;
+  scroll-snap-align: start;
+}
 .cat .shelf .stile b { margin-top: 10px; font-size: 15px; line-height: 20px; font-weight: 600; }
 .cat .shelf .stile small { font-size: 13px; line-height: 18px; }
 
@@ -111,6 +129,10 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 
 /* сетка постеров */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 28px 18px; }
+.cat .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 16px; }
+@media (min-width: 700px) { .cat .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 960px) { .cat .grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px 18px; } }
+@media (min-width: 1180px) { .cat .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 .tile { display: block; color: var(--ink); text-decoration: none; min-width: 0; }
 .tp { position: relative; aspect-ratio: 2 / 3; border-radius: 14px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px rgb(241 235 226 / .06); transition: transform .2s var(--ease); }
 .tile:hover .tp { transform: translateY(-4px); }
