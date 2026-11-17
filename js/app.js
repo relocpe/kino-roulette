@@ -2,9 +2,9 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=18';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=27';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=7';
-import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=2';
+import * as V from './views.js?v=28';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=8';
+import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=3';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -988,7 +988,8 @@ function watchRoom(id, panel, frame, titleEl) {
     }
   }
 
-  const ctl = openWatchPanel(panel, {
+  const roomRoot = frame.closest('.wroom') || panel;
+  const ctl = openWatchPanel(roomRoot, {
     onToast: (text, _a, ms) => V.toast(text, null, ms),
     onHello(info) {
       if (info.host && boot && !booted) {
@@ -1031,7 +1032,7 @@ function watchRoom(id, panel, frame, titleEl) {
     if (!s || ctl.isHost() || !bridge) return;
     const now = sharedNow(s);
     const playing = !!s.playing;
-    if (!playerReady) return;
+    if (!bridge) return;
     const predicted = guestAnchor?.playing ? guestAnchor.at + (Date.now() - guestAnchor.wall) / 1000 : guestAnchor?.at;
     const jump = predicted != null && Math.abs(now - predicted) > 8;
     const playEdge = guestPlaying !== null && guestPlaying !== playing;
@@ -1039,7 +1040,7 @@ function watchRoom(id, panel, frame, titleEl) {
     guestPlaying = playing;
     appliedOnce = true;
     if (!shouldSnapGuest({ snap, force, playEdge, jump, first, playing })) return;
-    bridge.command(playing, now);
+    bridge.command(playing, now, { burst: true });
     guestAnchor = { at: now, wall: Date.now(), playing };
   };
 
@@ -1047,28 +1048,40 @@ function watchRoom(id, panel, frame, titleEl) {
 
   const hostTransport = (playing) => {
     if (!ctl.isHost()) return;
-    const at = playerReady ? hostAt() : ctl.clock();
+    const at = bridge?.heard() ? hostAt() : ctl.clock();
     ctl.pushSync(at, playing, true);
-    if (!playerReady || !bridge) {
+    if (!bridge) {
       pendingCmd = { playing, at };
-      V.toast('Плеер ещё загружается — включим, как откроется', null, 2200);
       return;
     }
-    bridge.command(playing, at);
+    bridge.command(playing, at, { burst: true });
+  };
+
+  const markSynced = () => {
+    const label = roomRoot.querySelector('[data-wp-sync] span');
+    if (!label) return;
+    const prev = label.dataset.prev || label.textContent;
+    label.dataset.prev = prev;
+    label.textContent = 'Готово';
+    setTimeout(() => { if (label.textContent === 'Готово') label.textContent = prev; }, 1200);
   };
 
   const synchronize = () => {
-    if (!playerReady || !bridge) {
-      V.toast('Плеер ещё загружается', null, 2200);
+    if (!bridge) {
+      V.toast('Плеер ещё не открыт', null, 1800);
       return;
     }
-    if (ctl.isHost()) {
-      ctl.pushSync(hostAt(), ctl.playing(), true);
-      V.toast('Время отправили всем в комнате', null, 1800);
+    if (ctl.isHost() && bridge.heard()) {
+      const playing = window.__wpLocalPlaying != null ? !!window.__wpLocalPlaying : ctl.playing();
+      ctl.pushSync(window.__wpLocalAt || 0, playing, true);
+      markSynced();
       return;
     }
-    applyGuest(ctl.syncState(), { force: true });
-    V.toast('Время совпало с ведущим', null, 1800);
+    const at = ctl.clock();
+    const playing = ctl.playing();
+    bridge.command(playing, at, { burst: true });
+    if (ctl.isHost()) ctl.pushSync(at, playing, true);
+    markSynced();
   };
 
   attachBridge = () => {
@@ -1100,6 +1113,7 @@ function watchRoom(id, panel, frame, titleEl) {
       },
       onTick(t) {
         window.__wpLocalAt = t.at;
+        if (t.playing != null) window.__wpLocalPlaying = t.playing;
         if (t.duration) ctl.setDuration(t.duration);
         if (!ctl.isHost() || !playerReady) return;
         const jumped = lastHostAt > 0 && Math.abs(t.at - lastHostAt) > 8;
@@ -1120,6 +1134,10 @@ function watchRoom(id, panel, frame, titleEl) {
   panel.querySelector('#wjPeek')?.addEventListener('click', (e) => {
     e.stopPropagation();
     roomEl?.classList.toggle('chat-open');
+  });
+  roomRoot.querySelector('#wjHide')?.addEventListener('click', (e) => {
+    roomRoot.classList.toggle('chat-hidden');
+    e.currentTarget.textContent = roomRoot.classList.contains('chat-hidden') ? 'Показать чат' : 'Скрыть чат';
   });
 
   ctl.join(id);

@@ -45,6 +45,7 @@ function tryJson(s) {
 
 export function bindEmbed(iframe, { onTick, onReady } = {}) {
   let at = 0;
+  let reported = null;
   let duration = 0;
   let playing = false;
   let heard = false;
@@ -65,29 +66,56 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     post({ key: 'kodik_player_api', value: { method: 'get_time' } });
   };
 
-  const command = (nextPlaying, seconds) => {
+  const DIRECT = /kodik|alloha|thealloha|iframe\.cloud|collaps|videocdn|bazon|hdvb|voidboost|kinotochka/i;
+  const sendCommand = (nextPlaying, seconds) => {
     const t = Math.max(0, Number(seconds) || 0);
     ignoreUntil = Date.now() + 900;
     at = t;
     playing = !!nextPlaying;
     post({ api: 'seek', set: t });
+    post({ api: 'seek', value: t });
+    post({ method: 'seek', time: t });
+    post({ method: 'setCurrentTime', time: t });
     post({ key: 'kodik_player_api', value: { method: 'seek', seconds: t } });
     post({ context: 'player.js', version: '0.0.11', method: 'setCurrentTime', value: t });
     post({ event: 'command', func: 'seekTo', args: [t, true] });
     post({ type: 'seek', time: t });
     if (nextPlaying) {
       post({ api: 'play' });
+      post({ method: 'play' });
       post({ key: 'kodik_player_api', value: { method: 'play' } });
       post({ context: 'player.js', version: '0.0.11', method: 'play' });
       post({ event: 'command', func: 'playVideo', args: [] });
       post({ type: 'play' });
     } else {
       post({ api: 'pause' });
+      post({ method: 'pause' });
       post({ key: 'kodik_player_api', value: { method: 'pause' } });
       post({ context: 'player.js', version: '0.0.11', method: 'pause' });
       post({ event: 'command', func: 'pauseVideo', args: [] });
       post({ type: 'pause' });
     }
+  };
+
+  const command = (nextPlaying, seconds, opts = {}) => {
+    const t = Math.max(0, Number(seconds) || 0);
+    sendCommand(nextPlaying, t);
+    if (!opts.burst) return;
+    [450, 1100].forEach((ms) => setTimeout(() => sendCommand(nextPlaying, t), ms));
+    const srcNow = iframe.src || '';
+    if (!DIRECT.test(srcNow) || t < 1) return;
+    setTimeout(() => {
+      if (reported != null && Math.abs(reported - t) < 4) return;
+      if (iframe.dataset.krTried === String(Math.floor(t))) return;
+      iframe.dataset.krTried = String(Math.floor(t));
+      try {
+        const u = new URL(srcNow);
+        u.searchParams.set('start', String(Math.floor(t)));
+        u.searchParams.set('t', String(Math.floor(t)));
+        const next = u.toString();
+        if (next !== iframe.src) iframe.src = next;
+      } catch { /* не url */ }
+    }, 1500);
   };
 
   const fromThisPlayer = (source) => {
@@ -112,16 +140,23 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     if (!tick) return;
     heard = true;
     if (tick.duration) duration = tick.duration;
-    if (tick.at != null) at = tick.at;
+    if (tick.at != null) { at = tick.at; reported = tick.at; }
     if (tick.playing != null) playing = tick.playing;
     if (Date.now() < ignoreUntil) return;
     onTick?.({ at, duration, playing, heard: true });
   };
 
-  const kick = () => { subscribe(); onReady?.(); };
+  let readySent = false;
+  const kick = () => {
+    subscribe();
+    if (readySent) return;
+    readySent = true;
+    onReady?.();
+  };
   window.addEventListener('message', onMessage);
-  iframe.addEventListener('load', kick);
+  iframe.addEventListener('load', () => { readySent = false; kick(); });
   subscribe();
+  setTimeout(kick, 700);
   const poll = setInterval(() => {
     post({ key: 'kodik_player_api', value: { method: 'get_time' } });
     post({ context: 'player.js', version: '0.0.11', method: 'getCurrentTime' });

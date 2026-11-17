@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=13';
-import { BASE } from './views.js?v=27';
+import { BASE } from './views.js?v=28';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
@@ -94,15 +94,14 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     if (syncBuilt === key && id('[data-wp-clock]')) { paintClock(); ensureTick(); return; }
     syncBuilt = key;
     const now = clockNow();
-    el.innerHTML = `<div class="wp-sync-line"><span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span><span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span><b data-wp-clock>${fmtClock(now)}</b></div>
-      ${host ? `<div class="wp-actions" role="group" aria-label="Воспроизведение для всех">
-        <button type="button" data-wp-play>Воспроизвести</button>
-        <button type="button" data-wp-pause>Пауза</button>
-      </div>` : ''}
-      <button type="button" class="wp-syncbtn" data-wp-sync>Синхронизировать</button>
-      <p class="wp-hint">${host
-        ? 'Дождись загрузки плеера и нажми «Воспроизвести». «Синхронизировать» ставит у всех твоё время.'
-        : 'Когда плеер загрузится, нажми «Синхронизировать» — время совпадёт с ведущим.'}</p>`;
+    const icon = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.6 5.7L4 16M4 12a8 8 0 0 1 13.6-5.7L20 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16v-4h4M20 8v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    el.innerHTML = `<div class="wp-remote">
+      <span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span>
+      <b data-wp-clock>${fmtClock(now)}</b>
+      <span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span>
+      ${host ? `<span class="wp-actions" role="group" aria-label="Воспроизведение"><button type="button" data-wp-play>Воспроизвести</button><button type="button" data-wp-pause>Пауза</button></span>` : ''}
+      <button type="button" class="wp-syncbtn" data-wp-sync>${icon}<span>Синхронизировать</span></button>
+    </div>`;
     ensureTick();
     id('[data-wp-play]')?.addEventListener('click', () => onTransport?.('play'));
     id('[data-wp-pause]')?.addEventListener('click', () => onTransport?.('pause'));
@@ -123,8 +122,9 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
   const paintMembers = (members) => {
     const el = id('#wpMembers');
     if (!el) return;
-    if (!members?.length) { el.innerHTML = '<span class="wp-chip">Подключаемся…</span>'; return; }
-    el.innerHTML = members.map((m) => `<span class="wp-chip${m.host ? ' host' : ''}">${esc(m.nick)}${m.host ? '<span class="wp-role">ведущий</span>' : ''}${m.auth ? '<span aria-label="аккаунт">✓</span>' : ''}</span>`).join('');
+    if (!members?.length) { el.innerHTML = '<p class="wp-wait">Подключаемся…</p>'; return; }
+    const letter = (nick) => { const s = String(nick || '').trim(); return s ? [...s][0].toUpperCase() : '?'; };
+    el.innerHTML = `<ul class="wp-users">${members.map((m) => `<li class="wp-user${m.host ? ' host' : ''}"><span class="wp-ava" aria-hidden="true">${esc(letter(m.nick))}</span><span class="wp-uname">${esc(m.nick)}</span>${m.host ? '<span class="wp-role">ведущий</span>' : ''}</li>`).join('')}</ul>`;
   };
 
   const connect = (rid) => {
@@ -173,11 +173,11 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       if (gone) return;
       const el = id('#wpMembers');
       if (ev.code === 4000 || ev.code === 4003) {
-        if (el) el.innerHTML = `<span class="wp-chip">${ev.code === 4003 ? 'Комната полная' : 'Комнаты нет'}</span>`;
+        if (el) el.innerHTML = `<p class="wp-wait">${ev.code === 4003 ? 'Комната полная' : 'Комнаты нет'}</p>`;
         onStatus?.(ev.code === 4003 ? 'full' : 'missing');
         return;
       }
-      if (el) el.innerHTML = '<span class="wp-chip">Переподключение…</span>';
+      if (el) el.innerHTML = '<p class="wp-wait">Переподключение…</p>';
       onStatus?.('down');
       if (++reconnect < 6) setTimeout(() => connect(roomId), 1200 * reconnect);
       else onToast?.('Чат недоступен — обнови страницу', null, 4000);

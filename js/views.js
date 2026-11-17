@@ -578,20 +578,17 @@ export function clearWatchBoot() {
   try { sessionStorage.removeItem(WATCH_BOOT_KEY); } catch {}
 }
 function partyPanel(id) {
-    return `<aside class="wp-side wroom-side" id="wjPanel" aria-label="Чат комнаты">
+    return `<aside class="wp-rail wroom-side" id="wjPanel" aria-label="Чат комнаты">
       <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       <header class="wp-head">
-        <div class="wp-id"><small>Комната</small><span class="wp-code" id="wpCode">${esc(id)}</span></div>
-        <button type="button" class="wp-invite" id="wpCopy">Пригласить</button>
+        <input class="wp-nick" id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Ваше имя" aria-label="Ваше имя">
+        <span class="wp-code" id="wpCode">${esc(id)}</span>
+        <button type="button" class="wp-invite" id="wpCopy">Ссылка</button>
       </header>
-      <div class="wp-people" id="wpMembers" aria-live="polite"><span class="wp-chip">Подключаемся…</span></div>
-      <label class="wp-nick">Твоё имя<input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Гость"></label>
-      <p class="wp-ready" id="wpReady">Ждём загрузку плеера</p>
-      <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
+      <div class="wp-people" id="wpMembers" aria-live="polite"><p class="wp-wait">Подключаемся…</p></div>
       <section class="wp-chat" id="wpChat" aria-label="Чат">
-        <h2 class="wp-chat-title">Чат</h2>
         <div class="wp-msgs" id="wpMsgs"></div>
-        <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать в чат…"><button type="submit" class="wp-send" aria-label="Отправить">↵</button></form>
+        <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать сообщение" aria-label="Сообщение"><button type="submit" class="wp-send" aria-label="Отправить">➤</button></form>
       </section>
     </aside>`;
 }
@@ -607,10 +604,11 @@ function renderWatch(id) {
         <header class="wroom-bar">
           <a class="rexit" href="catalog" data-nav>${IC.l}Каталог</a>
           <h1 id="wjTitle">Подключаемся…</h1>
-          <span class="wroom-code" title="Код комнаты">${esc(id)}</span>
-          <button type="button" class="wroom-full" id="wjFull">Во весь экран</button>
+          <button type="button" class="wroom-text" id="wjHide">Скрыть чат</button>
+          <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
         </header>
         <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
+        <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
       </div>
       ${partyPanel(id)}
     </div>`;
