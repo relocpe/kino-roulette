@@ -63,6 +63,14 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 .mood.sk { pointer-events: none; }
 .mood.sk .mcol { background: linear-gradient(90deg, var(--surface) 0, #1c1a17 40%, var(--surface) 80%) 0 0 / 300% 100%; animation: shim 1.2s linear infinite; }
 .mood.sk b { display: block; height: 14px; width: 72%; border-radius: 4px; background: linear-gradient(90deg, var(--surface) 0, #1c1a17 40%, var(--surface) 80%) 0 0 / 300% 100%; animation: shim 1.2s linear infinite; }
+.shelves { display: grid; gap: 28px; }
+.shelf .shd { align-items: flex-end; gap: 16px; }
+.shelf .shd > div { min-width: 0; }
+.shelf h2 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; }
+.shelf p { margin-top: 4px; max-width: 62ch; color: var(--ink-3); font-size: 14px; line-height: 20px; }
+.shelf .tlink { flex: none; white-space: nowrap; }
+.shelf .srow { padding-top: 12px; }
+.shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
 
 /* строка фильтров */
 .crow { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; flex-wrap: wrap; }
@@ -268,6 +276,9 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
   .moods { grid-auto-columns: 160px; margin: 0 -16px; padding: 0 16px; }
   .mood { height: 96px; }
   .mood b { font-size: 15px; left: 12px; bottom: 10px; }
+  .shelf h2 { font-size: 18px; line-height: 24px; }
+  .shelf .shd { align-items: flex-start; }
+  .shelf .srow { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
   .tile b { font-size: 12px; line-height: 16px; margin-top: 6px; }
   .tile small { font-size: 11px; }
