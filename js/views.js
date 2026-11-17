@@ -1,7 +1,7 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
 import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=19';
-import * as S from './store.js?v=13';
+import * as S from './store.js?v=14';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=2';
 import { clearProgress } from './watch-progress.js?v=1';
@@ -87,6 +87,7 @@ const alOf = (f, k) => { const a = [...new Set((f.genres || []).flatMap((id) => 
 async function alPage(page, f) {
   const d = await alq(`query($p:Int,$f:[MediaFormat],$s:[MediaSort],$sc:Int,$a:FuzzyDateInt,$b:FuzzyDateInt,$g:[String],$tg:[String]){Page(page:$p,perPage:40){pageInfo{total hasNextPage} media(type:ANIME,isAdult:false,format_in:$f,sort:$s,genre_in:$g,tag_in:$tg,minimumTagRank:60,averageScore_greater:$sc,startDate_greater:$a,startDate_lesser:$b){${ALF}}}}`,
     { g: alOf(f, 'g'), tg: alOf(f, 'tag'), p: page, f: AFMT[f.mode || 'all'], s: [f.sort === 'year' ? 'START_DATE_DESC' : f.sort === 'pop' ? 'POPULARITY_DESC' : 'SCORE_DESC'], sc: f.rating ? Math.round(f.rating * 10) - 1 : undefined, a: f.from ? f.from * 10000 : undefined, b: f.to ? (f.to + 1) * 10000 : undefined });
+  if (!d?.Page?.media) return { list: [], total: 0, next: null };
   return { list: d.Page.media.map(normAnime), total: d.Page.pageInfo.total, next: d.Page.pageInfo.hasNextPage ? page + 1 : null };
 }
 const SORTS = { rating: ['SORT_BY_USER_RATING', 'DESC'], pop: ['SORT_BY_POPULARITY', 'ASC'], year: ['SORT_BY_RELEASE_DATE', 'DESC'] };
@@ -133,7 +134,7 @@ async function fetchPage(f, tok) {
   return { list: (d.titles || []).map(norm).filter((t) => !isAnime(t) && !isIndianTitle(t)), total: d.totalCount, next: d.nextPageToken || null };
 }
 export async function getTitle(id) {
-  if (/^al\d+$/.test(id)) { const d = await alq(`query($id:Int){Media(id:$id,type:ANIME){${ALF}}}`, { id: +id.slice(2) }); return normAnime(d.Media); }
+  if (/^al\d+$/.test(id)) { const d = await alq(`query($id:Int){Media(id:$id,type:ANIME){${ALF}}}`, { id: +id.slice(2) }); if (!d?.Media) throw new Error("not_found"); return normAnime(d.Media); }
   return norm(await getJSON(`${B}/titles/${id}`));
 }
 
@@ -514,6 +515,7 @@ dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
 document.addEventListener('click', (e) => { if (e.target.closest('[data-acct]')) { e.preventDefault(); openAccount(); return; } const a = e.target.closest('[data-auth]'); if (a) { e.preventDefault(); openAuth(a.dataset.auth); } });
 
 // аватар: «Войти» или круг с буквой и меню
+let avaDoc = null;
 function drawAvatar() {
   const box = $('#avatar'), u = S.me();
   if (!S.loggedIn()) { box.innerHTML = '<button class="login" type="button" data-auth="login">Войти</button>'; document.body.classList.remove('authed'); }
@@ -525,7 +527,9 @@ function drawAvatar() {
     const fxLbl = () => { const on = $('#fxBtn').getAttribute('aria-checked') === 'true'; const x = m.querySelector('[data-x="fx"]'); x.textContent = on ? 'Эффекты: вкл' : 'Эффекты: выкл'; x.setAttribute('aria-checked', String(on)); };
     b.onclick = (e) => { e.stopPropagation(); fxLbl(); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); };
     m.onclick = async (e) => { const x = e.target.closest('[data-x]'); if (!x) { m.hidden = true; return; } if (x.dataset.x === 'fx') { $('#fxBtn').click(); fxLbl(); } else if (x.dataset.x === 'acct') { m.hidden = true; openAccount(); } else { m.hidden = true; await S.logout(); toast('Вышли из аккаунта'); } };
-    document.addEventListener('click', () => { m.hidden = true; b.setAttribute('aria-expanded', 'false'); });
+    if (avaDoc) document.removeEventListener('click', avaDoc);
+    avaDoc = () => { if (!m.isConnected) return; m.hidden = true; b.setAttribute('aria-expanded', 'false'); };
+    document.addEventListener('click', avaDoc);
   }
 }
 addEventListener('kr:auth', () => { drawAvatar(); syncButtons(); if (route.name === 'me') renderMe(route.tab); });

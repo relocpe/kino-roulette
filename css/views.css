@@ -97,13 +97,7 @@ body:not([data-route="roulette"]) .toast { bottom: calc(24px + env(safe-area-ins
 .tile:hover .tacts, .tile:focus-within .tacts, .tacts:has(.on) { opacity: 1; }
 .tb { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: rgb(12 11 10 / .7); color: var(--ink); display: grid; place-items: center; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .tb svg { width: 17px; height: 17px; }
-.tb.seen:not(.on) { display: none; }
-.tile:hover .tb.seen, .tile:focus-within .tb.seen { display: grid; }
 .fav.on { color: var(--amber); --hf: var(--amber); }
-.seen .eyeok { opacity: 0; }
-.seen.on { color: #0C0B0A; background: var(--ink); }
-.seen.on .eyeok { opacity: 1; }
-.seen.on circle { opacity: 0; }
 .sk .tp, .sk b, .sk small { background: linear-gradient(90deg, var(--surface) 0, #1c1a17 40%, var(--surface) 80%) 0 0 / 300% 100%; animation: shim 1.2s linear infinite; }
 .sk b { height: 14px; width: 80%; border-radius: 4px; }
 .sk small { height: 12px; width: 40%; border-radius: 4px; margin-top: 6px; }
@@ -136,7 +130,6 @@ body:not([data-route="roulette"]) .toast { bottom: calc(24px + env(safe-area-ins
 .ib2 { width: 52px; height: 52px; padding: 0; border: 1px solid rgb(241 235 226 / .18); border-radius: 14px; background: transparent; color: var(--ink); display: grid; place-items: center; transition: border-color .2s, background-color .2s; }
 .ib2:hover { border-color: rgb(241 235 226 / .4); }
 .ib2 svg { width: 20px; height: 20px; }
-.ib2.seen.on { border-color: transparent; }
 .sim { margin-top: 64px; padding-bottom: 8px; }
 .shd { display: flex; justify-content: space-between; align-items: center; }
 .sim h3 { margin: 0; }
@@ -271,7 +264,7 @@ body.inroom .view { min-height: 100dvh; }
   .tile small { font-size: 11px; }
   .tacts { top: 4px; right: 4px; gap: 4px; }
   .tb { width: 28px; height: 28px; }
-  .tacts { opacity: 1; } .tb.seen:not(.on) { display: none; }
+  .tacts { opacity: 1; }
   .tb.fav:not(.on) { background: rgb(12 11 10 / .55); color: rgb(241 235 226 / .9); }
   .crow { margin: 20px 0 14px; gap: 8px; }
   .cmeta { gap: 10px; }

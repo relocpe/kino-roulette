@@ -1,27 +1,34 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
-import { me, loggedIn } from './store.js?v=13';
-import { BASE } from './views.js?v=31';
+import { me, loggedIn } from './store.js?v=14';
+import { BASE } from './views.js?v=32';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
 const UID_KEY = 'kr:watchUid';
+const KEY_KEY = 'kr:watchKey';
 const NICK_KEY = 'kr:watchNick';
+const mem = {};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return mem[k] || null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { mem[k] = v; } },
+};
+const rnd = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
 
+// uid публичный (виден всем в комнате), key — секрет, по нему сервер узнаёт ведущего
 export function watchIdentity() {
-  let uid = localStorage.getItem(UID_KEY);
-  if (!uid) {
-    uid = crypto.randomUUID();
-    localStorage.setItem(UID_KEY, uid);
-  }
+  let uid = store.get(UID_KEY) || mem[UID_KEY];
+  if (!uid) { uid = rnd(); store.set(UID_KEY, uid); }
+  let key = store.get(KEY_KEY) || mem[KEY_KEY];
+  if (!key) { key = rnd() + rnd(); store.set(KEY_KEY, key); }
   const user = me();
-  const nick = (user?.nickname || localStorage.getItem(NICK_KEY) || '').trim()
+  const nick = (user?.nickname || store.get(NICK_KEY) || '').trim()
     || `Гость-${uid.slice(0, 4)}`;
-  return { uid, nick, auth: loggedIn() };
+  return { uid, key, nick, auth: loggedIn() };
 }
 
 export function saveWatchNick(nick) {
   const t = String(nick || '').trim().slice(0, 24);
-  if (t) localStorage.setItem(NICK_KEY, t);
+  if (t) store.set(NICK_KEY, t);
 }
 
 export async function createWatchRoom() {
@@ -29,7 +36,7 @@ export async function createWatchRoom() {
   const r = await fetch(`${WATCH_PARTY_API}/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hostId: who.uid }),
+    body: JSON.stringify({ hostId: who.uid, hostKey: who.key }),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'create_failed');
@@ -127,6 +134,13 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     el.innerHTML = `<ul class="wp-users">${members.map((m) => `<li class="wp-user${m.host ? ' host' : ''}"><span class="wp-ava" aria-hidden="true">${esc(letter(m.nick))}</span><span class="wp-uname">${esc(m.nick)}</span>${m.host ? '<span class="wp-role">ведущий</span>' : ''}</li>`).join('')}</ul>`;
   };
 
+  // ведущий пропал из комнаты (закрыл вкладку): через несколько секунд кто-то из гостей занимает его место, сервер пускает только одного
+  let claimT = 0;
+  const watchForHost = (list) => {
+    clearTimeout(claimT);
+    if (host || !list?.length || list.some((x) => x.host)) return;
+    claimT = setTimeout(() => send({ type: 'claim_host' }), 6000 + Math.random() * 2500);
+  };
   const connect = (rid) => {
     gone = false;
     roomId = rid;
@@ -134,7 +148,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     const url = `${WATCH_PARTY_API.replace(/^http/, 'ws')}/watch/${roomId}`;
     try { ws?.close(); } catch {}
     ws = new WebSocket(url);
-    ws.onopen = () => { reconnect = 0; send({ type: 'join', uid: who.uid, nick: who.nick, auth: who.auth }); paintMembers([{ nick: who.nick, host: false }]); };
+    ws.onopen = () => { reconnect = 0; send({ type: 'join', uid: who.uid, key: who.key, nick: who.nick, auth: who.auth }); paintMembers([{ nick: who.nick, host: false }]); };
     ws.onmessage = (ev) => {
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       if (m.type === 'hello') {
@@ -146,6 +160,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         if (box) box.innerHTML = '';
         (m.room?.chat || []).forEach(pushChat);
         paintMembers(m.room?.members);
+        watchForHost(m.room?.members);
         paintSync();
         const codeEl = id('#wpCode');
         if (codeEl) codeEl.textContent = roomId;
@@ -153,7 +168,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         onSync?.(sync, { snap: false });
         return;
       }
-      if (m.type === 'presence') { paintMembers(m.members?.map((x) => ({ ...x, host: x.host ?? (!!hostId && x.uid === hostId) }))); return; }
+      if (m.type === 'presence') { const list = m.members?.map((x) => ({ ...x, host: x.host ?? (!!hostId && x.uid === hostId) })); paintMembers(list); watchForHost(list); return; }
       if (m.type === 'chat') { pushChat(m); return; }
       if (m.type === 'sync') {
         sync = m.sync || sync;
@@ -171,6 +186,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         hostId = m.hostId || hostId;
         host = !!hostId && hostId === watchIdentity().uid;
         syncBuilt = '';
+        clearTimeout(claimT);
         paintSync();
         onToast?.(`Ведущий: ${m.nick}`, null, 2000);
       }
@@ -217,7 +233,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       connect(rid);
     },
     leave() {
-      gone = true;
+      gone = true; clearTimeout(claimT);
       clearInterval(clockTick); clockTick = 0;
       try { ws?.close(); } catch {}
       ws = null;

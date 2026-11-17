@@ -2,12 +2,15 @@ import { sanitizeChat, sanitizeNick, syncNow, publicRoom } from './codec.mjs';
 
 const MAX_CHAT = 120;
 const MAX_MEMBERS = 24;
+const MAX_FRAME = 8192;
+const CHAT_GAP_MS = 350;
+const httpsUrl = (v) => { try { const u = new URL(String(v)); return u.protocol === 'https:' ? u.href.slice(0, 500) : undefined; } catch { return undefined; } };
 
 export class WatchPartyRoom {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    /** @type {Map<WebSocket, { uid: string, nick: string, auth: boolean }>} */
+    /** @type {Map<WebSocket, { uid: string, nick: string, auth: boolean, key: string, host: boolean, lastChat: number }>} */
     this.live = new Map();
   }
 
@@ -22,6 +25,7 @@ export class WatchPartyRoom {
           id: body.id,
           created: Date.now(),
           hostId: body.hostId ? String(body.hostId).slice(0, 64) : null,
+          hostKey: body.hostKey ? String(body.hostKey).slice(0, 80) : null,
           film: null,
           sync: { at: 0, playing: false, wall: 0 },
           chat: [],
@@ -66,7 +70,7 @@ export class WatchPartyRoom {
 
   async membersListAsync(room) {
     const ms = [...this.live.values()];
-    return ms.map((m) => ({ uid: m.uid, nick: m.nick, auth: m.auth, host: m.uid === room?.hostId }));
+    return ms.map((m) => ({ uid: m.uid, nick: m.nick, auth: m.auth, host: !!m.host }));
   }
 
   send(ws, msg) {
@@ -82,6 +86,7 @@ export class WatchPartyRoom {
   }
 
   async onMsg(ws, ev) {
+    if (typeof ev.data !== 'string' || ev.data.length > MAX_FRAME) return;
     let m;
     try { m = JSON.parse(ev.data); } catch { return; }
     const room = await this.loadRoom();
@@ -97,13 +102,19 @@ export class WatchPartyRoom {
         try { ws.close(4003, 'full'); } catch {}
         return;
       }
-      this.live.set(ws, { uid, nick, auth });
+      const key = String(m.key || '').slice(0, 80);
       if (!room.hostId) {
         room.hostId = uid;
+        room.hostKey = key || null;
+        await this.saveRoom(room);
+      } else if (room.hostId === uid && !room.hostKey && key) {
+        room.hostKey = key;
         await this.saveRoom(room);
       }
+      const host = room.hostId === uid && (room.hostKey ? key === room.hostKey : true);
+      this.live.set(ws, { uid, nick, auth, key, host, lastChat: 0 });
       const pub = publicRoom(room, await this.membersListAsync(room));
-      this.send(ws, { type: 'hello', you: uid, host: room.hostId === uid, room: pub });
+      this.send(ws, { type: 'hello', you: uid, host, room: pub });
       this.broadcast({ type: 'presence', members: pub.members }, ws);
       return;
     }
@@ -114,6 +125,9 @@ export class WatchPartyRoom {
     if (m.type === 'chat') {
       const text = sanitizeChat(m.text);
       if (!text) return;
+      const nowMs = Date.now();
+      if (nowMs - me.lastChat < CHAT_GAP_MS) return;
+      me.lastChat = nowMs;
       const entry = { uid: me.uid, nick: me.nick, text, ts: Date.now() };
       room.chat = [...(room.chat || []), entry].slice(-MAX_CHAT);
       await this.saveRoom(room);
@@ -121,14 +135,14 @@ export class WatchPartyRoom {
       return;
     }
 
-    const isHost = me.uid === room.hostId;
+    const isHost = !!me.host;
     if (m.type === 'film' && isHost) {
       room.film = {
         id: String(m.film?.id || '').slice(0, 32),
         title: String(m.film?.title || '').slice(0, 200),
         year: m.film?.year | 0 || undefined,
-        embedUrl: m.film?.embedUrl ? String(m.film.embedUrl).slice(0, 500) : undefined,
-        pageUrl: m.film?.pageUrl ? String(m.film.pageUrl).slice(0, 500) : undefined,
+        embedUrl: httpsUrl(m.film?.embedUrl),
+        pageUrl: httpsUrl(m.film?.pageUrl),
         mode: m.film?.mode === 'trailer' ? 'trailer' : 'stream',
         ytId: m.film?.ytId ? String(m.film.ytId).slice(0, 20) : undefined,
       };
@@ -147,10 +161,13 @@ export class WatchPartyRoom {
     }
 
     if (m.type === 'claim_host') {
-      if (!room.hostId || !this.liveHas(room.hostId)) {
+      if (me.key && ![...this.live.values()].some((v) => v.host)) {
         room.hostId = me.uid;
+        room.hostKey = me.key;
         await this.saveRoom(room);
+        for (const v of this.live.values()) v.host = v === me;
         this.broadcast({ type: 'host', hostId: room.hostId, nick: me.nick });
+        this.broadcast({ type: 'presence', members: await this.membersListAsync(room) });
       }
       return;
     }

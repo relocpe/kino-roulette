@@ -62,7 +62,7 @@ async function pull() {
 }
 function setSession(d) {
   token = d.token; user = d.user;
-  localStorage.setItem(TOK, token); localStorage.setItem(USR, JSON.stringify(user));
+  try { localStorage.setItem(TOK, token); localStorage.setItem(USR, JSON.stringify(user)); } catch {}
 }
 // вход / регистрация, затем перенос списков этой вкладки в аккаунт
 export async function auth(kind, nickname, password) {

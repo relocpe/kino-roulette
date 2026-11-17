@@ -18,3 +18,11 @@ describe('watch-party codec', () => {
     assert.match(newRoomId(), /^[A-Z2-9]{8}$/);
   });
 });
+describe('watch-party publicRoom', () => {
+  it('host flag follows the member, not a spoofable uid', async () => {
+    const { publicRoom } = await import('./codec.mjs');
+    const room = { id: 'X', hostId: 'a', sync: { at: 0, playing: false, wall: 0 }, chat: [] };
+    const pub = publicRoom(room, [{ uid: 'a', nick: 'spoof', host: false }, { uid: 'b', nick: 'real', host: true }]);
+    assert.deepEqual(pub.members.map((m) => m.host), [false, true]);
+  });
+});

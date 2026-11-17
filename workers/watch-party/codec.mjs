@@ -31,7 +31,7 @@ export function publicRoom(room, members = []) {
     hostId: room.hostId,
     film: room.film,
     sync: { ...room.sync, now: syncNow(room.sync) },
-    members: members.map((m) => ({ uid: m.uid, nick: m.nick, auth: !!m.auth, host: m.uid === room.hostId })),
+    members: members.map((m) => ({ uid: m.uid, nick: m.nick, auth: !!m.auth, host: m.host ?? m.uid === room.hostId })),
     chat: (room.chat || []).slice(-80),
   };
 }

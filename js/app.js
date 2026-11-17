@@ -2,14 +2,14 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=31';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=10';
+import * as V from './views.js?v=32';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=11';
 import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { hostChange, guestNeedsSeek, localPosition } from './sync-policy.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
-import { watchedIds, getLists } from './store.js?v=13';
+import { watchedIds, getLists } from './store.js?v=14';
 import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
 import { mountYearRange } from './year-range.js?v=2';
 
@@ -426,7 +426,7 @@ async function seedsFor() {
 let catalogWanted = false;
 var tapeKey = '';
 const tapeKeyNow = () => JSON.stringify([prefs.mode, prefs.sel, prefs.sub, prefs.from, prefs.to, prefs.rating, prefs.known]);
-function retape() { tapeKey = tapeKeyNow(); tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, TAPE_N, true); }).catch(() => {}); }
+function retape() { tapeKey = tapeKeyNow(); tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, TAPE_N, true); }).catch(() => { tapeKey = ''; }); }
 var retapeTimer = 0;
 function scheduleRetape() { if (tapeKeyNow() === tapeKey) return; clearTimeout(retapeTimer); retapeTimer = setTimeout(() => { if (!spinning && tapeKeyNow() !== tapeKey) retape(); }, 250); }
 let tapeReady = (tapeKey = tapeKeyNow(), seedsFor()).then((s) => { display = s; return buildTape(s, TAPE_N); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
@@ -466,7 +466,15 @@ const preload = (t, w = 300, ms = 2500) => new Promise((res) => {
 });
 
 let landedAt = null;
+let spinGen = 0;
 async function spin() {
+  if (spinning) return;
+  const mine = ++spinGen;
+  try { await spinRun(mine); }
+  catch (e) { console.warn('spin failed', e); spinGen++; phase('idle'); }
+  finally { if (spinning) finish(); }
+}
+async function spinRun(mine) {
   if (spinning) return;
   spinning = true;
   const btn = $('#spin'); btn.disabled = true; setSpin('Крутим…'); document.body.classList.add('spinning');
@@ -474,6 +482,7 @@ async function spin() {
   say('');
   if (!result.hidden) await collapse();
   endMove();
+  clearTimeout(retapeTimer); if (tapeKeyNow() !== tapeKey) retape();
   await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
   reel.classList.remove('landed');
   applyFx(); phase('spin');
@@ -485,7 +494,7 @@ async function spin() {
   let v = 0, last = performance.now(), cruising = !reduce.matches;
   const vmax = Math.max(1800, P * 16);
   const cruise = (now) => {
-    if (!cruising) return;
+    if (!cruising || mine !== spinGen) return;
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     v = Math.min(vmax, v + vmax * dt * 2.5); pos += v * dt; onReel(v); draw(now); requestAnimationFrame(cruise);
   };
@@ -521,7 +530,7 @@ async function spin() {
     // соседи победителя — только из уже декодированной ленты и только за краем видимой части
     const [va, vb] = visRange();
     const shuf = tape.filter((x) => x.id !== win.t.id).sort(() => Math.random() - 0.5); let sn = 0;
-    const pickN = () => shuf[sn++ % shuf.length];
+    const pickN = () => (shuf.length ? shuf[sn++ % shuf.length] : win.t);
     for (let i = -6; i <= 4; i++) { const vv = T + i; if (vv >= va && vv < vb) continue; if (i) { if (tape.length) items.set(vv, pickN()); } else items.set(vv, win.t); }
     if (T >= va && T < vb) items.set(T, win.t);
     cards.forEach((c) => { if (c.vi != null && Math.abs(c.vi - T) <= 6 && !(c.vi >= va && c.vi < vb)) c.vi = null; });
@@ -592,11 +601,13 @@ async function settle(v) {
 function finish() {
   spinning = false;
   const btn = $('#spin'); btn.disabled = false; setSpin('Крутить'); document.body.classList.remove('spinning');
+  scheduleRetape();
 }
 $('#spin').addEventListener('click', spin);
 addEventListener('keydown', (e) => {
   if (!(e.code === 'Space' || e.key === 'Enter') || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.querySelector('dialog[open]')) return;
+  if (spinning) return;
   if (e.target.closest('a,button,input,textarea,select,dialog,[contenteditable]')) return;
   e.preventDefault(); spin();
 });
@@ -854,7 +865,7 @@ async function openTrailer(t, from) {
   if (!r && my === tReq) { const alt = lang === 'ru' ? 'en' : 'ru'; r = await findTrailer(t, alt).catch(() => null); if (r) lang = alt; }
   if (my !== tReq || !tm.open) return;
   tm.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
-  if (!r) { $('#tmFrame').innerHTML = `<div class="tm-load">Трейлер не нашёлся. <a href="${ytSearch(t)}" target="_blank" rel="noopener">Поискать на YouTube</a></div>`; return; }
+  if (!r || !/^[\w-]{11}$/.test(String(r.id))) { $('#tmFrame').innerHTML = `<div class="tm-load">Трейлер не нашёлся. <a href="${ytSearch(t)}" target="_blank" rel="noopener">Поискать на YouTube</a></div>`; return; }
   $('#tmFrame').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${r.id}?autoplay=1&rel=0&playsinline=1&modestbranding=1" title="Трейлер: ${esc(t.ru || ruCached(t.id) || t.t)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   $('#tmFrame').dataset.vid = r.id;
   $('#tmYt').href = `https://www.youtube.com/watch?v=${r.id}`;
@@ -971,14 +982,16 @@ function watchRoom(id, panel, frame, titleEl) {
 
   const showEmbed = (film) => {
     const title = film.title || 'Фильм';
-    const src = film.embedUrl || film.pageUrl || '';
+    const https = (u) => (/^https:\/\//i.test(u || '') ? u : '');
+    const embedUrl = https(film.embedUrl), pageUrl = https(film.pageUrl);
+    const src = embedUrl || pageUrl;
     if (!src) return false;
     setTitle(title);
     titleRu(film.id);
     if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) { attachBridge(); return true; }
     gen += 1;
     frame.dataset.watchSrc = src;
-    mountLordFrame(film.embedUrl, film.pageUrl, title, film.embedUrl ? [film.embedUrl] : [], frame);
+    mountLordFrame(embedUrl, pageUrl, title, embedUrl ? [embedUrl] : [], frame);
     attachBridge();
     return true;
   };
@@ -1081,6 +1094,8 @@ function watchRoom(id, panel, frame, titleEl) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
         frame.innerHTML = '<div class="tm-load wj-wait"><p>Такой комнаты нет или она уже закрылась.</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>';
+      } else if (state === 'down') {
+        V.toast('Связь с комнатой потеряна, переподключаю…', null, 2500);
       } else if (state === 'full') {
         setTitle('Комната полная');
         frame.innerHTML = '<div class="tm-load">В комнате больше нет мест.</div>';
@@ -1225,7 +1240,7 @@ function watchRoom(id, panel, frame, titleEl) {
     bridge.command(true, expected);
     lastGuestSeek = Date.now();
   }, 2000);
-  return () => { alive = false; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
+  return () => { alive = false; gen += 1; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
@@ -1326,7 +1341,7 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lm
   }
   const src = list[0] || pageUrl;
   if (src && !list[0] && lordSearchRe.test(src)) {
-    mountLordSearchPanel(src, title);
+    mountLordSearchPanel(src, title, frame);
     return;
   }
   frame.classList.toggle('lord-browse', Boolean(!list[0] && pageUrl));
@@ -1384,7 +1399,7 @@ function openLordInNewTab(url) {
   const a = document.createElement('a');
   a.href = url;
   a.target = '_blank';
-  a.rel = 'noreferrer';
+  a.rel = 'noopener noreferrer';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1418,6 +1433,7 @@ async function openLordWatch(t, btn) {
   };
   try {
     const hit = await resolveWatchPayload(payload, controller.signal);
+    if (!lm.open) return;
     if (!hit) throw new Error('No resolver response');
     const { data, pageUrl, embedUrls, source } = hit;
     if (data.matched === true && (embedUrls.length || pageUrl)) {

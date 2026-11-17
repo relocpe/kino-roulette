@@ -30,6 +30,9 @@ export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return preflight(request);
     const url = new URL(request.url);
+    const origin = request.headers.get('Origin');
+    const isWs = request.headers.get('Upgrade') === 'websocket';
+    if ((isWs || (url.pathname === '/create' && request.method === 'POST')) && !ORIGINS.has(origin || '')) return json({ error: 'forbidden' }, 403, request);
 
     if (url.pathname === '/create' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -38,7 +41,7 @@ export default {
       const init = await stub.fetch(new Request('https://do/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, hostId: body.hostId ? String(body.hostId).slice(0, 64) : null }),
+        body: JSON.stringify({ id, hostId: body.hostId ? String(body.hostId).slice(0, 64) : null, hostKey: body.hostKey ? String(body.hostKey).slice(0, 80) : null }),
       }));
       if (!init.ok) return json({ error: 'init_failed' }, 500, request);
       const base = url.origin;
