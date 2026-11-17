@@ -9,6 +9,7 @@ import { watchedIds, getLists } from './store.js?v=11';
 import { mountYearRange } from './year-range.js?v=1';
 
 const $ = (s) => document.querySelector(s);
+const ZOMBI_RESOLVER = 'https://kino-roulette-zombi-resolver.samevamp.workers.dev/resolve';
 const LORD_RESOLVER = 'https://kino-roulette-lordfilm-resolver.samevamp.workers.dev/resolve';
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -847,8 +848,9 @@ tm.addEventListener('click', (e) => { if (e.target === tm || e.target.closest('[
 tm.addEventListener('cancel', (e) => { e.preventDefault(); closeTrailer(); });
 tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { if ((prefs.tlang || 'ru') === b.dataset.lang && $('#tmFrame').dataset.vid) return; prefs.tlang = b.dataset.lang; savePrefs(); openTrailer(curT, tBack); }));
 
-// ---------- LordFilm: прямой плеер на сайте ----------
+// ---------- Онлайн-плеер (Zombi / LordFilm) ----------
 const lm = $('#lmodal');
+const zombiPageRe = /^https:\/\/filmy-pro-zombi\.com\/\d+-.*\.html$/i;
 const lordPageRe = /^https:\/\/(?:www\.)?2026-lord\.pics\/\d+\/?$/;
 const lordSearchRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/search\b/;
 function closeLordModal() {
@@ -865,21 +867,66 @@ function lordSearchUrl(title, year) {
   return `https://www.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
 }
 
-function mountLordFrame(embedUrl, pageUrl, title) {
+function mountLordFrame(embedUrl, pageUrl, title, embedUrls = []) {
   const frame = $('#lmFrame');
   if (!frame) return;
-  const src = embedUrl || pageUrl;
-  if (src && !embedUrl && lordSearchRe.test(src)) {
+  const list = [...new Set([...(embedUrls || []), embedUrl].filter(Boolean))];
+  if (list.length > 1) {
+    frame.classList.remove('lord-browse');
+    const pick = list.map((u, i) => `<button type="button" class="${i ? '' : 'active'}" data-lsrc="${esc(u)}" role="tab">Плеер ${i + 1}</button>`).join('');
+    frame.innerHTML = `<div class="lm-pick" role="tablist">${pick}</div><iframe src="${esc(list[0])}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+    const iframe = frame.querySelector('iframe');
+    frame.querySelectorAll('[data-lsrc]').forEach((btn) => btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return;
+      frame.querySelector('.lm-pick .active')?.classList.remove('active');
+      btn.classList.add('active');
+      iframe.src = btn.dataset.lsrc;
+    }));
+    return;
+  }
+  const src = list[0] || pageUrl;
+  if (src && !list[0] && lordSearchRe.test(src)) {
     mountLordSearchPanel(src, title);
     return;
   }
-  frame.classList.toggle('lord-browse', Boolean(!embedUrl && pageUrl));
+  frame.classList.toggle('lord-browse', Boolean(!list[0] && pageUrl));
   if (!src) {
     frame.innerHTML = '<div class="tm-load" role="status">Не удалось собрать плеер.</div>';
     return;
   }
-  const note = embedUrl ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице LordFilm</p>';
+  const note = list[0] ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице источника</p>';
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+}
+
+async function resolveWatchPayload(payload, signal) {
+  const chain = [
+    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe },
+    { url: LORD_RESOLVER, pageRe: lordPageRe },
+  ];
+  let last = null;
+  for (const item of chain) {
+    try {
+      const response = await fetch(item.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      last = data;
+      const pageUrl = item.pageRe.test(data.url || '') ? data.url : '';
+      const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
+        ? data.embedUrls
+        : (data.embedUrl ? [data.embedUrl] : []);
+      if (data.matched === true && (embedUrls.length || pageUrl)) {
+        return { data, pageUrl, embedUrls, source: data.source || (item.url === ZOMBI_RESOLVER ? 'zombi' : 'lordfilm') };
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+    }
+  }
+  return last ? { data: last, pageUrl: '', embedUrls: [], source: null } : null;
 }
 
 function mountLordSearchPanel(url, title) {
@@ -913,41 +960,44 @@ async function openLordWatch(t, btn) {
   }
   $('#lmTitle').textContent = title;
   $('#lmExt').href = searchUrl;
-  $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу фильм на LordFilm…</div>';
+  $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
-  const resolverPromise = fetch(LORD_RESOLVER, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        originalTitle: t.t || '',
-        imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
-        year: t.y,
-        type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
-      }),
-      signal: controller.signal,
-    });
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
+  const payload = {
+    title,
+    originalTitle: t.t || '',
+    imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
+    year: t.y,
+    type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+  };
   try {
-    const response = await resolverPromise;
-    if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
-    const data = await response.json();
-    const pageUrl = lordPageRe.test(data.url || '') ? data.url : '';
-    const openFilm = pageUrl && (data.matched === true || data.lead === true);
-    if (openFilm) {
-      $('#lmExt').href = pageUrl;
-      mountLordFrame(data.embedUrl, pageUrl, title);
+    const hit = await resolveWatchPayload(payload, controller.signal);
+    if (!hit) throw new Error('No resolver response');
+    const { data, pageUrl, embedUrls, source } = hit;
+    if (data.matched === true && (embedUrls.length || pageUrl)) {
+      const extUrl = pageUrl || (source === 'zombi' ? data.url : searchUrl);
+      $('#lmExt').href = extUrl;
+      $('#lmExt').textContent = source === 'zombi' ? 'Zombi ↗' : 'LordFilm ↗';
+      mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
+      if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
+      return;
+    }
+    const leadUrl = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
+    if (data.lead && leadUrl) {
+      $('#lmExt').href = leadUrl;
+      mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
       return;
     }
     $('#lmExt').href = searchUrl;
+    $('#lmExt').textContent = 'LordFilm ↗';
     mountLordSearchPanel(searchUrl, title);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
-      V.toast('LordFilm с сервера не ответил — открой поиск кнопкой внизу', null, 3000);
+      V.toast('Источники не ответили — открой поиск кнопкой внизу', null, 3000);
       return;
     }
-    V.toast('Выбери фильм в поиске LordFilm', null, 2400);
+    V.toast('Точного плеера нет — поиск LordFilm в модалке', null, 2400);
   } catch (error) {
-    console.warn('LordFilm lookup failed.', error);
+    console.warn('Watch resolver failed.', error);
     $('#lmExt').href = searchUrl;
     mountLordSearchPanel(searchUrl, title);
     V.toast('Не вышло найти автоматически — кнопка поиска в модалке', null, 2800);
