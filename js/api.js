@@ -1,5 +1,5 @@
 import { LISTS, ANIME, byId } from './chips.js?v=10';
-import { noteMal, shikiAnime } from './ru.js?v=2';
+import { noteMal, shikiAnime } from './ru.js?v=3';
 
 // Аниме — отдельный режим «Что». Тайтлы IMDb, которые на самом деле аниме (по Wikidata: аниме-сериал/фильм/OVA),
 // в «Фильмах» и «Сериалах» не показываем. Плюс страховка по карточке: Animation + страна Япония.
@@ -330,11 +330,12 @@ export async function browseSnap(f, offset = 0, limit = 48) {
       if (groups.length && !groups.every((g) => g.some((name) => (t.g || []).includes(name)))) return false;
       return true;
     });
+    const bayes = (t) => ((t.v || 0) * (t.r || 0) + 2500 * 6.6) / ((t.v || 0) + 2500);
     const sort = f.sort || 'rating';
     rows.sort((a, b) => {
       if (sort === 'year') return (b.y || 0) - (a.y || 0) || (b.v || 0) - (a.v || 0);
       if (sort === 'pop') return (b.v || 0) - (a.v || 0) || (b.r || 0) - (a.r || 0);
-      return (b.r || 0) - (a.r || 0) || (b.v || 0) - (a.v || 0);
+      return bayes(b) - bayes(a) || (b.v || 0) - (a.v || 0);
     });
     if (browseCache.size > 12) browseCache.clear();
     browseCache.set(key, rows);

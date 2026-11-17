@@ -145,7 +145,7 @@ export class WatchPartyRoom {
       const playing = !!m.playing;
       room.sync = { at, playing, wall: playing ? Date.now() : 0 };
       await this.saveRoom(room);
-      this.broadcast({ type: 'sync', sync: room.sync, now: syncNow(room.sync) });
+      this.broadcast({ type: 'sync', sync: room.sync, now: syncNow(room.sync), snap: !!m.snap });
       return;
     }
 

@@ -40,8 +40,9 @@ export async function shikiAnime(mal) {
   } catch { return null; }
 }
 const queue = new Map(); let timer = 0;
+const triedWiki = (id) => cache[id]?.[2] === 4;
 export function ruTitles(ids) {
-  const want = [...new Set(ids)].filter((id) => /^(tt\d+|nm\d+|al\d+)$/.test(id || '') && !(id in cache));
+  const want = [...new Set(ids)].filter((id) => /^(tt\d+|nm\d+|al\d+)$/.test(id || '') && !(cache[id]?.[0] || triedWiki(id)));
   if (!want.length) return Promise.resolve();
   const ps = want.map((id) => {
     if (!queue.has(id)) { let res; const p = new Promise((r) => (res = r)); queue.set(id, { p, res }); }
@@ -49,6 +50,23 @@ export function ruTitles(ids) {
   });
   clearTimeout(timer); timer = setTimeout(flush, 40);
   return Promise.all(ps);
+}
+async function wikiNames(ids) {
+  const vals = ids.map((id) => `"${id.startsWith('al') ? id.slice(2) : id}"`).join(' ');
+  const q = `SELECT ?k ?wiki WHERE { VALUES ?k { ${vals} } { ?i wdt:P345 ?k } UNION { ?i wdt:P8729 ?k } ?article schema:about ?i ; schema:isPartOf <https://ru.wikipedia.org/> ; schema:name ?wiki }`;
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+    const r = await fetch(EP + encodeURIComponent(q), { signal: ctl.signal, headers: { Accept: 'application/sparql-results+json' } });
+    clearTimeout(t);
+    if (!r.ok) return { ok: false, map: {} };
+    const map = {};
+    for (const b of (await r.json()).results.bindings || []) {
+      const k = b.k.value, id = /^\d+$/.test(k) ? 'al' + k : k;
+      const name = clean(b.wiki?.value || '');
+      if (cyr(name) && !map[id]) map[id] = name;
+    }
+    return { ok: true, map };
+  } catch { return { ok: false, map: {} }; }
 }
 async function flush() {
   const ids = [...queue.keys()].filter((id) => !queue.get(id).sent);
@@ -75,7 +93,13 @@ async function batch(ids) {
     }
     const sh = await shiki;
     for (const id in sh) if (cyr(sh[id])) (found[id] ||= ['', ''])[0] = sh[id];
-    ids.forEach((id) => (cache[id] = found[id] || ['', '']));
+    const missing = ids.filter((id) => !found[id]?.[0]);
+    const wiki = missing.length ? await wikiNames(missing) : { ok: true, map: {} };
+    for (const id in wiki.map) (found[id] ||= ['', ''])[0] = wiki.map[id];
+    ids.forEach((id) => {
+      const f = found[id] || ['', ''];
+      if (f[0] || wiki.ok) cache[id] = [f[0], f[1] || '', 4];
+    });
     save();
   }
   ids.forEach((id) => { const e = queue.get(id); queue.delete(id); e?.res(); });

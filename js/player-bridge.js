@@ -34,11 +34,16 @@ export function parsePlayerMessage(raw) {
   return null;
 }
 
+// Гость перематывает плеер только в эти моменты. Тихий пульс времени кнопку не жмёт.
+export function shouldSnapGuest({ snap = false, force = false, playEdge = false, jump = false, first = false, playing = false } = {}) {
+  return !!(force || snap || playEdge || jump || (first && playing));
+}
+
 function tryJson(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
 
-export function bindEmbed(iframe, { onTick } = {}) {
+export function bindEmbed(iframe, { onTick, onReady } = {}) {
   let at = 0;
   let duration = 0;
   let playing = false;
@@ -85,8 +90,24 @@ export function bindEmbed(iframe, { onTick } = {}) {
     }
   };
 
+  const fromThisPlayer = (source) => {
+    const top = iframe.contentWindow;
+    if (!source || !top) return false;
+    if (source === top) return true;
+    try {
+      let w = source;
+      for (let i = 0; i < 4 && w; i += 1) {
+        if (w === top) return true;
+        const parent = w.parent;
+        if (!parent || parent === w) break;
+        w = parent;
+      }
+    } catch { /* чужой origin */ }
+    return false;
+  };
+
   const onMessage = (ev) => {
-    if (ev.source !== iframe.contentWindow) return;
+    if (!fromThisPlayer(ev.source)) return;
     const tick = parsePlayerMessage(ev.data);
     if (!tick) return;
     heard = true;
@@ -97,14 +118,15 @@ export function bindEmbed(iframe, { onTick } = {}) {
     onTick?.({ at, duration, playing, heard: true });
   };
 
+  const kick = () => { subscribe(); onReady?.(); };
   window.addEventListener('message', onMessage);
-  iframe.addEventListener('load', subscribe);
+  iframe.addEventListener('load', kick);
   subscribe();
   const poll = setInterval(() => {
     post({ key: 'kodik_player_api', value: { method: 'get_time' } });
     post({ context: 'player.js', version: '0.0.11', method: 'getCurrentTime' });
     post({ api: 'getCurrentTime' });
-  }, 1000);
+  }, 2500);
 
   return {
     command,

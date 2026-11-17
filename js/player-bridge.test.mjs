@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parsePlayerMessage } from './player-bridge.js';
+import { parsePlayerMessage, shouldSnapGuest } from './player-bridge.js';
 
 describe('player bridge', () => {
   it('reads playerjs time', () => {
@@ -18,5 +18,19 @@ describe('player bridge', () => {
   });
   it('ignores chat noise', () => {
     assert.equal(parsePlayerMessage({ type: 'chat', text: 'привет' }), null);
+  });
+});
+
+describe('guest snap policy', () => {
+  it('does not seek on a quiet heartbeat', () => {
+    assert.equal(shouldSnapGuest({}), false);
+    assert.equal(shouldSnapGuest({ first: true, playing: false }), false);
+  });
+  it('seeks on play, a real jump, or the sync button', () => {
+    assert.equal(shouldSnapGuest({ first: true, playing: true }), true);
+    assert.equal(shouldSnapGuest({ playEdge: true }), true);
+    assert.equal(shouldSnapGuest({ jump: true }), true);
+    assert.equal(shouldSnapGuest({ snap: true }), true);
+    assert.equal(shouldSnapGuest({ force: true }), true);
   });
 });

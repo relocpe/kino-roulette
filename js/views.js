@@ -1,8 +1,8 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=17';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=18';
 import * as S from './store.js?v=13';
-import { ruCached, localize, ruTitles } from './ru.js?v=2';
+import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
 import { clearProgress } from './watch-progress.js?v=1';
 
@@ -582,12 +582,14 @@ function partyPanel(id) {
       <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       <header class="wp-head">
         <div class="wp-id"><small>Комната</small><span class="wp-code" id="wpCode">${esc(id)}</span></div>
-        <button type="button" class="btn line wp-invite" id="wpCopy">Пригласить</button>
+        <button type="button" class="wp-invite" id="wpCopy">Пригласить</button>
       </header>
       <div class="wp-people" id="wpMembers" aria-live="polite"><span class="wp-chip">Подключаемся…</span></div>
       <label class="wp-nick">Твоё имя<input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Гость"></label>
+      <p class="wp-ready" id="wpReady">Ждём загрузку плеера</p>
       <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
       <section class="wp-chat" id="wpChat" aria-label="Чат">
+        <h2 class="wp-chat-title">Чат</h2>
         <div class="wp-msgs" id="wpMsgs"></div>
         <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать в чат…"><button type="submit" class="wp-send" aria-label="Отправить">↵</button></form>
       </section>

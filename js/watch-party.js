@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=13';
-import { BASE } from './views.js?v=26';
+import { BASE } from './views.js?v=27';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
@@ -49,7 +49,7 @@ function fmtClock(sec) {
   return `${m}:${String(x).padStart(2, '0')}`;
 }
 
-export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onControl } = {}) {
+export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap } = {}) {
   if (!root) return () => {};
   const id = (sel) => root.querySelector(sel);
 
@@ -77,22 +77,13 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     if (state) state.textContent = sync.playing ? 'Идёт' : 'Пауза';
     const led = id('.wp-led');
     if (led) led.classList.toggle('on', !!sync.playing);
-    const seek = id('[data-wp-seek]');
-    if (seek) {
-      if (dur) seek.max = String(Math.ceil(dur));
-      if (document.activeElement !== seek) seek.value = String(Math.floor(now));
-    }
   };
   const ensureTick = () => { if (!clockTick) clockTick = setInterval(paintClock, 1000); };
 
-  const broadcast = (at, playing) => {
-    sync = { at, playing, wall: playing ? Date.now() : 0 };
-    send({ type: 'sync', at, playing });
+  const broadcast = (at, playing, snap) => {
+    sync = { at: Math.max(0, Number(at) || 0), playing: !!playing, wall: playing ? Date.now() : 0 };
+    send({ type: 'sync', at: sync.at, playing: sync.playing, snap: !!snap });
     paintClock();
-  };
-  const commitSync = (at, playing) => {
-    broadcast(at, playing);
-    onControl?.({ at, playing });
   };
 
   let syncBuilt = '';
@@ -103,21 +94,19 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     if (syncBuilt === key && id('[data-wp-clock]')) { paintClock(); ensureTick(); return; }
     syncBuilt = key;
     const now = clockNow();
-    const max = Math.max(60, Math.ceil(dur || 14400));
-    el.innerHTML = `<div class="wp-sync-line"><span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span><span><span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span> · <b data-wp-clock>${fmtClock(now)}</b></span></div>
-      ${host ? `<div class="wp-host-ctl" role="group" aria-label="Управление для всех">
-        <button type="button" data-wp-play>Старт</button>
+    el.innerHTML = `<div class="wp-sync-line"><span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span><span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span><b data-wp-clock>${fmtClock(now)}</b></div>
+      ${host ? `<div class="wp-actions" role="group" aria-label="Воспроизведение для всех">
+        <button type="button" data-wp-play>Воспроизвести</button>
         <button type="button" data-wp-pause>Пауза</button>
-        <input type="range" data-wp-seek min="0" max="${max}" step="1" value="${Math.floor(now)}" aria-label="Позиция для всех">
-      </div>` : `<p class="wp-hint">Плеер подстраивается под ведущего.</p>`}`;
+      </div>` : ''}
+      <button type="button" class="wp-syncbtn" data-wp-sync>Синхронизировать</button>
+      <p class="wp-hint">${host
+        ? 'Дождись загрузки плеера и нажми «Воспроизвести». «Синхронизировать» ставит у всех твоё время.'
+        : 'Когда плеер загрузится, нажми «Синхронизировать» — время совпадёт с ведущим.'}</p>`;
     ensureTick();
-    if (!host) return;
-    const play = id('[data-wp-play]');
-    const pause = id('[data-wp-pause]');
-    const seek = id('[data-wp-seek]');
-    play?.addEventListener('click', () => commitSync(seek ? +seek.value : clockNow(), true));
-    pause?.addEventListener('click', () => commitSync(clockNow(), false));
-    seek?.addEventListener('input', () => commitSync(+seek.value, sync.playing));
+    id('[data-wp-play]')?.addEventListener('click', () => onTransport?.('play'));
+    id('[data-wp-pause]')?.addEventListener('click', () => onTransport?.('pause'));
+    id('[data-wp-sync]')?.addEventListener('click', () => onSnap?.());
   };
 
   const pushChat = (entry) => {
@@ -135,7 +124,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     const el = id('#wpMembers');
     if (!el) return;
     if (!members?.length) { el.innerHTML = '<span class="wp-chip">Подключаемся…</span>'; return; }
-    el.innerHTML = members.map((m) => `<span class="wp-chip${m.host ? ' host' : ''}">${esc(m.nick)}${m.auth ? '<span aria-label="аккаунт">✓</span>' : ''}</span>`).join('');
+    el.innerHTML = members.map((m) => `<span class="wp-chip${m.host ? ' host' : ''}">${esc(m.nick)}${m.host ? '<span class="wp-role">ведущий</span>' : ''}${m.auth ? '<span aria-label="аккаунт">✓</span>' : ''}</span>`).join('');
   };
 
   const connect = (rid) => {
@@ -161,20 +150,15 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         const codeEl = id('#wpCode');
         if (codeEl) codeEl.textContent = roomId;
         onHello?.({ host, film, roomId, sync });
-        onSync?.(sync);
+        onSync?.(sync, { snap: false });
         return;
       }
       if (m.type === 'presence') { paintMembers(m.members); return; }
       if (m.type === 'chat') { pushChat(m); return; }
       if (m.type === 'sync') {
         sync = m.sync || sync;
-        if (!host) {
-          const now = sync.playing && sync.wall ? sync.at + (Date.now() - sync.wall) / 1000 : sync.at;
-          window.__wpLocalAt = window.__wpLocalAt || 0;
-          window.__wpDrift = now - window.__wpLocalAt;
-        }
         paintSync();
-        onSync?.(sync);
+        onSync?.(sync, { snap: !!m.snap });
         return;
       }
       if (m.type === 'film') {
@@ -235,9 +219,12 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       root.closest('.tm-box')?.classList.remove('has-party');
     },
     publishFilm(meta) { if (!host) return; send({ type: 'film', film: meta }); film = meta; },
-    pushSync(at, playing) { broadcast(at, !!playing); },
-    setDuration(n) { if (n > dur + 1) { dur = n; const seek = id('[data-wp-seek]'); if (seek) seek.max = String(Math.ceil(n)); } },
+    pushSync(at, playing, snap = false) { broadcast(at, !!playing, !!snap); },
+    setDuration(n) { if (n > dur + 1) dur = n; },
     isHost() { return host; },
+    playing() { return !!sync.playing; },
+    clock: clockNow,
+    syncState: () => sync,
     setLocalPlayhead(sec) { window.__wpLocalAt = sec; },
     roomId: () => roomId,
   };

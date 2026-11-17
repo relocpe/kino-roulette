@@ -1,11 +1,11 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=17';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=18';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=26';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=6';
-import { bindEmbed } from './player-bridge.js?v=1';
-import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
+import * as V from './views.js?v=27';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=7';
+import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=2';
+import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
 import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
@@ -897,16 +897,43 @@ function watchRoom(id, panel, frame, titleEl) {
   let guestAnchor = null;
   let guestPlaying = null;
   let pendingSync = null;
+  let pendingSnap = false;
+  let appliedOnce = false;
+  let playerReady = false;
+  let pendingCmd = null;
+  let lastFilm = null;
   let lastHostSent = 0;
+  let readyTimer = 0;
   let lastHostAt = 0;
-  let lastHostPlaying = false;
   let attachBridge = () => {};
+
+  const setReady = (ok) => {
+    playerReady = ok;
+    const el = panel.querySelector('#wpReady');
+    if (!el) return;
+    el.textContent = ok ? 'Плеер загружен' : 'Ждём загрузку плеера';
+    el.classList.toggle('ok', ok);
+  };
+
+  const titleRu = (filmId) => {
+    if (!filmId) return;
+    ruTitles([filmId]).then(() => {
+      const ru = ruCached(filmId);
+      if (!ru) return;
+      setTitle(ru);
+      if (ctl.isHost() && lastFilm?.id === filmId && lastFilm.title !== ru) {
+        lastFilm = { ...lastFilm, title: ru };
+        ctl.publishFilm(lastFilm);
+      }
+    });
+  };
 
   const showEmbed = (film) => {
     const title = film.title || 'Фильм';
     const src = film.embedUrl || film.pageUrl || '';
     if (!src) return false;
     setTitle(title);
+    titleRu(film.id);
     if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) { attachBridge(); return true; }
     gen += 1;
     frame.dataset.watchSrc = src;
@@ -917,8 +944,9 @@ function watchRoom(id, panel, frame, titleEl) {
 
   async function playTitle(t, ctl) {
     const my = ++gen;
-    const title = t.ru || ruCached(t.id) || t.t || 'Фильм';
+      const title = t.ru || ruCached(t.id) || t.t || 'Фильм';
     setTitle(title);
+    titleRu(t.id);
     frame.classList.remove('lord-browse');
     frame.innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
     const payload = {
@@ -947,7 +975,10 @@ function watchRoom(id, panel, frame, titleEl) {
       frame.dataset.watchSrc = embed || page || '';
       mountLordFrame(embed, page, title, embedUrls, frame);
       attachBridge();
-      if (ctl.isHost()) ctl.publishFilm({ id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' });
+      if (ctl.isHost()) {
+        lastFilm = { id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' };
+        ctl.publishFilm(lastFilm);
+      }
     } catch {
       if (my !== gen) return;
       mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
@@ -978,8 +1009,9 @@ function watchRoom(id, panel, frame, titleEl) {
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
     },
-    onSync(s) { pendingSync = s; applyGuest(s); },
-    onControl({ at, playing }) { bridge?.command(!!playing, at); },
+    onSync(s, meta) { pendingSync = s; pendingSnap = !!meta?.snap; applyGuest(s, { snap: pendingSnap }); },
+    onTransport(kind) { hostTransport(kind === 'play'); },
+    onSnap() { synchronize(); },
     onStatus(state) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
@@ -993,22 +1025,50 @@ function watchRoom(id, panel, frame, titleEl) {
   const nick = panel.querySelector('#wpNick');
   if (nick && !nick.value) nick.value = watchIdentity().nick;
 
-  const applyGuest = (s) => {
+  const sharedNow = (s) => (s?.playing && s.wall ? s.at + (Date.now() - s.wall) / 1000 : (s?.at || 0));
+
+  const applyGuest = (s, { snap = false, force = false } = {}) => {
     if (!s || ctl.isHost() || !bridge) return;
-    const now = s.playing && s.wall ? s.at + (Date.now() - s.wall) / 1000 : (s.at || 0);
+    const now = sharedNow(s);
     const playing = !!s.playing;
-    if (bridge.heard()) {
-      const local = window.__wpLocalAt ?? now;
-      if (Math.abs(now - local) > 2.2 || guestPlaying !== playing) bridge.command(playing, now);
-    } else {
-      const predicted = guestAnchor?.playing ? guestAnchor.at + (Date.now() - guestAnchor.wall) / 1000 : guestAnchor?.at;
-      const need = !guestAnchor || guestAnchor.playing !== playing || (predicted != null && Math.abs(now - predicted) > 12);
-      if (need) {
-        bridge.command(playing, now);
-        guestAnchor = { at: now, wall: Date.now(), playing };
-      }
-    }
+    if (!playerReady) return;
+    const predicted = guestAnchor?.playing ? guestAnchor.at + (Date.now() - guestAnchor.wall) / 1000 : guestAnchor?.at;
+    const jump = predicted != null && Math.abs(now - predicted) > 8;
+    const playEdge = guestPlaying !== null && guestPlaying !== playing;
+    const first = !appliedOnce;
     guestPlaying = playing;
+    appliedOnce = true;
+    if (!shouldSnapGuest({ snap, force, playEdge, jump, first, playing })) return;
+    bridge.command(playing, now);
+    guestAnchor = { at: now, wall: Date.now(), playing };
+  };
+
+  const hostAt = () => (bridge?.heard() ? (window.__wpLocalAt || 0) : ctl.clock());
+
+  const hostTransport = (playing) => {
+    if (!ctl.isHost()) return;
+    const at = playerReady ? hostAt() : ctl.clock();
+    ctl.pushSync(at, playing, true);
+    if (!playerReady || !bridge) {
+      pendingCmd = { playing, at };
+      V.toast('Плеер ещё загружается — включим, как откроется', null, 2200);
+      return;
+    }
+    bridge.command(playing, at);
+  };
+
+  const synchronize = () => {
+    if (!playerReady || !bridge) {
+      V.toast('Плеер ещё загружается', null, 2200);
+      return;
+    }
+    if (ctl.isHost()) {
+      ctl.pushSync(hostAt(), ctl.playing(), true);
+      V.toast('Время отправили всем в комнате', null, 1800);
+      return;
+    }
+    applyGuest(ctl.syncState(), { force: true });
+    V.toast('Время совпало с ведущим', null, 1800);
   };
 
   attachBridge = () => {
@@ -1016,22 +1076,40 @@ function watchRoom(id, panel, frame, titleEl) {
     if (!iframe || iframe === bridgeIframe) return;
     bridge?.destroy();
     bridgeIframe = iframe;
+    appliedOnce = false;
+    guestAnchor = null;
+    guestPlaying = null;
+    setReady(false);
     bridge = bindEmbed(iframe, {
+      onReady() {
+        setReady(true);
+        clearTimeout(readyTimer);
+        readyTimer = setTimeout(() => {
+          if (!bridge) return;
+          if (pendingCmd && ctl.isHost()) {
+            bridge.command(pendingCmd.playing, pendingCmd.at);
+            pendingCmd = null;
+          }
+          if (!ctl.isHost() && pendingSync) {
+            appliedOnce = false;
+            guestPlaying = null;
+            guestAnchor = null;
+            applyGuest(pendingSync, { snap: pendingSnap || !!pendingSync.playing });
+          }
+        }, 350);
+      },
       onTick(t) {
         window.__wpLocalAt = t.at;
         if (t.duration) ctl.setDuration(t.duration);
-        if (!ctl.isHost()) return;
-        const jumped = Math.abs(t.at - lastHostAt) > 2.2;
-        const toggled = !!t.playing !== lastHostPlaying;
-        if (toggled || jumped || Date.now() - lastHostSent > 2000) {
-          ctl.pushSync(t.at, !!t.playing);
+        if (!ctl.isHost() || !playerReady) return;
+        const jumped = lastHostAt > 0 && Math.abs(t.at - lastHostAt) > 8;
+        if (jumped && Date.now() - lastHostSent > 1500) {
+          ctl.pushSync(t.at, !!t.playing, true);
           lastHostSent = Date.now();
         }
         lastHostAt = t.at;
-        lastHostPlaying = !!t.playing;
       },
     });
-    if (pendingSync) applyGuest(pendingSync);
   };
 
   const roomEl = frame.closest('.wroom');
@@ -1045,7 +1123,11 @@ function watchRoom(id, panel, frame, titleEl) {
   });
 
   ctl.join(id);
-  return () => { bridge?.destroy(); ctl.leave(); };
+  const beat = setInterval(() => {
+    if (!ctl.isHost() || !ctl.playing() || !playerReady) return;
+    ctl.pushSync(hostAt(), true, false);
+  }, 5000);
+  return () => { clearInterval(beat); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
