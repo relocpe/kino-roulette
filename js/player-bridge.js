@@ -28,12 +28,22 @@ export function preferEmbeds(urls) {
 // Alloha молчит, пока в адресе нет api=1. YouTube не принимает команды без enablejsapi.
 // Kodik стартует с start_from, Alloha со start, и оба ждут autoplay=1 в адресе.
 // postMessage «play» чужой плеер часто молча игнорирует, пока его сам не ткнут.
-export function playbackUrl(url, { at = 0, playing = false } = {}) {
+export function playbackUrl(url, { at = 0, playing = false, season, episode } = {}) {
   const prepared = prepareEmbedUrl(url);
   try {
     const u = new URL(prepared);
     const sec = Math.max(0, Math.floor(Number(at) || 0));
     const kind = playerKind(u.href);
+    const s = Number(season);
+    const e = Number(episode);
+    if (Number.isFinite(s) && s > 0) {
+      if (kind === 'kodik') u.searchParams.set('season', String(s));
+      else if (kind === 'alloha' || kind === 'vibix') u.searchParams.set('season', String(s));
+    }
+    if (Number.isFinite(e) && e > 0) {
+      if (kind === 'kodik') u.searchParams.set('episode', String(e));
+      else if (kind === 'alloha' || kind === 'vibix') u.searchParams.set('episode', String(e));
+    }
     if (playing) u.searchParams.set('autoplay', '1');
     if (sec > 0) {
       if (kind === 'kodik') u.searchParams.set('start_from', String(sec));
@@ -90,7 +100,7 @@ export function parsePlayerMessage(raw) {
   if (d.event === 'play' || d.event === 'playing' || d.event === 'started' || d.event === 'start' || d.event === 'resumed' || d.event === 'userplay' || d.type === 'play' || d.method === 'play' || d.api === 'play') return { playing: true, at: num(d.time) ?? num(d.seconds), explicit: true };
   if (d.event === 'pause' || d.event === 'paused' || d.event === 'userpause' || d.type === 'pause' || d.method === 'pause' || d.api === 'pause') return { playing: false, at: num(d.time) ?? num(d.seconds), explicit: true };
   const seekAt = num(d.time) ?? num(d.seconds) ?? num(d.set);
-  if ((d.event === 'seek' || d.event === 'seeked' || d.type === 'seek' || d.method === 'seek' || d.api === 'seek') && seekAt != null) return { at: seekAt, explicit: true };
+  if ((d.event === 'seek' || d.event === 'seeked' || d.type === 'seek' || d.method === 'seek' || d.api === 'seek') && seekAt != null) return { at: seekAt, explicit: true, seek: true };
   if ((d.api === 'time' || d.api === 'timeupdate' || d.event === 'timeupdate') && (num(d.time) ?? num(d.value) ?? num(d.answer)) != null) {
     return { at: num(d.time) ?? num(d.value) ?? num(d.answer), duration: num(d.duration), playing: playState(d) };
   }
@@ -100,7 +110,7 @@ export function parsePlayerMessage(raw) {
     if (v.method === 'time_update' || v.method === 'time' || v.method === 'get_time') return { at: num(v.time) ?? num(v.seconds), duration: num(v.duration), playing: playState(v) };
     if (v.method === 'play') return { playing: true, at: num(v.time) ?? num(v.seconds), explicit: true };
     if (v.method === 'pause') return { playing: false, at: num(v.time) ?? num(v.seconds), explicit: true };
-    if (v.method === 'seek' && (num(v.time) ?? num(v.seconds)) != null) return { at: num(v.time) ?? num(v.seconds), explicit: true };
+    if (v.method === 'seek' && (num(v.time) ?? num(v.seconds)) != null) return { at: num(v.time) ?? num(v.seconds), explicit: true, seek: true };
   }
 
   if (d.event === 'timeupdate' || d.type === 'timeupdate' || d.type === 'timeUpdate') {
@@ -232,7 +242,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     if (tick.playing != null) playing = tick.playing;
     if (Date.now() < ignoreUntil) return;
     if (tick.at == null && tick.playing == null) return;
-    onTick?.({ at, duration, playing: tick.playing != null ? tick.playing : undefined, explicit: !!tick.explicit, heard: true });
+    onTick?.({ at, duration, playing: tick.playing != null ? tick.playing : undefined, explicit: !!tick.explicit, seek: !!tick.seek, heard: true });
   };
 
   let readySent = false;

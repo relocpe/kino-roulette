@@ -4,7 +4,7 @@ import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, 
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=41';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=19';
-import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=12';
+import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, guestNudge, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=7';
@@ -1173,7 +1173,7 @@ function watchRoom(id, panel, frame, titleEl) {
     const my = ++gen;
     frame.classList.remove('lord-browse');
     const direct = hinted && !isSitePlayer(hinted) ? hinted : '';
-    const siteNow = embedUrl && isSitePlayer(embedUrl) && !direct ? embedUrl : '';
+    const siteNow = embedUrl && canSyncEmbed(embedUrl) && !direct ? embedUrl : '';
     if (siteNow && !kpFromFilm(film)) {
       frame.dataset.watchSrc = siteNow;
       mountLordFrame(siteNow, '', title, [siteNow], frame);
@@ -1198,7 +1198,7 @@ function watchRoom(id, panel, frame, titleEl) {
         if (isSitePlayer(item.url)) {
           mountLordFrame(item.url, pageUrl, title, [item.url], frame);
           renderPicks(frame, choices, item.url, (next) => play(next, 0, true));
-          attachBridge();
+          if (canSyncEmbed(item.url)) attachBridge();
           return;
         }
         try {
@@ -1242,7 +1242,7 @@ function watchRoom(id, panel, frame, titleEl) {
       if (!src || my !== gen) return;
       frame.dataset.watchSrc = src;
       mountLordFrame(embedUrl, pageUrl, title, embedUrl ? [embedUrl] : [], frame);
-      attachBridge();
+      if (canSyncEmbed(src)) attachBridge();
     };
     run();
     return true;
@@ -1440,7 +1440,7 @@ function watchRoom(id, panel, frame, titleEl) {
     const iframe = frame.querySelector('iframe');
     if (!iframe || !bridge) return;
     const base = iframe.dataset.baseSrc || iframe.src;
-    const next = playbackUrl(base, { at, playing: true });
+    const next = playbackUrl(base, { at, playing: true, season: lastFilm?.season, episode: lastFilm?.episode });
     if (iframe.dataset.autostart !== '1' && next && next !== iframe.src) {
       iframe.dataset.baseSrc = base;
       iframe.dataset.autostart = '1';
@@ -1551,7 +1551,7 @@ function watchRoom(id, panel, frame, titleEl) {
     roomVol.addEventListener('input', () => setChatVolume(roomVol.value));
     roomVol.addEventListener('change', () => playChatSound(chatVolume()));
   }
-  const pickEpisode = (resetEpisode) => {
+  const pickEpisode = async (resetEpisode) => {
     if (painting || !ctl.isHost() || !lastFilm) return;
     const seasonSel = roomEl?.querySelector('#wjSeason');
     const episodeSel = roomEl?.querySelector('#wjEpisode');
@@ -1562,6 +1562,19 @@ function watchRoom(id, panel, frame, titleEl) {
       season: Number(seasonSel?.value) || lastFilm.season || 1,
       episode: Number(episodeSel?.value) || 1,
     };
+  const kp = next.kinopoiskId || kpFromFilm(next);
+  if (kp && (!next.embedUrl || !canSyncEmbed(next.embedUrl))) {
+    try {
+      const hit = await resolveWatchPayload({
+        kinopoiskId: kp,
+        type: 'tv',
+        title: next.title,
+        season: next.season,
+        episode: next.episode,
+      }, new AbortController().signal);
+      if (hit?.embedUrls?.[0] && canSyncEmbed(hit.embedUrls[0])) next.embedUrl = hit.embedUrls[0];
+    } catch { /* следующий showEmbed */ }
+  }
     resumeAt = 0;
     lastFilm = next;
     ctl.publishFilm(next);

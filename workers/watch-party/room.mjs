@@ -1,4 +1,5 @@
 import { sanitizeChat, sanitizeFilm, sanitizeNick, syncNow, publicRoom } from './codec.mjs';
+import { pickCorsOrigin } from './origins.mjs';
 
 const MAX_CHAT = 120;
 const MAX_MEMBERS = 24;
@@ -188,7 +189,6 @@ export class WatchPartyRoom {
 }
 
 function cors(request) {
-  const origin = request.headers.get('Origin');
-  const allow = origin === 'https://relocpe.github.io' || origin === 'http://127.0.0.1:4173' || origin === 'http://localhost:4173';
-  return allow ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
+  const origin = pickCorsOrigin(request);
+  return origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
 }

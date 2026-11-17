@@ -1,25 +1,12 @@
 import { WatchPartyRoom } from './room.mjs';
 import { CODE, newRoomId } from './codec.mjs';
+import { originAllowed, pickCorsOrigin } from './origins.mjs';
 
 export { WatchPartyRoom };
 
-const ORIGINS = new Set([
-  'https://relocpe.github.io',
-  'http://127.0.0.1:4173',
-  'http://localhost:4173',
-  'http://127.0.0.1:3000',
-  'http://localhost:3000',
-]);
-
-function originOk(origin) {
-  if (!origin) return false;
-  if (ORIGINS.has(origin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
-}
-
 function cors(request) {
   const origin = request.headers.get('Origin') || '';
-  const ok = originOk(origin);
+  const ok = originAllowed(origin);
   return {
     ...(ok ? { 'Access-Control-Allow-Origin': origin } : {}),
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -44,7 +31,7 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin');
     const isWs = request.headers.get('Upgrade') === 'websocket';
-    if ((isWs || (url.pathname === '/create' && request.method === 'POST')) && !originOk(origin || '')) return json({ error: 'forbidden' }, 403, request);
+    if ((isWs || (url.pathname === '/create' && request.method === 'POST')) && !originAllowed(origin || '')) return json({ error: 'forbidden' }, 403, request);
 
     if (url.pathname === '/create' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
