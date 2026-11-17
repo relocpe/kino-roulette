@@ -2,11 +2,11 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=33';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=13';
-import { bindEmbed, preferEmbeds, shouldSnapGuest } from './player-bridge.js?v=7';
+import * as V from './views.js?v=34';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
+import { bindEmbed, preferEmbeds, shouldSnapGuest } from './player-bridge.js?v=8';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { hostChange, guestNeedsSeek, localPosition, HOST_SEEK_PLAYING } from './sync-policy.js?v=2';
+import { hostChange, guestNeedsSeek, localPosition, HOST_SEEK_PLAYING } from './sync-policy.js?v=3';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
@@ -956,6 +956,7 @@ function watchRoom(id, panel, frame, titleEl) {
   let lastHostSent = 0;
   let lastGuestSeek = 0;
   let localTick = null;
+  let stallSince = 0;
   let readyTimer = 0;
   let attachBridge = () => {};
 
@@ -1088,15 +1089,6 @@ function watchRoom(id, panel, frame, titleEl) {
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
     },
     onSync(s, meta) { pendingSync = s; pendingSnap = !!meta?.snap; applyGuest(s, { snap: pendingSnap }); },
-    onTransport(kind) { hostTransport(kind === 'play'); },
-    onSnap() { synchronize(); },
-    onSeek(at) {
-      if (!ctl.isHost() || !Number.isFinite(at)) return;
-      const playing = bridge?.heard() && localTick ? !!localTick.playing : ctl.playing();
-      hostPush(at, playing, true);
-      if (bridge) bridge.command(playing, at);
-      else pendingCmd = { playing, at };
-    },
     onStatus(state) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
@@ -1135,44 +1127,6 @@ function watchRoom(id, panel, frame, titleEl) {
     ctl.pushSync(at, playing, snap);
   };
 
-  const hostTransport = (playing) => {
-    if (!ctl.isHost()) return;
-    const at = bridge?.heard() ? hostAt() : ctl.clock();
-    hostPush(at, playing, true);
-    if (!bridge) {
-      pendingCmd = { playing, at };
-      return;
-    }
-    bridge.command(playing, at);
-  };
-
-  const markSynced = () => {
-    const label = roomRoot.querySelector('[data-wp-sync] span');
-    if (!label) return;
-    const prev = label.dataset.prev || label.textContent;
-    label.dataset.prev = prev;
-    label.textContent = 'Готово';
-    setTimeout(() => { if (label.textContent === 'Готово') label.textContent = prev; }, 1200);
-  };
-
-  const synchronize = () => {
-    if (!bridge) {
-      V.toast('Плеер ещё не открыт', null, 1800);
-      return;
-    }
-    if (ctl.isHost() && bridge.heard() && localTick) {
-      hostPush(hostAt(), localTick.playing, true);
-      markSynced();
-      return;
-    }
-    const at = ctl.clock();
-    const playing = ctl.playing();
-    bridge.command(playing, at);
-    lastGuestSeek = Date.now();
-    if (ctl.isHost()) hostPush(at, playing, true);
-    markSynced();
-  };
-
   attachBridge = () => {
     const iframe = frame.querySelector('iframe');
     if (!iframe || iframe === bridgeIframe) return;
@@ -1190,21 +1144,37 @@ function watchRoom(id, panel, frame, titleEl) {
         if (pendingCmd && ctl.isHost()) {
           bridge.command(pendingCmd.playing, pendingCmd.at);
           pendingCmd = null;
-        } else if (!ctl.isHost() && pendingSync?.playing && !appliedOnce) {
+        } else if (!ctl.isHost() && pendingSync && !appliedOnce) {
           applyGuest(pendingSync, { snap: true });
         }
       },
       onTick(t) {
-        const playing = t.playing != null ? t.playing : (localTick?.playing ?? false);
-        localTick = { at: t.at, wall: Date.now(), playing };
-        window.__wpLocalAt = t.at;
+        const prev = localTick;
+        const at = Number.isFinite(t.at) ? t.at : (prev ? localPosition(prev) : ctl.clock());
+        let playing = t.playing != null ? t.playing : (prev?.playing ?? false);
+        let explicit = !!t.explicit;
+        // часть плееров шлёт только время: движение — это play, замер — пауза
+        if (t.playing == null && prev && Number.isFinite(t.at)) {
+          const delta = t.at - prev.at;
+          const wall = Math.max(0.001, (Date.now() - prev.wall) / 1000);
+          if (delta > 0.45 && delta < wall + 2) {
+            playing = true;
+            if (!prev.playing) explicit = true;
+            stallSince = 0;
+          } else if (prev.playing && Math.abs(delta) < 0.35) {
+            if (!stallSince) stallSince = Date.now();
+            if (Date.now() - stallSince > 2200) { playing = false; explicit = true; }
+          } else stallSince = 0;
+        } else stallSince = 0;
+        localTick = { at, wall: Date.now(), playing };
+        window.__wpLocalAt = at;
         window.__wpLocalPlaying = playing;
         if (t.duration) ctl.setDuration(t.duration);
         if (!ctl.isHost() || !playerReady) return;
         const change = hostChange({
-          at: t.at,
-          playing: t.playing,
-          explicit: t.explicit,
+          at,
+          playing,
+          explicit,
           expected: ctl.clock(),
           sentPlaying: ctl.playing(),
           sinceSentMs: Date.now() - lastHostSent,
@@ -1237,6 +1207,12 @@ function watchRoom(id, panel, frame, titleEl) {
   const beat = setInterval(() => {
     if (!ctl.isHost() || !ctl.playing()) return;
     if (bridge?.heard() && localTick) {
+      if (localTick.playing && Date.now() - localTick.wall > 2500) {
+        const at = localTick.at;
+        localTick = { at, wall: Date.now(), playing: false };
+        hostPush(at, false, true);
+        return;
+      }
       if (!localTick.playing) return;
       const at = hostAt();
       if (Math.abs(at - ctl.clock()) > HOST_SEEK_PLAYING) hostPush(at, true, true);
@@ -1250,7 +1226,7 @@ function watchRoom(id, panel, frame, titleEl) {
     const s = ctl.syncState();
     const expected = sharedNow(s);
     const local = localPosition(localTick);
-    if (!guestNeedsSeek({ expected, local, roomPlaying: !!s.playing, sinceSeekMs: Date.now() - lastGuestSeek })) return;
+    if (!guestNeedsSeek({ expected, local, roomPlaying: !!s.playing, localPlaying: !!localTick.playing, sinceSeekMs: Date.now() - lastGuestSeek })) return;
     bridge.command(!!s.playing, expected);
     lastGuestSeek = Date.now();
   }, 2000);

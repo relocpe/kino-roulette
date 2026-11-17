@@ -14,29 +14,29 @@ export function parsePlayerMessage(raw) {
   const d = typeof raw === 'string' ? tryJson(raw) : raw;
   if (!d || typeof d !== 'object') return null;
 
-  if (d.event === 'time' && num(d.time) != null) {
-    const playing = d.paused === true ? false : d.paused === false ? true : d.playing === false ? false : true;
-    return { at: d.time, duration: num(d.duration), playing };
-  }
-  if (d.event === 'play' || d.event === 'playing') return { playing: true, at: num(d.time), explicit: true };
-  if (d.event === 'pause' || d.event === 'paused') return { playing: false, at: num(d.time), explicit: true };
-  if ((d.event === 'seek' || d.event === 'seeked') && num(d.time) != null) return { at: d.time };
+  const playState = (o) => (o?.paused === true ? false : o?.paused === false ? true : o?.playing === false ? false : o?.playing === true ? true : undefined);
+  if (d.event === 'time' && num(d.time) != null) return { at: d.time, duration: num(d.duration), playing: playState(d) };
+  if (d.event === 'play' || d.event === 'playing' || d.type === 'play' || d.method === 'play' || d.api === 'play') return { playing: true, at: num(d.time) ?? num(d.seconds), explicit: true };
+  if (d.event === 'pause' || d.event === 'paused' || d.type === 'pause' || d.method === 'pause' || d.api === 'pause') return { playing: false, at: num(d.time) ?? num(d.seconds), explicit: true };
+  const seekAt = num(d.time) ?? num(d.seconds) ?? num(d.set);
+  if ((d.event === 'seek' || d.event === 'seeked' || d.type === 'seek' || d.method === 'seek' || d.api === 'seek') && seekAt != null) return { at: seekAt };
 
   const v = d.value;
   if (d.key === 'kodik_player_api' && v && typeof v === 'object') {
-    if (v.method === 'time_update' || v.method === 'time' || v.method === 'get_time') return { at: num(v.time) ?? num(v.seconds), duration: num(v.duration), playing: v.playing };
-    if (v.method === 'play') return { playing: true, explicit: true };
-    if (v.method === 'pause') return { playing: false, explicit: true };
+    if (v.method === 'time_update' || v.method === 'time' || v.method === 'get_time') return { at: num(v.time) ?? num(v.seconds), duration: num(v.duration), playing: playState(v) };
+    if (v.method === 'play') return { playing: true, at: num(v.time) ?? num(v.seconds), explicit: true };
+    if (v.method === 'pause') return { playing: false, at: num(v.time) ?? num(v.seconds), explicit: true };
+    if (v.method === 'seek' && (num(v.time) ?? num(v.seconds)) != null) return { at: num(v.time) ?? num(v.seconds) };
   }
 
   if (d.event === 'timeupdate' || d.type === 'timeupdate' || d.type === 'timeUpdate') {
     const seconds = num(d.value?.seconds) ?? num(d.data?.seconds) ?? num(d.data?.currentTime) ?? num(d.currentTime) ?? num(d.value) ?? num(d.time);
     const duration = num(d.value?.duration) ?? num(d.data?.duration) ?? num(d.duration);
-    if (seconds != null) return { at: seconds, duration, playing: d.paused === true ? false : true };
+    if (seconds != null) return { at: seconds, duration, playing: playState(d) };
   }
   if (d.method === 'getCurrentTime' && num(d.value) != null) return { at: d.value };
   if (d.event === 'infoDelivery' && d.info && num(d.info.currentTime) != null) {
-    return { at: d.info.currentTime, duration: num(d.info.duration), playing: d.info.playerState === 1 };
+    return { at: d.info.currentTime, duration: num(d.info.duration), playing: d.info.playerState == null ? undefined : d.info.playerState === 1 };
   }
   if (num(d.currentTime) != null && (d.event || d.type === 'timeupdate' || d.type === 'time')) {
     return { at: d.currentTime, duration: num(d.duration), playing: d.paused === false ? true : d.paused === true ? false : undefined };

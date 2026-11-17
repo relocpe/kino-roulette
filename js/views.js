@@ -624,7 +624,7 @@ function renderWatch(id) {
           <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
         </header>
         <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
-        <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
+        <section class="wp-sync" id="wpSync" hidden></section>
       </div>
       ${partyPanel(id)}
     </div>`;

@@ -14,18 +14,20 @@ export function hostChange({ at, playing, explicit = false, expected = 0, sentPl
   const now = playing == null ? sentPlaying : !!playing;
   const limit = now ? HOST_SEEK_PLAYING : HOST_SEEK_PAUSED;
   const jumped = Math.abs(at - expected) > limit;
+  // пауза и play ведущего уходят сразу, даже сразу после своей команды
+  if (explicit && now !== sentPlaying) return { at, playing: now };
   // тишина после своей команды глушит эхо плеера, но не новую перемотку
   if (sinceSentMs < HOST_QUIET_MS && !jumped) return null;
-  if (explicit && now !== sentPlaying) return { at, playing: now };
   if (!explicit && playing === true && !sentPlaying) return { at, playing: true };
   if (jumped) return { at, playing: now };
   return null;
 }
 
 // Гость сам себя подтягивает только при заметном уходе от комнаты и не чаще раза в 8 секунд.
-export function guestNeedsSeek({ expected, local, roomPlaying = false, sinceSeekMs = Infinity } = {}) {
+export function guestNeedsSeek({ expected, local, roomPlaying = false, localPlaying = null, sinceSeekMs = Infinity } = {}) {
   if (!Number.isFinite(expected) || !Number.isFinite(local)) return false;
   if (sinceSeekMs < GUEST_COOLDOWN_MS) return false;
+  if (localPlaying != null && !!localPlaying !== !!roomPlaying) return true;
   return Math.abs(expected - local) > GUEST_DRIFT;
 }
 

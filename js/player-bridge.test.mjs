@@ -4,7 +4,7 @@ import { parsePlayerMessage, preferEmbeds, shouldSnapGuest } from './player-brid
 
 describe('player bridge', () => {
   it('reads playerjs time', () => {
-    assert.deepEqual(parsePlayerMessage({ event: 'time', time: 12.5, duration: 3600 }), { at: 12.5, duration: 3600, playing: true });
+    assert.deepEqual(parsePlayerMessage({ event: 'time', time: 12.5, duration: 3600 }), { at: 12.5, duration: 3600, playing: undefined });
   });
   it('reads kodik time', () => {
     const tick = parsePlayerMessage({ key: 'kodik_player_api', value: { method: 'time_update', time: 8, duration: 90 } });
@@ -29,6 +29,9 @@ describe('player bridge', () => {
     ]);
     assert.match(ranked[0], /kodik|alloha/);
     assert.match(ranked[2], /lord/);
+  });
+  it('reads a pause that has no timestamp', () => {
+    assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_api', value: { method: 'pause' } }), { playing: false, at: null, explicit: true });
   });
   it('ignores chat noise', () => {
     assert.equal(parsePlayerMessage({ type: 'chat', text: 'привет' }), null);

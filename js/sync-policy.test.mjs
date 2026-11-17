@@ -25,6 +25,9 @@ describe('host change', () => {
     assert.equal(hostChange({ at: 11, playing: true, expected: 10, sentPlaying: true, sinceSentMs: 500 }), null);
     assert.deepEqual(hostChange({ at: 134, playing: true, expected: 10, sentPlaying: true, sinceSentMs: 500 }), { at: 134, playing: true });
   });
+  it('sends a pause even inside the quiet window', () => {
+    assert.deepEqual(hostChange({ at: 80, playing: false, explicit: true, expected: 80, sentPlaying: true, sinceSentMs: 400 }), { at: 80, playing: false });
+  });
   it('ignores a tick without time', () => {
     assert.equal(hostChange({ at: null, playing: true }), null);
   });
@@ -36,6 +39,9 @@ describe('guest drift', () => {
   });
   it('leaves a small drift alone', () => {
     assert.equal(guestNeedsSeek({ expected: 100, local: 98.5, roomPlaying: true }), false);
+  });
+  it('pauses a guest who is still playing after the host paused', () => {
+    assert.equal(guestNeedsSeek({ expected: 80, local: 80.2, roomPlaying: false, localPlaying: true }), true);
   });
   it('follows a paused seek and does not repeat within the cooldown', () => {
     assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: false }), true);

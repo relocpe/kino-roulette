@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=14';
-import { BASE } from './views.js?v=33';
+import { BASE } from './views.js?v=34';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
@@ -99,28 +99,11 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     paintClock();
   };
 
-  let syncBuilt = '';
   const paintSync = () => {
     const el = id('#wpSync');
     if (!el) return;
-    const key = host ? 'host' : 'guest';
-    if (syncBuilt === key && id('[data-wp-clock]')) { paintClock(); ensureTick(); return; }
-    syncBuilt = key;
-    const now = clockNow();
-    const icon = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.6 5.7L4 16M4 12a8 8 0 0 1 13.6-5.7L20 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 16v-4h4M20 8v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    el.innerHTML = `<div class="wp-remote">
-      <span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span>
-      <b data-wp-clock>${fmtClock(now)}</b>
-      <span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span>
-      <label class="wp-seek"><input type="range" data-wp-seek min="0" max="${Math.max(1, Math.ceil(dur || now))}" step="1" value="${Math.floor(now)}" ${host ? '' : 'disabled'} aria-label="Перемотка"></label>
-      ${host ? `<span class="wp-actions" role="group" aria-label="Воспроизведение"><button type="button" data-wp-play>Воспроизвести</button><button type="button" data-wp-pause>Пауза</button></span>` : ''}
-      <button type="button" class="wp-syncbtn" data-wp-sync title="${host ? 'Все подтянутся к твоей позиции' : 'Подтянуть мой плеер к ведущему'}">${icon}<span>${host ? 'Синхронизировать всех' : 'К ведущему'}</span></button>
-    </div>`;
-    ensureTick();
-    id('[data-wp-play]')?.addEventListener('click', () => onTransport?.('play'));
-    id('[data-wp-pause]')?.addEventListener('click', () => onTransport?.('pause'));
-    id('[data-wp-sync]')?.addEventListener('click', () => onSnap?.());
-    id('[data-wp-seek]')?.addEventListener('change', (e) => { if (host) onSeek?.(Number(e.target.value)); });
+    el.hidden = true;
+    el.replaceChildren();
   };
 
   const pushChat = (entry) => {
@@ -193,7 +176,6 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       if (m.type === 'host') {
         hostId = m.hostId || hostId;
         host = !!hostId && hostId === watchIdentity().uid;
-        syncBuilt = '';
         clearTimeout(claimT);
         paintSync();
         onToast?.(`Ведущий: ${m.nick}`, null, 2000);
