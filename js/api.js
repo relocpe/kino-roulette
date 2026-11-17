@@ -108,6 +108,10 @@ export function matchLocal(t, g, s, f) {
 export function matchFull(d, g, s, f) {
   if (!matchLocal(d, g, s, f)) return false;
   if (f.mode !== 'anime' && isAnime(d)) return false;
+  if (f.skipMassIN !== false) {
+    const cc = d.countries || [];
+    if (cc.length && cc.every((c) => c === 'IN')) return false;
+  }
   if (!s || !d.interests) return true;
   const ids = d.interests;
   if (s.noI && s.noI.some((x) => ids.includes(x))) return false;
@@ -117,11 +121,14 @@ export function matchFull(d, g, s, f) {
 
 // ---------- IMDb: случайные срезы по всему каталогу ----------
 // Токены страниц подписаны, поэтому «случайное смещение» = случайная сортировка × узкое окно лет × полоса голосов × глубина 0–3 страницы.
+// ASC по популярности тянет много регионального кино — меньше веса; рейтинг и голоса — чаще
 const SORTS = [
-  ['SORT_BY_POPULARITY', 'ASC', 3], ['SORT_BY_USER_RATING_COUNT', 'DESC', 2], ['SORT_BY_USER_RATING', 'DESC', 2],
-  ['SORT_BY_RELEASE_DATE', 'DESC', 2], ['SORT_BY_RELEASE_DATE', 'ASC', 1], ['SORT_BY_YEAR', 'ASC', 1], ['SORT_BY_YEAR', 'DESC', 1],
-  ['SORT_BY_POPULARITY', 'DESC', 1], ['SORT_BY_USER_RATING_COUNT', 'ASC', 1], ['SORT_BY_USER_RATING', 'ASC', 1],
+  ['SORT_BY_USER_RATING', 'DESC', 4], ['SORT_BY_POPULARITY', 'DESC', 3], ['SORT_BY_USER_RATING_COUNT', 'DESC', 3],
+  ['SORT_BY_RELEASE_DATE', 'DESC', 2], ['SORT_BY_YEAR', 'DESC', 2],
+  ['SORT_BY_POPULARITY', 'ASC', 1], ['SORT_BY_RELEASE_DATE', 'ASC', 1], ['SORT_BY_YEAR', 'ASC', 1],
+  ['SORT_BY_USER_RATING_COUNT', 'ASC', 1], ['SORT_BY_USER_RATING', 'ASC', 1],
 ];
+const LANG_EXCLUDE = 'hi,ta,te,ml,kn,bn,mr,pa,gu';
 const wpick = (a) => { let n = Math.random() * a.reduce((s, x) => s + x[2], 0); for (const x of a) if ((n -= x[2]) < 0) return x; return a[0]; };
 function yearWindow(from, to) {
   const lo = from || 1920, hi = to || new Date().getFullYear();
@@ -147,10 +154,13 @@ async function queryPair(g, s, f) {
   const [sortBy, sortOrder] = wpick(SORTS);
   const floor = f.mode === 'movie' ? f.vm : Math.min(f.vm, f.vs);
   const p = merge(merge({ types: TYPES[f.mode], minVoteCount: floor, minAggregateRating: f.minRating || undefined, sortBy, sortOrder }, gv), sv);
-  // полоса голосов: хиты, крепкие середнячки или малоизвестные
+  // без явной страны (дорамы KR и т.п.) — убираем массовый индийский прокат из случайной выдачи
+  const langQ = [].concat(p.countryCodes || [], p.primaryLanguageCodes || []).filter(Boolean).length;
+  if (!langQ) p.excludePrimaryLanguageCodes = p.excludePrimaryLanguageCodes || LANG_EXCLUDE;
+  // полоса голосов: реже «мало голосов» — там много регионального шума
   const band = Math.random();
-  if (!f.known && band < 0.3) p.maxVoteCount = pick([8000, 20000, 50000]);
-  else if (band > 0.85) p.minVoteCount = Math.max(p.minVoteCount, 80000);
+  if (!f.known && band < 0.18) p.maxVoteCount = pick([12000, 25000, 45000]);
+  else if (band > 0.82) p.minVoteCount = Math.max(p.minVoteCount, 80000);
   if (s?.kinds) p.types = ['TV_MINI_SERIES'];
   else if (s?.series) p.types = TYPES[f.mode].filter((x) => x !== 'MOVIE');
   if (s?.minV) p.minVoteCount = Math.max(p.minVoteCount, s.minV);
@@ -163,7 +173,7 @@ async function queryPair(g, s, f) {
   }
   let list = (d.titles || []).map(norm);
   // глубже в выдачу: 0–3 страницы
-  const depth = d.nextPageToken ? wpick([[0, 0, 3], [1, 0, 3], [2, 0, 2], [3, 0, 1]])[0] : 0;
+  const depth = d.nextPageToken ? wpick([[0, 0, 2], [1, 0, 3], [2, 0, 3], [3, 0, 2], [4, 0, 1]])[0] : 0;
   for (let k = 0, tok = d.nextPageToken; k < depth && tok; k++) {
     try { const dn = await getJSON(`${B}/titles?${qs(p)}&pageToken=${encodeURIComponent(tok)}`); list = list.concat((dn.titles || []).map(norm)); tok = dn.nextPageToken; } catch { break; }
   }
@@ -304,7 +314,7 @@ export async function getPool(P, f) {
   };
   await run(pairs.slice(0, 3));
   // мало вариантов — добираем остальные пары
-  for (let i = 3; pool.length < 12 && i < pairs.length; i += 3) await run(pairs.slice(i, i + 3));
+  for (let i = 3; pool.length < 20 && i < pairs.length; i += 3) await run(pairs.slice(i, i + 3));
   return { pool, offline };
 }
 

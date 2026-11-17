@@ -1,6 +1,6 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=11';
-import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease } from './fx.js?v=1';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=12';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=17';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
@@ -56,7 +56,7 @@ function motion(on, user) {
   fxBtn.title = on ? 'Эффекты: вкл' : 'Эффекты: выкл';
   setMotion(on);
 }
-motion(prefs.fx ?? true);
+motion(prefs.fx != null ? prefs.fx : !coarse);
 fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') !== 'true', true));
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 
@@ -323,7 +323,7 @@ function filters() {
   if (from && to && from > to) [from, to] = [to, from];
   // порог голосов отсекает пустые заглушки: фильмы от 1000, сериалы от 500; «Только известные» — от 25k/10k
   const known = !!prefs.known;
-  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 1000, vs: known ? 10000 : 500, known };
+  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 2500, vs: known ? 10000 : 1200, known, skipMassIN: true };
 }
 
 // ---------- барабан ----------
@@ -554,7 +554,7 @@ async function choose() {
   let reset = false;
   if (!fresh.length && pool.length) { fresh = pool.slice(); reset = true; }
   fresh.sort(() => Math.random() - 0.5);
-  for (const c of fresh.slice(0, 6)) {
+  for (const c of fresh.slice(0, 10)) {
     const g = byId[c.g], s = byId[c.s];
     if (c.t.src === 'al') { if (matchLocal(c.t, g, s, f)) return { win: c, pool, offline: res.offline, reset }; continue; }
     let d = null;
@@ -1087,6 +1087,7 @@ function resetResult() {
 }
 let titleReq = 0;
 V.initViews({
+  fxRoute: onRoute,
   // логотип и «Рулетка» ведут на чистый барабан; из других разделов результат сохраняется
   roulette(prev) {
     if (prev === 'title') { resetResult(); setSpin('Крутить'); }

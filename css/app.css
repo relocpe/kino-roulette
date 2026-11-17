@@ -30,12 +30,18 @@ h1, h2, h3, p { margin: 0; }
 /* эффекты: только в сцене барабана, к низу маска до сплошного фона */
 .fxwrap { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; transform-origin: 50% 45%; }
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-body.nogl .fxwrap { background: radial-gradient(120% 80% at 50% 40%, #15120f, var(--bg)); }
-body.nogl #gl { visibility: hidden; }
+body.nogl .fxwrap, body.fx-lite .fxwrap {
+  background: radial-gradient(ellipse 118% 88% at 50% 36%, color-mix(in srgb, var(--accent) 20%, #16130f), var(--bg));
+  transition: background 0.7s var(--ease);
+}
+body.nogl #gl, body.fx-lite #gl { visibility: hidden; }
+body.fx-still .fxwrap { background: radial-gradient(ellipse 110% 80% at 50% 38%, #16130f, var(--bg)); }
 /* результат: фон под колонкой текста гаснет до 10% */
 body.has-result .fxwrap { -webkit-mask-image: linear-gradient(90deg, #000 var(--pw), rgb(0 0 0 / .1) calc(var(--pw) + 18vw)); mask-image: linear-gradient(90deg, #000 var(--pw), rgb(0 0 0 / .1) calc(var(--pw) + 18vw)); }
 /* жанровые эффекты (js/fx.js): L1 — грейд и камера на ленте, L2 — WebGL-оверлей над барабаном, затемнение — чистый чёрный */
-#strip { transition: filter .6s; }
+#strip { transition: filter .6s; will-change: transform; }
+body.fx-lite #strip { transition: filter .45s; }
+body.fx-still #strip { transition: filter .25s; }
 #fxo { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; mix-blend-mode: overlay; }
 .nofxo #fxo { display: none; }
 .fxdim { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
@@ -45,7 +51,10 @@ body.has-result .fxwrap { -webkit-mask-image: linear-gradient(90deg, #000 var(--
 .fxdim .lb.b { bottom: 0; transform-origin: bottom; }
 .reel.rack .card:not(.c) { filter: blur(3px) brightness(.65); transition: filter .45s; }
 .poster img { filter: var(--pF, none); transition: filter .6s; }
-.vig { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 40%, rgb(0 0 0 / var(--vig, .3)) 100%); }
+.vig { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: radial-gradient(ellipse 64% 72% at 50% 48%, transparent 38%, color-mix(in srgb, var(--accent) 6%, #000) 58%, rgb(0 0 0 / var(--vig, .3)) 100%); }
+body.fx-lite .reel.rack .card:not(.c) { filter: brightness(.68) saturate(.85); }
+body.fx-lite .reel.rack .card:not(.c) { backdrop-filter: none; }
 .fxtop { position: fixed; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
 .fxl { position: absolute; pointer-events: none; will-change: transform, opacity; }
 .backdrop { position: fixed; inset: -120px; z-index: 1; pointer-events: none; opacity: 0; background: center / cover no-repeat; filter: blur(80px) saturate(1.1); transition: opacity .6s var(--ease); }

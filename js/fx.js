@@ -139,7 +139,10 @@ function makeGL(canvas, fs, names) {
 // ---------- сцена ----------
 const NOADAPT = /[?&]noadapt/.test(location.search);
 const LOW = matchMedia('(pointer: coarse)').matches || /iP(hone|ad|od)/.test(navigator.userAgent);
-const RS0 = LOW ? 0.35 : 0.5, RS2 = 0.5, SLOW_N = LOW ? 20 : 30;
+const LITE = LOW;
+const RS0 = LITE ? 0.28 : 0.5, RS2 = LITE ? 0.38 : 0.5, SLOW_N = LITE ? 12 : 30;
+const sceneOn = () => ['roulette', 'title'].includes(document.body.dataset.route || 'roulette');
+document.body.classList.toggle('fx-lite', LITE);
 const reel = $('#reel'), strip = $('#strip'), gate = $('#gate');
 const cv0 = $('#gl');
 const cv2 = document.createElement('canvas'); cv2.id = 'fxo'; cv2.setAttribute('aria-hidden', 'true');
@@ -211,7 +214,12 @@ function measure() {
   if (!reel) return;
   const R = reel.getBoundingClientRect(), g = gate?.getBoundingClientRect();
   if (!R.width) return;
-  const c = g && g.width ? { l: g.left + 6, t: g.top + 6, w: g.width - 12, h: g.height - 12 } : { l: R.left + R.width / 2 - 80, t: R.top + 40, w: 160, h: 240 };
+  const c = g && g.width ? { l: g.left + 6, t: g.top + 6, w: g.width - 12, h: g.height - 12 } : {
+    l: R.left + (R.width - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw')) || 160)) / 2,
+    t: R.top + 42,
+    w: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw')) || 160,
+    h: (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw')) || 160) * 1.5,
+  };
   geo = { R, c,
     r2: [(c.l - R.left) / R.width, 1 - (c.t - R.top + c.h) / R.height, (c.l - R.left + c.w) / R.width, 1 - (c.t - R.top) / R.height],
     r0: [c.l / innerWidth, 1 - (c.t + c.h) / innerHeight, (c.l + c.w) / innerWidth, 1 - c.t / innerHeight] };
@@ -222,10 +230,14 @@ function measure() {
   if (G2 && (cv2.width !== w2 || cv2.height !== h2)) { cv2.width = w2; cv2.height = h2; }
   kick();
 }
-addEventListener('resize', () => { geo = null; measure(); }, { passive: true });
-// барабан снова на экране (вернулись из каталога, закрыли результат) — перемерить и продолжить
-if (reel && 'ResizeObserver' in window) new ResizeObserver(() => { geo = null; measure(); }).observe(reel);
-addEventListener('scroll', () => { geo = null; }, { passive: true });
+let scrollGeo = 0;
+addEventListener('resize', () => { if (sceneOn()) { geo = null; measure(); } }, { passive: true });
+if (reel && 'ResizeObserver' in window) new ResizeObserver(() => { if (sceneOn()) { geo = null; measure(); } }).observe(reel);
+addEventListener('scroll', () => {
+  if (!sceneOn()) return;
+  clearTimeout(scrollGeo);
+  scrollGeo = setTimeout(() => { geo = null; measure(); }, 120);
+}, { passive: true });
 
 // ---------- «вау»: таймлайны по спеке; fn(t мс) → переопределения кадра ----------
 // ключи: expo, halo, haloCol, beam[x,a,w,s], beamCol, beam0 (L0 uBeamPos), clear, dens, vig, tintK, grainK, scale, ty, sx, sy, dimA, bars, origin
@@ -264,7 +276,8 @@ function cardFx(id, card, k) {
   const ms = k ? 0 : 1;
   if (id === 'rackFocus') {
     reel.classList.add('rack');
-    if (ms) card.animate([{ filter: 'blur(4px)', scale: '1.012' }, { filter: 'blur(0px)', scale: '1' }], { duration: 380, easing: 'cubic-bezier(.25,1,.5,1)' });
+    if (ms && !LITE) card.animate([{ filter: 'blur(4px)', scale: '1.012' }, { filter: 'blur(0px)', scale: '1' }], { duration: 380, easing: 'cubic-bezier(.25,1,.5,1)' });
+    else if (ms && LITE) card.animate([{ scale: '1.012' }, { scale: '1' }], { duration: 320, easing: 'cubic-bezier(.25,1,.5,1)' });
   } else if (id === 'squash' && ms) {
     const f = []; for (let i = 0; i <= 12; i++) { const t = i / 12 * 0.5, x = spring(t); f.push({ offset: 0.14 + 0.86 * (i / 12), scale: `${(1 + 0.04 * x).toFixed(4)} ${(1 - 0.06 * x).toFixed(4)}` }); }
     card.animate([{ scale: '1 1', offset: 0 }, ...f], { duration: 580, easing: 'linear' });
@@ -276,18 +289,25 @@ function cardFx(id, card, k) {
 }
 
 // ---------- кадр ----------
-let raf = 0, last = 0, slowN = 0, fastN = 0, thr = false, idleT = 0;
+let raf = 0, last = 0, slowN = 0, fastN = 0, thr = false, idleT = 0, lowFpsSent = false;
 function frame(now) {
   raf = 0;
+  if (!sceneOn()) return;
   const dt = Math.min(0.05, (now - last) / 1000 || 0.016); last = now;
   // сторож: N кадров подряд дольше 36 мс — гасим атмосферу L0 (грейд и зерно остаются); кадры после нашей паузы 30 к/с не считаем
   const wasThr = thr; thr = false;
   if (animate() && !NOADAPT && !wasThr) {
-    if (dt > 0.036) { fastN = 0; if (++slowN >= SLOW_N && !slow) slow = true; }
-    else { slowN = 0; if (dt < 0.024 && slow && ++fastN > 180) { slow = false; fastN = 0; } }
+    if (dt > 0.036) {
+      fastN = 0;
+      if (++slowN >= SLOW_N && !slow) {
+        slow = true;
+        if (!lowFpsSent) { lowFpsSent = true; dispatchEvent(new CustomEvent('kr:lowfps')); }
+      }
+    } else { slowN = 0; if (dt < 0.024 && slow && ++fastN > 180) { slow = false; fastN = 0; } }
   }
   if (!geo) measure();
   if (!geo) return; // барабана нет на экране (другой раздел): ждём kick() от resize/phase
+  const resultOpen = document.body.classList.contains('has-result');
   // время шейдеров: стоп-кадр документалки замораживает его
   const live = animate();
   let tt = (now - T0) / 1000 - tOff;
@@ -357,6 +377,9 @@ function frame(now) {
   // свечное мерцание: ±3% экспозиции, шум 8 Гц со сглаживанием
   if (candleA && live) expo += candleA * (0.6 * Math.sin(t * 8 * 6.283) * 0.5 + 0.5 * Math.sin(t * 5.3 * 6.283 + 1.7) * Math.sin(t * 2.1));
   if (slow) dens = 0;
+  else if (LITE) dens *= 0.55;
+  const grainMul = LITE ? 0.45 : 1;
+  const vigMul = LITE ? 0.85 : 1;
   // ---- камера L1 (дрожание кадра 24 шага в секунду) ----
   if (live && B.weave) { const q = Math.floor(t * 24) / 24, a = B.weave / 0.55; tx += a * (0.35 * Math.sin(q * 1.7) + 0.2 * Math.sin(q * 4.3)); ty += a * 0.25 * Math.sin(q * 2.3); }
   const tr = scale !== 1 || tx || ty ? `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) scale(${scale.toFixed(4)})` : '';
@@ -365,7 +388,8 @@ function frame(now) {
   setStyle(iris, 'opacity', dimA ? dimA.toFixed(3) : '0');
   if (bars !== lastBars) { lastBars = bars; const H = geo.R.height, bh = Math.max(0, (H - geo.R.width / 2.39) / 2); const s = (bh * bars / (H / 2)).toFixed(4); lbT.style.transform = `scaleY(${s})`; lbB.style.transform = `scaleY(${s})`; }
   // ---- L0 ----
-  if (G0) {
+  const drawL0 = G0 && !LITE && !resultOpen && dens > 0.002;
+  if (drawL0) {
     const { gl, U } = G0; gl.viewport(0, 0, cv0.width, cv0.height);
     gl.uniform2f(U.uRes, cv0.width, cv0.height); gl.uniform1f(U.uTime, t); gl.uniform1f(U.uMode, B.mode); gl.uniform1f(U.uDensity, Math.max(0, dens));
     gl.uniform1f(U.uSpeed, speed); gl.uniform1f(U.uScale, B.scale); gl.uniform1f(U.uAngle, B.angle); gl.uniform1f(U.uWidth, B.width);
@@ -373,13 +397,13 @@ function frame(now) {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
   // ---- L2 (только пока барабан на экране и жанр выбран) ----
-  const l2on = G2 && gid !== 'none' && ph !== 'result';
+  const l2on = G2 && gid !== 'none' && ph !== 'result' && !resultOpen;
   cv2.style.visibility = l2on ? '' : 'hidden';
   if (l2on) {
     const { gl, U } = G2; gl.viewport(0, 0, cv2.width, cv2.height);
     gl.uniform2f(U.uRes, cv2.width, cv2.height); gl.uniform1f(U.uTime, live ? t : 0.5);
-    gl.uniform3fv(U.uTint, B.tint); gl.uniform1f(U.uTintAmt, B.tintAmt * tintK); gl.uniform1f(U.uGrain, B.grain * grainK); gl.uniform1f(U.uGrainSize, Math.max(1, B.gs * RS2 * (LOW ? 1.5 : 1)));
-    gl.uniform1f(U.uVig, clamp(vig)); gl.uniform1f(U.uVigR, B.vigR); gl.uniform1f(U.uExpo, expo); gl.uniform4fv(U.uRect, geo.r2);
+    gl.uniform3fv(U.uTint, B.tint);     gl.uniform1f(U.uTintAmt, B.tintAmt * tintK); gl.uniform1f(U.uGrain, B.grain * grainK * grainMul); gl.uniform1f(U.uGrainSize, Math.max(1, B.gs * RS2 * (LITE ? 1.2 : 1)));
+    gl.uniform1f(U.uVig, clamp(vig * vigMul)); gl.uniform1f(U.uVigR, B.vigR); gl.uniform1f(U.uExpo, expo); gl.uniform4fv(U.uRect, geo.r2);
     gl.uniform3fv(U.uHaloCol, haloCol); gl.uniform1f(U.uHalo, Math.max(0, halo)); gl.uniform1f(U.uHaloR, Math.max(4, haloR * RS2));
     gl.uniform4f(U.uBeam, beam[0], beam[1], Math.max(0.01, beam[2]), beam[3]); gl.uniform3fv(U.uBeamCol, beamCol);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -388,7 +412,8 @@ function frame(now) {
   const busy = xf0 >= 0 || ph === 'spin' || ph === 'land' || (W && now - W.t0 < W.ms + 320) || Math.abs(uI - tgt) > 0.003 || now < freezeUntil;
   const moving = live && (gid !== 'none' || B.mode > 0);
   if (busy) raf = requestAnimationFrame(frame);
-  else if (moving) { raf = -1; idleT = setTimeout(() => { thr = true; raf = requestAnimationFrame(frame); }, 1000 / 30 - 3); }
+  else if (moving) { raf = -1; idleT = setTimeout(() => { thr = true; raf = requestAnimationFrame(frame); }, 1000 / (LITE ? 24 : 30) - 3); }
+  else if (LITE && l2on) { raf = -1; idleT = setTimeout(() => { thr = true; raf = requestAnimationFrame(frame); }, 1000 / 20); }
 }
 let lastBars = -1;
 const styleCache = new WeakMap();
@@ -403,6 +428,16 @@ reduce.addEventListener?.('change', () => { document.body.classList.toggle('fx-s
 // ---------- API для приложения ----------
 // жанр эффекта: id или список выбранных (первый — главный, второй даёт тинт 25% и атмосферу)
 let lastKey = 'none';
+export function onRoute() {
+  if (!sceneOn()) { stopLoop(); return; }
+  geo = null;
+  measure();
+  kick();
+}
+function stopLoop() {
+  if (raf === -1) clearTimeout(idleT);
+  raf = 0;
+}
 export function setGenre(ids) {
   const list = [].concat(ids || []).map(presetId).filter(Boolean);
   const uniq = [...new Set(list)].slice(0, 2);
@@ -418,7 +453,7 @@ export function setGenre(ids) {
   gradeStr = fstr(canon(np.filter)); applyStripFilter();
   // постер результата: грейд на 35%, чтобы афиша оставалась читаемой
   root.style.setProperty('--pF', np === NONE ? 'none' : fstr(canon(np.filter), 0.35));
-  root.style.setProperty('--vig', np === NONE ? '.3' : '0');
+  root.style.setProperty('--vig', np === NONE ? '.3' : String(Math.min(0.38, (phaseVal(np.vig, np.spin?.vig ?? np.vig, 0.35) || 0) * (LITE ? 0.9 : 1))));
   kick();
 }
 export function phase(p) {

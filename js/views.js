@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?v=11';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?v=12';
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
@@ -123,8 +123,9 @@ function tile(t) {
   return `<a class="tile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}<span class="tph">${esc(title)}</span><div class="tacts">${iconBtns(t.id, 'tb')}</div></div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
 }
 const skel = (n) => Array.from({ length: n }, () => '<div class="tile sk"><div class="tp"></div><b></b><small></small></div>').join('');
+const tileKey = (t) => `${(t.ru || ruCached(t.id) || t.t || '').trim().toLowerCase()}|${t.y || ''}`;
 function grid(el, f, { onTotal } = {}) {
-  let next = undefined, busy = false, done = false, seenIds = new Set(), my = {};
+  let next = undefined, busy = false, done = false, seenIds = new Set(), seenTitles = new Set(), my = {};
   el.innerHTML = skel(mobile() ? 12 : 16); el.dataset.state = 'load';
   const sent = document.createElement('div'); sent.className = 'sent';
   const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) more(); }, { rootMargin: '800px' });
@@ -135,7 +136,13 @@ function grid(el, f, { onTotal } = {}) {
       const r = await fetchPage(f, next);
       if (el.my !== my) return;
       el.querySelectorAll('.sk').forEach((x) => x.remove());
-      const add = r.list.filter((t) => t.i && !seenIds.has(t.id)); add.forEach((t) => seenIds.add(t.id));
+      const add = r.list.filter((t) => {
+        if (!t.i || seenIds.has(t.id)) return false;
+        const k = tileKey(t);
+        if (seenTitles.has(k)) return false;
+        seenIds.add(t.id); seenTitles.add(k);
+        return true;
+      });
       el.insertAdjacentHTML('beforeend', add.map(tile).join('')); localize(el);
       if (next === undefined) { onTotal?.(r.total ?? add.length); if (!add.length) el.innerHTML = '<p class="empty">Ничего не нашлось. Попробуй убрать фильтры или поискать иначе.</p>'; }
       next = r.next; done = !next; syncButtons(el);
@@ -277,6 +284,7 @@ function show(r, keepScroll) {
   cleanup?.(); cleanup = null;
   const prev = route; route = r;
   document.body.dataset.route = r.name;
+  H.fxRoute?.();
   $('#cpop')?.open && $('#cpop').close();
   document.querySelectorAll('[data-sec-link]').forEach((a) => { const on = a.dataset.secLink === secOf(r.name); a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
   moveDot();
