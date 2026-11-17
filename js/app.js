@@ -850,6 +850,7 @@ tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', ()
 // ---------- LordFilm: прямой плеер на сайте ----------
 const lm = $('#lmodal');
 const lordPageRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/\d+\/?$/;
+const lordSearchRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/search\b/;
 function closeLordModal() {
   if (!lm?.open) return;
   $('#lmFrame').innerHTML = '';
@@ -868,6 +869,10 @@ function mountLordFrame(embedUrl, pageUrl, title) {
   const frame = $('#lmFrame');
   if (!frame) return;
   const src = embedUrl || pageUrl;
+  if (src && !embedUrl && lordSearchRe.test(src)) {
+    mountLordSearchPanel(src, title, true);
+    return;
+  }
   frame.classList.toggle('lord-browse', Boolean(!embedUrl && pageUrl));
   if (!src) {
     frame.innerHTML = '<div class="tm-load" role="status">Не удалось собрать плеер.</div>';
@@ -875,6 +880,16 @@ function mountLordFrame(embedUrl, pageUrl, title) {
   }
   const note = embedUrl ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице LordFilm</p>';
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+}
+
+function mountLordSearchPanel(url, title, openTab = false) {
+  const frame = $('#lmFrame');
+  if (!frame) return;
+  frame.classList.remove('lord-browse');
+  frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Поиск LordFilm нельзя встроить в рулетку — открой выдачу на сайте LordFilm и выбери «${esc(title)}».</p><button class="btn primary" type="button" data-lord-tab>Искать на LordFilm</button></div>`;
+  const open = () => openLordInNewTab(url);
+  frame.querySelector('[data-lord-tab]')?.addEventListener('click', open, { once: true });
+  if (openTab) open();
 }
 
 function openLordInNewTab(url) {
@@ -921,26 +936,18 @@ async function openLordWatch(t, btn) {
     }
     const browseUrl = lordPageRe.test(data.url || '') ? data.url : searchUrl;
     $('#lmExt').href = browseUrl;
-    mountLordFrame(null, browseUrl, title);
-    resolverPromise.then(async (late) => {
-      if (!late.ok || !lm?.open) return;
-      const lateData = await late.json();
-      const latePage = lordPageRe.test(lateData.url || '') ? lateData.url : '';
-      if (lateData.matched === true && latePage) {
-        $('#lmExt').href = latePage;
-        mountLordFrame(lateData.embedUrl, latePage, title);
-      }
-    }).catch(() => {});
+    if (lordPageRe.test(browseUrl)) mountLordFrame(null, browseUrl, title);
+    else mountLordSearchPanel(searchUrl, title, true);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
-      V.toast('LordFilm в плеере — нажми на нужный постер в выдаче', null, 3200);
+      V.toast('Поиск LordFilm открыт в новой вкладке', null, 3200);
       return;
     }
-    V.toast('Выбери точное совпадение в выдаче LordFilm', null, 2800);
+    V.toast('Выбери фильм в выдаче LordFilm', null, 2800);
   } catch (error) {
     console.warn('LordFilm lookup failed.', error);
     $('#lmExt').href = searchUrl;
-    mountLordFrame(null, searchUrl, title);
-    V.toast('Открыли LordFilm в плеере', null, 2800);
+    mountLordSearchPanel(searchUrl, title, true);
+    V.toast('Поиск LordFilm в новой вкладке', null, 2800);
   } finally {
     clearTimeout(timer);
     btn.disabled = false; btn.textContent = originalLabel;
