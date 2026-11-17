@@ -2,8 +2,8 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=20';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=38';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=16';
+import * as V from './views.js?v=39';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=17';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
 import { decideWatchOpen } from './watch-open.js?v=1';
@@ -680,7 +680,7 @@ const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 &
 const runtime = (s) => { if (!s) return ''; const m = Math.round(s / 60), h = Math.floor(m / 60); return h ? `${h}\u00a0ч ${m % 60}\u00a0мин` : `${m}\u00a0мин`; };
 // чистим вики-мусор: транскрипции, произношения, скобки с иероглифами, сноски
 export function cleanWiki(s) {
-  let out = String(s || '').replace(/\u0301/g, '');
+  let out = String(s || '').replace(/\u0301/g, '').replace(/={2,}\s*[^=\n]+?\s*={2,}/g, ' ');
   const junk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0590-\u06ff\u0e00-\u0e7f]|(?:^|[\s(;,])(?:англ|яп|кор|кит|фр|нем|исп|итал|лат|порт|тур|хинди|произн|МФА|ромадзи|букв|транслит|рус)\.|произношение|[ˈˌəɪʊʃʒθðŋ]/i;
   for (let k = 0; k < 3; k++) out = out.replace(/\s*\(([^()]*)\)/g, (m, inner) => (junk.test(inner) ? '' : m));
   return out.replace(/\[[^\]]*\]/g, '').replace(/\s+([,.;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
@@ -963,7 +963,7 @@ async function startWatchTogether(t) {
   if (theater && !theater.closed) {
     theater.location.replace(url);
     theater.focus();
-    V.toast('Комната открыта в отдельном окне', null, 2400);
+    V.toast('Комната открыта в новой вкладке', null, 2400);
     return;
   }
   V.navigate(`watch/${id}`);
@@ -1404,8 +1404,6 @@ function watchRoom(id, panel, frame, titleEl) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
         frame.innerHTML = '<div class="tm-load wj-wait"><p>Такой комнаты нет или она уже закрылась.</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>';
-      } else if (state === 'down') {
-        V.toast('Связь с комнатой потеряна, переподключаю…', null, 2500);
       } else if (state === 'full') {
         setTitle('Комната полная');
         frame.innerHTML = '<div class="tm-load">В комнате больше нет мест.</div>';
@@ -1560,11 +1558,22 @@ function watchRoom(id, panel, frame, titleEl) {
   const findQ = roomEl?.querySelector('#wjQ');
   const findHits = roomEl?.querySelector('#wjHits');
   let findTimer = 0;
+  const closeFind = () => { if (find) find.hidden = true; };
   roomEl?.querySelector('#wjNext')?.addEventListener('click', () => {
     if (!ctl.isHost() || !find) return;
     find.hidden = !find.hidden;
     if (!find.hidden) findQ?.focus();
   });
+  const onDocClick = (e) => {
+    if (!find || find.hidden) return;
+    if (e.target.closest('#wjFind, #wjNext')) return;
+    closeFind();
+  };
+  const onDocKey = (e) => {
+    if (e.key === 'Escape' && find && !find.hidden) { closeFind(); roomEl?.querySelector('#wjNext')?.focus(); }
+  };
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onDocKey);
   roomEl?.querySelector('#wjRand')?.addEventListener('click', async () => {
     if (!ctl.isHost()) return;
     const list = await genreTape([], { mode: 'all' }).catch(() => []);
@@ -1667,6 +1676,8 @@ function watchRoom(id, panel, frame, titleEl) {
     clearTimeout(findTimer);
     document.removeEventListener('fullscreenchange', syncFull);
     document.removeEventListener('webkitfullscreenchange', syncFull);
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('keydown', onDocKey);
     bridge?.destroy();
     ctl.leave();
   };

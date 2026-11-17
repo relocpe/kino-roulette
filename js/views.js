@@ -608,12 +608,8 @@ export function watchPageUrl(roomId) {
   return new URL(`${BASE}watch/${roomId}`, location.origin).href;
 }
 export function openTheater() {
-  const w = Math.min(1280, Math.max(360, (screen.availWidth || 1280) - 48));
-  const h = Math.min(860, Math.max(480, (screen.availHeight || 800) - 48));
-  const left = Math.max(0, Math.round(((screen.availWidth || w) - w) / 2));
-  const top = Math.max(0, Math.round(((screen.availHeight || h) - h) / 2));
   try {
-    return window.open('', 'kr-theater', `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
+    return window.open('', 'kr-theater');
   } catch {
     return null;
   }
@@ -642,37 +638,38 @@ function renderWatch(id) {
     view.innerHTML = `<div class="wrap"><h1 class="vh">Комнаты нет</h1><p class="tsub">Ссылка битая. Попроси новую или открой фильм и нажми «Смотреть вместе».</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>`;
     return;
   }
+  const hasOpener = !!(window.opener && !window.opener.closed);
   view.innerHTML = `<div class="wroom">
       <div class="wroom-stage">
         <header class="wroom-bar">
-          <a class="rexit" href="catalog" data-nav id="wjExit">${IC.l}Каталог</a>
+          <a class="rexit" href="catalog" data-nav id="wjExit">${hasOpener ? `${IC.x}Закрыть` : `${IC.l}Каталог`}</a>
           <h1 id="wjTitle">Подключаемся…</h1>
           <button type="button" class="wroom-text" id="wjHide">Скрыть чат</button>
           <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
         </header>
         <div class="wroom-tools" id="wjTools" hidden>
-          <label class="wroom-pick">Сезон <select id="wjSeason"></select></label>
-          <label class="wroom-pick">Серия <select id="wjEpisode"></select></label>
+          <label class="wroom-pick"><span class="sr">Сезон</span><select id="wjSeason"></select></label>
+          <label class="wroom-pick"><span class="sr">Серия</span><select id="wjEpisode"></select></label>
           <button type="button" class="wroom-text" id="wjNext">Другой фильм</button>
           <button type="button" class="wroom-text" id="wjRand">Случайный</button>
           <button type="button" class="wroom-text" id="wjGo">Начинаем</button>
+          <div class="wroom-find" id="wjFind" hidden>
+            <input id="wjQ" type="search" placeholder="Название" autocomplete="off" enterkeyhint="search" aria-label="Название фильма">
+            <div class="wroom-hits" id="wjHits"></div>
+          </div>
         </div>
-        <div class="wroom-find" id="wjFind" hidden>
-          <input id="wjQ" type="search" placeholder="Название" autocomplete="off" enterkeyhint="search" aria-label="Название фильма">
-          <div class="wroom-hits" id="wjHits"></div>
+        <div class="wroom-screen">
+          <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
+          <div class="wroom-count" id="wjCount" hidden></div>
         </div>
-        <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div><div class="wroom-count" id="wjCount" hidden></div></div>
         <section class="wp-sync" id="wpSync" hidden></section>
       </div>
       <div class="wroom-hot" aria-hidden="true"></div>
       <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       ${partyPanel(id)}
     </div>`;
-  const exit = $('#wjExit');
-  if (exit && window.opener && !window.opener.closed) {
-    const label = [...exit.childNodes].find((node) => node.nodeType === 3);
-    if (label) label.textContent = 'Закрыть';
-    exit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.close(); });
+  if (hasOpener) {
+    $('#wjExit')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.close(); });
   }
   const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
   cleanup = () => { document.body.classList.remove('inroom'); stop?.(); };

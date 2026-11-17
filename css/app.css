@@ -426,9 +426,15 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .lm-prog { margin: 4px 0 0; font-size: 13px; line-height: 18px; color: var(--ink-3); font-weight: 400; }
 .lm-prog[hidden] { display: none; }
 .tm-head .lm-head-txt h3 { margin: 0; }
-.lm-pick { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; }
-.lm-pick button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); background: rgb(0 0 0 / .65); color: inherit; cursor: pointer; }
-.lm-pick button.active { border-color: var(--accent); background: rgb(0 0 0 / .85); }
+.lm-pick { position: absolute; top: 10px; right: 10px; left: auto; z-index: 2; display: flex; flex-wrap: nowrap; gap: 6px; max-width: calc(100% - 20px); overflow-x: auto; scrollbar-width: none; opacity: 0; pointer-events: none; transition: opacity .2s var(--ease); }
+.lm-pick::-webkit-scrollbar { display: none; }
+.tm-frame:hover .lm-pick, .tm-frame:has(.lm-pick :focus-visible) .lm-pick { opacity: 1; pointer-events: auto; }
+@media (hover: none) {
+  .tm-frame:has(video:paused) .lm-pick, .tm-frame:has(iframe) .lm-pick { opacity: 1; pointer-events: auto; }
+}
+.lm-pick button { flex: none; height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid rgb(241 235 226 / .18); background: rgb(12 11 10 / .78); color: var(--ink-2); font: 500 12px/1 'Golos', system-ui, sans-serif; white-space: nowrap; cursor: pointer; transition: color .15s, background-color .15s, border-color .15s; }
+.lm-pick button:hover { color: var(--ink); border-color: rgb(241 235 226 / .35); background: rgb(12 11 10 / .92); }
+.lm-pick button.active { background: var(--ink); color: #0C0B0A; border-color: transparent; font-weight: 600; }
 .tm-frame iframe, .tm-frame video.room-video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; object-fit: contain; }
 .tm-load { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: 15px; text-align: center; padding: 20px; }
 .tm-load a { color: var(--ink); }
@@ -441,12 +447,15 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .wp-side, .wp-rail { position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 0; font-size: 14px; }
 .wp-peek { display: none; }
 .wp-head { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.wp-rail .wp-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; padding-bottom: 10px; }
 .wp-count { font-size: 13px; color: var(--ink-3); }
 .wp-code { font-size: 12px; letter-spacing: .08em; color: var(--ink-3); }
-.wp-invite { margin-left: auto; height: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--ink-2); font-size: 13px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
-.wp-vol { display: flex; align-items: center; gap: 6px; flex: none; color: var(--ink-3); font-size: 12px; }
-.wp-vol input { width: 72px; height: 22px; margin: 0; accent-color: var(--ink-2); }
-.wp-invite:hover { color: var(--ink); }
+.wp-rail .wp-code { grid-row: 2; grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-invite { margin-left: auto; height: 30px; min-height: 0; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color .15s, border-color .15s, background-color .15s; }
+.wp-rail .wp-invite { grid-row: 1; grid-column: 2; margin-left: 0; height: 32px; }
+.wp-vol { grid-row: 2; grid-column: 2; justify-self: end; display: flex; align-items: center; gap: 8px; flex: none; color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+.wp-vol input { width: 68px; height: 20px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+.wp-invite:hover { color: var(--ink); border-color: rgb(241 235 226 / .28); }
 .wp-people { min-height: 0; }
 .wp-wait { margin: 0; font-size: 13px; color: var(--ink-3); }
 .wp-users { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 132px; overflow: auto; }
@@ -455,8 +464,8 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .wp-user.host .wp-ava { box-shadow: inset 0 0 0 1.5px var(--amber); }
 .wp-uname { font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-role { margin-left: auto; font-size: 12px; color: var(--ink-3); }
-input.wp-nick { width: 112px; height: 28px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: 0; color: var(--ink); font-size: 14px; }
-input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-bottom-color: var(--ink-2); }
+input.wp-nick { grid-row: 1; grid-column: 1; width: 100%; min-width: 0; height: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 0 10px; color: var(--ink); font: inherit; font-size: 13.5px; transition: border-color .15s; }
+input.wp-nick:focus-visible { outline: none; border-color: rgb(241 235 226 / .32); }
 .wp-sync { padding: 0; border: 0; background: none; border-radius: 0; }
 .wp-remote { display: flex; align-items: center; gap: 10px; min-height: 36px; flex-wrap: wrap; }
 .wp-seek { flex: 1 0 100%; display: flex; align-items: center; height: 28px; margin: 0; }
@@ -471,6 +480,7 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
 .wp-actions button:hover, .wp-syncbtn:hover { border-color: rgb(241 235 226 / .3); color: var(--ink); background: transparent; }
 .wp-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
 .wp-msgs { flex: 1; overflow: auto; min-height: 160px; display: flex; flex-direction: column; gap: 0; scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
+.wroom .wp-msgs { min-height: 0; }
 .wp-msgs:empty::before { content: 'Чат пуст.'; color: var(--ink-3); font-size: 13px; }
 .wp-msg { display: flex; gap: 8px; align-items: baseline; margin: 0; padding: 5px 0; background: none; border: 0; border-radius: 0; font-size: 14px; line-height: 1.35; }
 .wp-who { flex: none; max-width: 96px; font-size: 13px; font-weight: 600; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -486,48 +496,80 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
   .lm-main { order: 1; }
 }
 
-.wroom { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0 20px; max-width: 1440px; margin: 0 auto; padding: 12px 20px 20px; min-height: calc(100dvh - 64px); align-items: start; }
+.wroom { display: grid; grid-template-columns: minmax(0, 1fr) 336px; gap: 0; width: 100%; max-width: none; margin: 0; padding: 0; height: 100dvh; min-height: 100dvh; align-items: stretch; overflow: hidden; }
 .wroom.chat-hidden { grid-template-columns: 1fr; }
 .wroom.chat-hidden .wroom-side { display: none; }
-.wroom-stage { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.wroom-bar { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
-.wroom-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.wroom-stage { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 20px 16px; }
+.wroom-bar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: nowrap; }
+.wroom-bar .rexit { flex: none; font-size: 14px; padding: 4px 0; }
+.wroom-tools { position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wroom-tools[hidden], .wroom-find[hidden], .wroom-pick[hidden], .wroom-count[hidden] { display: none; }
 .wroom-pick { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
-.wroom-pick select { height: 28px; max-width: 140px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; padding: 0 8px; }
-.wroom-find { display: flex; flex-direction: column; gap: 4px; }
-.wroom-find input { height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 12px; font: inherit; }
-.wroom-hits { display: flex; flex-direction: column; max-height: 220px; overflow: auto; }
-.wroom-hits button { text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); padding: 8px 2px; font: inherit; cursor: pointer; }
-.wroom-hits button:hover { color: var(--amber); }
+.wroom-pick select { height: 32px; max-width: 160px; padding: 0 28px 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A948B' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") right 8px center no-repeat; color: var(--ink); font: inherit; font-size: 13px; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.wroom-pick select:hover { border-color: rgb(241 235 226 / .24); background-color: var(--surface-2); }
+.wroom-find { position: absolute; z-index: 8; top: calc(100% + 6px); left: 0; width: min(420px, 100%); padding: 8px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); box-shadow: 0 24px 60px -12px #000; display: flex; flex-direction: column; gap: 6px; }
+.wroom-find input { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 0 12px; font: inherit; font-size: 14px; outline: none; }
+.wroom-find input:focus { border-color: rgb(241 235 226 / .24); }
+.wroom-hits { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
+.wroom-hits:empty { display: none; }
+.wroom-hits button { text-align: left; background: none; border: 0; border-radius: 8px; color: var(--ink); padding: 9px 10px; font: inherit; font-size: 14px; cursor: pointer; }
+.wroom-hits button:hover, .wroom-hits button:focus-visible { background: rgb(241 235 226 / .06); color: var(--ink); }
+.wroom-screen { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wroom-count { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; font: 600 18vw/1 'Golos', system-ui, sans-serif; color: var(--ink); pointer-events: none; text-shadow: 0 10px 40px #000; }
 body.inroom .wroom { min-height: 100dvh; }
-.wroom-bar h1 { margin: 0; flex: 1 1 160px; min-width: 0; font: 600 20px/1.25 'Golos', system-ui, sans-serif; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wroom-text { flex: none; height: auto; padding: 0; border: 0; background: none; color: var(--ink-2); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
-.wroom-text:hover { color: var(--ink); }
-.wroom-frame { flex: none; width: 100%; aspect-ratio: 16 / 9; min-height: 0; height: auto; border-radius: 8px; box-shadow: none; }
-.wroom .wp-rail { height: calc(100dvh - 88px); padding: 2px 0 0 16px; border-left: 1px solid var(--line); background: transparent; }
-.wroom-frame .wj-wait { display: flex; flex-direction: column; place-items: center; text-align: center; gap: 14px; padding: 28px 20px; }
+.wroom-bar h1 { margin: 0; flex: 1 1 0; min-width: 0; font: 600 18px/1.25 'Golos', system-ui, sans-serif; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wroom-text { flex: none; height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color .15s, border-color .15s, background-color .15s; }
+.wroom-text:hover { color: var(--ink); border-color: rgb(241 235 226 / .24); background: var(--surface-2); }
+#wjGo { margin-left: auto; background: var(--ink); color: #0C0B0A; border-color: transparent; font-weight: 600; }
+#wjGo:hover { background: #fff; color: #0C0B0A; border-color: transparent; }
+.wroom-frame { flex: 1 1 auto; width: 100%; height: 100%; aspect-ratio: auto; min-height: 0; border-radius: 12px; border: 1px solid var(--line); box-shadow: none; }
+.wroom-frame.lord-browse { min-height: 0; }
+.wroom .wp-rail { height: 100%; min-height: 0; padding: 14px 16px; border-left: 1px solid var(--line); background: var(--surface); }
+.wroom-frame .wj-wait { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 14px; padding: 28px 20px; }
 .wroom-frame .wj-wait p { margin: 0; max-width: 42ch; color: var(--ink-2); }
 @media (max-width: 900px) {
-  .wroom { grid-template-columns: 1fr; padding: 12px 12px calc(28px + env(safe-area-inset-bottom)); }
-  .wroom-bar h1 { font-size: 18px; }
-  .wroom .wp-rail { height: auto; min-height: 420px; border-left: 0; border-top: 1px solid var(--line); padding: 12px 0 0; }
+  .wroom { display: flex; flex-direction: column; padding: 0; }
+  .wroom-stage { flex: none; padding: 10px 12px; gap: 8px; }
+  .wroom-screen { flex: none; }
+  .wroom-frame { flex: none; height: auto; aspect-ratio: 16 / 9; border-radius: 10px; }
+  .wroom.chat-hidden .wroom-stage { flex: 1 1 auto; }
+  .wroom.chat-hidden .wroom-screen { flex: 1 1 auto; }
+  .wroom.chat-hidden .wroom-frame { flex: 1 1 auto; height: 100%; aspect-ratio: auto; }
+  .wroom .wp-rail { flex: 1 1 auto; height: auto; min-height: 0; border-left: 0; border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
   .wp-syncbtn { margin-left: 0; }
 }
-.wroom:fullscreen, .wroom.is-full { background: #000; padding: 0; gap: 0; max-width: none; width: 100%; height: 100%; grid-template-columns: 1fr; }
-.wroom:fullscreen .wroom-bar, .wroom.is-full .wroom-bar { position: absolute; z-index: 4; left: 0; right: 48px; top: 0; padding: 12px 16px; background: linear-gradient(#000, transparent); opacity: 0; transition: opacity .2s; }
+@media (max-width: 900px) and (max-height: 620px) {
+  .wroom { height: auto; overflow: visible; }
+  .wroom .wp-rail { min-height: 320px; }
+}
+@media (max-width: 600px) {
+  .wroom-bar { flex-wrap: wrap; gap: 6px 8px; }
+  .wroom-bar h1 { flex: 1 1 calc(100% - 110px); font-size: 16px; }
+  .wroom-text, .wroom-pick select { height: 30px; font-size: 12.5px; }
+  #wjGo { margin-left: 0; }
+}
+.wroom:fullscreen, .wroom.is-full { display: grid; background: #000; padding: 0; gap: 0; max-width: none; width: 100%; height: 100%; grid-template-columns: 1fr; overflow: hidden; }
+.wroom:fullscreen .wroom-stage, .wroom.is-full .wroom-stage { height: 100%; padding: 0; gap: 0; }
+.wroom:fullscreen .wroom-screen, .wroom.is-full .wroom-screen { flex: 1 1 auto; height: 100%; min-height: 0; }
+.wroom:fullscreen .wroom-bar, .wroom.is-full .wroom-bar { position: absolute; z-index: 4; left: 0; right: 48px; top: 0; padding: 12px 16px; background: linear-gradient(rgb(0 0 0 / .85), transparent); opacity: 0; transition: opacity .2s; }
+.wroom:fullscreen .wroom-tools, .wroom.is-full .wroom-tools { position: absolute; z-index: 5; left: 0; right: 48px; top: 52px; padding: 0 16px 12px; opacity: 0; transition: opacity .2s; }
+.wroom:fullscreen .wroom-find, .wroom.is-full .wroom-find { left: 16px; max-width: calc(100% - 32px); }
 .wroom:fullscreen:hover .wroom-bar,
 .wroom:fullscreen:focus-within .wroom-bar,
 .wroom.is-full:hover .wroom-bar,
-.wroom.is-full:focus-within .wroom-bar { opacity: 1; }
-.wroom:fullscreen .wroom-frame, .wroom.is-full .wroom-frame { min-height: 0; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.wroom.is-full:focus-within .wroom-bar,
+.wroom:fullscreen:hover .wroom-tools,
+.wroom:fullscreen:focus-within .wroom-tools,
+.wroom.is-full:hover .wroom-tools,
+.wroom.is-full:focus-within .wroom-tools { opacity: 1; }
+.wroom:fullscreen .wroom-frame, .wroom.is-full .wroom-frame { min-height: 0; height: 100%; aspect-ratio: auto; border-radius: 0; border: 0; box-shadow: none; }
+.wroom:fullscreen .lm-pick, .wroom.is-full .lm-pick { top: 96px; right: 52px; }
 .wroom:fullscreen .wp-sync, .wroom.is-full .wp-sync { position: absolute; z-index: 4; left: 0; right: 48px; bottom: 0; padding: 20px 16px 12px; background: linear-gradient(transparent, #000); opacity: 0; }
 .wroom:fullscreen:hover .wp-sync, .wroom:fullscreen:focus-within .wp-sync,
 .wroom.is-full:hover .wp-sync, .wroom.is-full:focus-within .wp-sync { opacity: 1; }
 .wroom-hot { display: none; }
 .wroom:fullscreen .wroom-hot, .wroom.is-full .wroom-hot { display: block; position: absolute; z-index: 4; top: 0; right: 0; bottom: 84px; width: min(200px, 24vw); }
-.wroom:fullscreen .wroom-side, .wroom.is-full .wroom-side { display: flex; position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); height: 100%; max-height: none; min-height: 0; border-left: 1px solid rgb(241 235 226 / .16); padding: 16px; background: rgb(12 11 10 / .42); backdrop-filter: blur(28px) saturate(1.45); -webkit-backdrop-filter: blur(28px) saturate(1.45); box-shadow: inset 1px 0 0 rgb(255 255 255 / .05); transform: translateX(100%); transition: transform .22s ease; }
+.wroom:fullscreen .wroom-side, .wroom.is-full .wroom-side { display: flex; position: absolute; z-index: 6; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); height: 100%; max-height: none; min-height: 0; border-left: 1px solid rgb(241 235 226 / .16); padding: 16px; background: rgb(12 11 10 / .42); backdrop-filter: blur(28px) saturate(1.45); -webkit-backdrop-filter: blur(28px) saturate(1.45); box-shadow: inset 1px 0 0 rgb(255 255 255 / .05); transform: translateX(100%); transition: transform .22s ease; }
 @keyframes chat-nudge {
   0% { transform: translateX(100%); }
   32% { transform: translateX(calc(100% - 76px)); }
