@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=16';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=17';
 import * as S from './store.js?v=13';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
@@ -114,11 +114,22 @@ async function fetchPage(f, tok) {
   if (f.genres?.includes('anime')) f = { ...f, mode: 'anime', genres: f.genres.filter((x) => x !== 'anime') }; // старые ссылки и комнаты
   if (f.mode === 'anime') return alPage(tok || 1, f);
   await animeReady;
-  const gq = [...new Set((f.genres || []).flatMap((id) => [].concat(GENRES.find((g) => g.id === id)?.q?.genres || []).slice(0, 1)))];
+  const genreGroups = (f.genres || []).map((id) => [].concat(GENRES.find((g) => g.id === id)?.q?.genres || [])).filter((g) => g.length);
+  try {
+    return await browseSnap({
+      mode: f.mode || 'all',
+      genreGroups,
+      from: f.from,
+      to: f.to,
+      rating: f.rating || 0,
+      votes: f.votes || 0,
+      sort: f.sort || 'rating',
+    }, Number(tok) || 0, 48);
+  } catch { /* сеть к офлайн-файлу недоступна — живой API, без порога 15k */ }
+  const gq = [...new Set(genreGroups.flat())];
   const [sortBy, sortOrder] = SORTS[f.sort || 'rating'];
-  const p = { types: TYPES[f.mode || 'all'], genres: gq, startYear: f.from, endYear: f.to, minAggregateRating: f.rating || undefined, minVoteCount: f.votes || (f.sort === 'year' ? 2000 : 15000), sortBy, sortOrder, excludeCountryCodes: 'IN', excludePrimaryLanguageCodes: 'hi,ta,te,ml,kn,bn,mr,pa,gu' };
+  const p = { types: TYPES[f.mode || 'all'], genres: gq, startYear: f.from, endYear: f.to, minAggregateRating: f.rating || undefined, minVoteCount: f.votes || 200, sortBy, sortOrder, excludeCountryCodes: 'IN', excludePrimaryLanguageCodes: 'hi,ta,te,ml,kn,bn,mr,pa,gu' };
   const d = await getJSON(`${B}/titles?${qs(p)}${tok ? '&pageToken=' + encodeURIComponent(tok) : ''}`);
-  // аниме с IMDb в «Фильмах» и «Сериалах» не показываем — для него есть режим «Аниме»
   return { list: (d.titles || []).map(norm).filter((t) => !isAnime(t) && !isIndianTitle(t)), total: d.totalCount, next: d.nextPageToken || null };
 }
 export async function getTitle(id) {
@@ -567,7 +578,8 @@ export function clearWatchBoot() {
   try { sessionStorage.removeItem(WATCH_BOOT_KEY); } catch {}
 }
 function partyPanel(id) {
-  return `<aside class="wp-side wroom-side" id="wjPanel" aria-label="Чат комнаты">
+    return `<aside class="wp-side wroom-side" id="wjPanel" aria-label="Чат комнаты">
+      <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       <header class="wp-head">
         <div class="wp-id"><small>Комната</small><span class="wp-code" id="wpCode">${esc(id)}</span></div>
         <button type="button" class="btn line wp-invite" id="wpCopy">Пригласить</button>
@@ -594,6 +606,7 @@ function renderWatch(id) {
           <a class="rexit" href="catalog" data-nav>${IC.l}Каталог</a>
           <h1 id="wjTitle">Подключаемся…</h1>
           <span class="wroom-code" title="Код комнаты">${esc(id)}</span>
+          <button type="button" class="wroom-full" id="wjFull">Во весь экран</button>
         </header>
         <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
       </div>

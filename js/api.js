@@ -305,6 +305,46 @@ export async function searchSnapTitles(q, mode = 'all') {
     .slice(0, 150);
 }
 
+const browseCache = new Map();
+/** Страница офлайн-каталога. Без порога в 15k голосов — в сетке весь catalog.json. */
+export async function browseSnap(f, offset = 0, limit = 48) {
+  await animeReady;
+  const sn = await snap();
+  const mode = f.mode || 'all';
+  const groups = (f.genreGroups || []).filter((g) => g?.length);
+  const key = JSON.stringify({ mode, groups, from: f.from || 0, to: f.to || 0, rating: f.rating || 0, votes: f.votes || 0, sort: f.sort || 'rating' });
+  let rows = browseCache.get(key);
+  if (!rows) {
+    const kindOk = (t) => {
+      if (isAnime(t)) return false;
+      if (mode === 'movie') return KIND.movie.includes(t.k);
+      if (mode === 'series') return KIND.series.includes(t.k);
+      return KIND.all.includes(t.k);
+    };
+    rows = Object.values(sn.titles).filter((t) => {
+      if (!t.i || !kindOk(t) || isIndianTitle(t)) return false;
+      if (f.from && (!t.y || t.y < f.from)) return false;
+      if (f.to && (!t.y || t.y > f.to)) return false;
+      if (f.rating && (t.r || 0) < f.rating) return false;
+      if (f.votes && (t.v || 0) < f.votes) return false;
+      if (groups.length && !groups.every((g) => g.some((name) => (t.g || []).includes(name)))) return false;
+      return true;
+    });
+    const sort = f.sort || 'rating';
+    rows.sort((a, b) => {
+      if (sort === 'year') return (b.y || 0) - (a.y || 0) || (b.v || 0) - (a.v || 0);
+      if (sort === 'pop') return (b.v || 0) - (a.v || 0) || (b.r || 0) - (a.r || 0);
+      return (b.r || 0) - (a.r || 0) || (b.v || 0) - (a.v || 0);
+    });
+    if (browseCache.size > 12) browseCache.clear();
+    browseCache.set(key, rows);
+  }
+  const start = Math.max(0, offset | 0);
+  const list = rows.slice(start, start + limit);
+  const next = start + limit < rows.length ? start + limit : null;
+  return { list, total: rows.length, next };
+}
+
 // Банк: всё, что пришло по этой комбинации за сессию, копится — пул растёт с каждым спином.
 const banks = new Map();
 // Логика: ИЛИ между выбранными жанрами; поджанр сужает только свой жанр.

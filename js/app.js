@@ -1,9 +1,10 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=16';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=17';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=25';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=5';
+import * as V from './views.js?v=26';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=6';
+import { bindEmbed } from './player-bridge.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -57,7 +58,7 @@ function motion(on, user) {
   fxBtn.title = on ? 'Эффекты: вкл' : 'Эффекты: выкл';
   setMotion(on);
 }
-motion(prefs.fx != null ? prefs.fx : !coarse);
+motion(prefs.fx != null ? prefs.fx : false);
 fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') !== 'true', true));
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 
@@ -891,15 +892,26 @@ function watchRoom(id, panel, frame, titleEl) {
       : 'Ждём, пока ведущий включит фильм. Чат уже работает.'}</p>${isHost ? '<a class="btn primary" href="catalog" data-nav>Выбрать фильм</a>' : ''}</div>`;
   };
 
+  let bridge = null;
+  let bridgeIframe = null;
+  let guestAnchor = null;
+  let guestPlaying = null;
+  let pendingSync = null;
+  let lastHostSent = 0;
+  let lastHostAt = 0;
+  let lastHostPlaying = false;
+  let attachBridge = () => {};
+
   const showEmbed = (film) => {
     const title = film.title || 'Фильм';
     const src = film.embedUrl || film.pageUrl || '';
     if (!src) return false;
     setTitle(title);
-    if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) return true;
+    if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) { attachBridge(); return true; }
     gen += 1;
     frame.dataset.watchSrc = src;
     mountLordFrame(film.embedUrl, film.pageUrl, title, film.embedUrl ? [film.embedUrl] : [], frame);
+    attachBridge();
     return true;
   };
 
@@ -934,6 +946,7 @@ function watchRoom(id, panel, frame, titleEl) {
       const page = data.matched ? (pageUrl || lead) : lead;
       frame.dataset.watchSrc = embed || page || '';
       mountLordFrame(embed, page, title, embedUrls, frame);
+      attachBridge();
       if (ctl.isHost()) ctl.publishFilm({ id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' });
     } catch {
       if (my !== gen) return;
@@ -965,6 +978,8 @@ function watchRoom(id, panel, frame, titleEl) {
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
     },
+    onSync(s) { pendingSync = s; applyGuest(s); },
+    onControl({ at, playing }) { bridge?.command(!!playing, at); },
     onStatus(state) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
@@ -977,8 +992,60 @@ function watchRoom(id, panel, frame, titleEl) {
   });
   const nick = panel.querySelector('#wpNick');
   if (nick && !nick.value) nick.value = watchIdentity().nick;
+
+  const applyGuest = (s) => {
+    if (!s || ctl.isHost() || !bridge) return;
+    const now = s.playing && s.wall ? s.at + (Date.now() - s.wall) / 1000 : (s.at || 0);
+    const playing = !!s.playing;
+    if (bridge.heard()) {
+      const local = window.__wpLocalAt ?? now;
+      if (Math.abs(now - local) > 2.2 || guestPlaying !== playing) bridge.command(playing, now);
+    } else {
+      const predicted = guestAnchor?.playing ? guestAnchor.at + (Date.now() - guestAnchor.wall) / 1000 : guestAnchor?.at;
+      const need = !guestAnchor || guestAnchor.playing !== playing || (predicted != null && Math.abs(now - predicted) > 12);
+      if (need) {
+        bridge.command(playing, now);
+        guestAnchor = { at: now, wall: Date.now(), playing };
+      }
+    }
+    guestPlaying = playing;
+  };
+
+  attachBridge = () => {
+    const iframe = frame.querySelector('iframe');
+    if (!iframe || iframe === bridgeIframe) return;
+    bridge?.destroy();
+    bridgeIframe = iframe;
+    bridge = bindEmbed(iframe, {
+      onTick(t) {
+        window.__wpLocalAt = t.at;
+        if (t.duration) ctl.setDuration(t.duration);
+        if (!ctl.isHost()) return;
+        const jumped = Math.abs(t.at - lastHostAt) > 2.2;
+        const toggled = !!t.playing !== lastHostPlaying;
+        if (toggled || jumped || Date.now() - lastHostSent > 2000) {
+          ctl.pushSync(t.at, !!t.playing);
+          lastHostSent = Date.now();
+        }
+        lastHostAt = t.at;
+        lastHostPlaying = !!t.playing;
+      },
+    });
+    if (pendingSync) applyGuest(pendingSync);
+  };
+
+  const roomEl = frame.closest('.wroom');
+  document.querySelector('#wjFull')?.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else roomEl?.requestFullscreen?.().catch(() => {});
+  });
+  panel.querySelector('#wjPeek')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    roomEl?.classList.toggle('chat-open');
+  });
+
   ctl.join(id);
-  return () => ctl.leave();
+  return () => { bridge?.destroy(); ctl.leave(); };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------

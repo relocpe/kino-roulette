@@ -1,0 +1,117 @@
+// Мост к чужому iframe-плееру. Разные балансеры говорят на разных postMessage.
+// Шлём несколько известных команд и читаем любой ответ, где есть время.
+
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+export function parsePlayerMessage(raw) {
+  const d = typeof raw === 'string' ? tryJson(raw) : raw;
+  if (!d || typeof d !== 'object') return null;
+
+  if (d.event === 'time' && num(d.time) != null) return { at: d.time, duration: num(d.duration), playing: true };
+  if (d.event === 'play' || d.event === 'playing') return { playing: true, at: num(d.time) };
+  if (d.event === 'pause' || d.event === 'paused') return { playing: false, at: num(d.time) };
+  if ((d.event === 'seek' || d.event === 'seeked') && num(d.time) != null) return { at: d.time };
+
+  const v = d.value;
+  if (d.key === 'kodik_player_api' && v && typeof v === 'object') {
+    if (v.method === 'time_update' || v.method === 'time' || v.method === 'get_time') return { at: num(v.time) ?? num(v.seconds), duration: num(v.duration), playing: v.playing };
+    if (v.method === 'play') return { playing: true };
+    if (v.method === 'pause') return { playing: false };
+  }
+
+  if (d.event === 'timeupdate') {
+    const seconds = num(d.value?.seconds) ?? num(d.data?.seconds) ?? num(d.value);
+    const duration = num(d.value?.duration) ?? num(d.data?.duration);
+    if (seconds != null) return { at: seconds, duration, playing: true };
+  }
+  if (d.method === 'getCurrentTime' && num(d.value) != null) return { at: d.value };
+  if (d.event === 'infoDelivery' && d.info && num(d.info.currentTime) != null) {
+    return { at: d.info.currentTime, duration: num(d.info.duration), playing: d.info.playerState === 1 };
+  }
+  if (num(d.currentTime) != null && (d.event || d.type === 'timeupdate' || d.type === 'time')) {
+    return { at: d.currentTime, duration: num(d.duration), playing: d.paused === false ? true : d.paused === true ? false : undefined };
+  }
+  return null;
+}
+
+function tryJson(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+
+export function bindEmbed(iframe, { onTick } = {}) {
+  let at = 0;
+  let duration = 0;
+  let playing = false;
+  let heard = false;
+  let ignoreUntil = 0;
+
+  const post = (data) => {
+    const win = iframe.contentWindow;
+    if (!win) return;
+    try { win.postMessage(data, '*'); } catch {}
+    try { win.postMessage(JSON.stringify(data), '*'); } catch {}
+  };
+
+  const subscribe = () => {
+    post({ context: 'player.js', version: '0.0.11', method: 'addEventListener', value: 'timeupdate' });
+    post({ context: 'player.js', version: '0.0.11', method: 'addEventListener', value: 'play' });
+    post({ context: 'player.js', version: '0.0.11', method: 'addEventListener', value: 'pause' });
+    post({ event: 'listening', id: 'kr' });
+    post({ key: 'kodik_player_api', value: { method: 'get_time' } });
+  };
+
+  const command = (nextPlaying, seconds) => {
+    const t = Math.max(0, Number(seconds) || 0);
+    ignoreUntil = Date.now() + 900;
+    at = t;
+    playing = !!nextPlaying;
+    post({ api: 'seek', set: t });
+    post({ key: 'kodik_player_api', value: { method: 'seek', seconds: t } });
+    post({ context: 'player.js', version: '0.0.11', method: 'setCurrentTime', value: t });
+    post({ event: 'command', func: 'seekTo', args: [t, true] });
+    post({ type: 'seek', time: t });
+    if (nextPlaying) {
+      post({ api: 'play' });
+      post({ key: 'kodik_player_api', value: { method: 'play' } });
+      post({ context: 'player.js', version: '0.0.11', method: 'play' });
+      post({ event: 'command', func: 'playVideo', args: [] });
+      post({ type: 'play' });
+    } else {
+      post({ api: 'pause' });
+      post({ key: 'kodik_player_api', value: { method: 'pause' } });
+      post({ context: 'player.js', version: '0.0.11', method: 'pause' });
+      post({ event: 'command', func: 'pauseVideo', args: [] });
+      post({ type: 'pause' });
+    }
+  };
+
+  const onMessage = (ev) => {
+    if (ev.source !== iframe.contentWindow) return;
+    const tick = parsePlayerMessage(ev.data);
+    if (!tick) return;
+    heard = true;
+    if (tick.duration) duration = tick.duration;
+    if (tick.at != null) at = tick.at;
+    if (tick.playing != null) playing = tick.playing;
+    if (Date.now() < ignoreUntil) return;
+    onTick?.({ at, duration, playing, heard: true });
+  };
+
+  window.addEventListener('message', onMessage);
+  iframe.addEventListener('load', subscribe);
+  subscribe();
+  const poll = setInterval(() => {
+    post({ key: 'kodik_player_api', value: { method: 'get_time' } });
+    post({ context: 'player.js', version: '0.0.11', method: 'getCurrentTime' });
+    post({ api: 'getCurrentTime' });
+  }, 1000);
+
+  return {
+    command,
+    heard: () => heard,
+    destroy() {
+      clearInterval(poll);
+      window.removeEventListener('message', onMessage);
+    },
+  };
+}
