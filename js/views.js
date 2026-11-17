@@ -570,28 +570,53 @@ export function pendingWatchRoom() {
 export function setPendingWatchRoom(id) {
   try { if (id) sessionStorage.setItem(WATCH_JOIN_KEY, id); else sessionStorage.removeItem(WATCH_JOIN_KEY); } catch {}
 }
+const keep = (store, key, value) => {
+  try {
+    if (value) store.setItem(key, value);
+    else store.removeItem(key);
+  } catch {}
+};
 export function markWatchCreated(id) {
-  try { if (id) sessionStorage.setItem(WATCH_CREATED_KEY, id); else sessionStorage.removeItem(WATCH_CREATED_KEY); } catch {}
+  const value = id || '';
+  keep(sessionStorage, WATCH_CREATED_KEY, value);
+  keep(localStorage, WATCH_CREATED_KEY, value);
 }
 export function watchCreatedHere(id) {
-  try { return !!id && sessionStorage.getItem(WATCH_CREATED_KEY) === id; } catch { return false; }
+  try {
+    return !!id && (sessionStorage.getItem(WATCH_CREATED_KEY) === id || localStorage.getItem(WATCH_CREATED_KEY) === id);
+  } catch { return false; }
 }
 export function setWatchBoot(t, roomId) {
-  try {
-    if (!t) sessionStorage.removeItem(WATCH_BOOT_KEY);
-    else sessionStorage.setItem(WATCH_BOOT_KEY, JSON.stringify({ roomId: roomId || '', id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }));
-  } catch {}
+  const raw = t ? JSON.stringify({ roomId: roomId || '', id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }) : '';
+  keep(sessionStorage, WATCH_BOOT_KEY, raw);
+  keep(localStorage, WATCH_BOOT_KEY, raw);
 }
 export function peekWatchBoot(roomId) {
   try {
-    const boot = JSON.parse(sessionStorage.getItem(WATCH_BOOT_KEY) || 'null');
+    const raw = sessionStorage.getItem(WATCH_BOOT_KEY) || localStorage.getItem(WATCH_BOOT_KEY);
+    const boot = JSON.parse(raw || 'null');
     if (!boot?.id) return null;
     if (roomId && boot.roomId !== roomId) return null;
     return boot;
   } catch { return null; }
 }
 export function clearWatchBoot() {
-  try { sessionStorage.removeItem(WATCH_BOOT_KEY); } catch {}
+  keep(sessionStorage, WATCH_BOOT_KEY, '');
+  keep(localStorage, WATCH_BOOT_KEY, '');
+}
+export function watchPageUrl(roomId) {
+  return new URL(`${BASE}watch/${roomId}`, location.origin).href;
+}
+export function openTheater() {
+  const w = Math.min(1280, Math.max(360, (screen.availWidth || 1280) - 48));
+  const h = Math.min(860, Math.max(480, (screen.availHeight || 800) - 48));
+  const left = Math.max(0, Math.round(((screen.availWidth || w) - w) / 2));
+  const top = Math.max(0, Math.round(((screen.availHeight || h) - h) / 2));
+  try {
+    return window.open('', 'kr-theater', `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
+  } catch {
+    return null;
+  }
 }
 function partyPanel(id) {
     return `<aside class="wp-rail wroom-side" id="wjPanel" aria-label="Чат комнаты">
@@ -620,7 +645,7 @@ function renderWatch(id) {
   view.innerHTML = `<div class="wroom">
       <div class="wroom-stage">
         <header class="wroom-bar">
-          <a class="rexit" href="catalog" data-nav>${IC.l}Каталог</a>
+          <a class="rexit" href="catalog" data-nav id="wjExit">${IC.l}Каталог</a>
           <h1 id="wjTitle">Подключаемся…</h1>
           <button type="button" class="wroom-text" id="wjHide">Скрыть чат</button>
           <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
@@ -643,6 +668,12 @@ function renderWatch(id) {
       <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       ${partyPanel(id)}
     </div>`;
+  const exit = $('#wjExit');
+  if (exit && window.opener && !window.opener.closed) {
+    const label = [...exit.childNodes].find((node) => node.nodeType === 3);
+    if (label) label.textContent = 'Закрыть';
+    exit.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.close(); });
+  }
   const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
   cleanup = () => { document.body.classList.remove('inroom'); stop?.(); };
 }

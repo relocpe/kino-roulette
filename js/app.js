@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=20';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=37';
+import * as V from './views.js?v=38';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=16';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
@@ -938,6 +938,11 @@ tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', ()
 
 // ---------- Смотреть вместе (комната + чат) ----------
 async function startWatchTogether(t) {
+  const theater = V.openTheater();
+  try {
+    theater?.document?.write('<!doctype html><title>Комната</title><body style="margin:0;background:#0c0b0a;color:#f1ebe2;font:16px/1.4 system-ui,sans-serif;display:grid;place-items:center;height:100vh">Открываю комнату…</body>');
+    theater?.document?.close();
+  } catch {}
   let id = V.pendingWatchRoom();
   if (!id) {
     try {
@@ -946,6 +951,7 @@ async function startWatchTogether(t) {
       V.setPendingWatchRoom(id);
       V.markWatchCreated(id);
     } catch {
+      theater?.close();
       V.toast('Комнату создать не вышло — сервер смотрянки ещё не развернут', null, 4000);
       return;
     }
@@ -953,6 +959,13 @@ async function startWatchTogether(t) {
     V.markWatchCreated('');
   }
   V.setWatchBoot(t, id);
+  const url = V.watchPageUrl(id);
+  if (theater && !theater.closed) {
+    theater.location.replace(url);
+    theater.focus();
+    V.toast('Комната открыта в отдельном окне', null, 2400);
+    return;
+  }
   V.navigate(`watch/${id}`);
 }
 

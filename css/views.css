@@ -183,8 +183,8 @@ body:not([data-route="roulette"]) .toast { bottom: calc(24px + env(safe-area-ins
 .codes[hidden] { display: none; }
 .tfoot { margin-top: 28px; font-size: 13px; color: var(--ink-3); }
 .room { min-height: 100dvh; }
-body.inroom .top, body.inroom .tabbar { display: none; }
-body.inroom .view { min-height: 100dvh; }
+body.inroom .top, body.inroom .tabbar, body.inroom .main, body.inroom .pult, body.inroom .fxwrap, body.inroom .backdrop, body.inroom .fxtop { display: none; }
+body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
 .rtop { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 24px; }
 .rexit { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); text-decoration: none; font-size: 15px; padding: 8px 0; }
 .rexit svg { width: 18px; height: 18px; }
