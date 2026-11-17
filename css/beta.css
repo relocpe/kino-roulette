@@ -63,12 +63,17 @@ html[data-beta="1"] .tp {
   transition: transform .32s var(--ease), box-shadow .32s var(--ease);
 }
 
-@media (pointer: fine) {
+html[data-beta="1"] .tabbar {
+  background: rgb(12 11 10 / .72);
+  border-top: 1px solid rgb(241 235 226 / .1);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+@media (pointer: coarse) {
   html[data-beta="1"] .tabbar {
-    background: rgb(12 11 10 / .72);
-    border-top: 1px solid rgb(241 235 226 / .1);
-    -webkit-backdrop-filter: blur(22px) saturate(1.12);
-    backdrop-filter: blur(22px) saturate(1.12);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgb(12 11 10 / .97);
   }
 }
 html[data-beta="1"] .tabbar a { transition: color .28s var(--ease); }
