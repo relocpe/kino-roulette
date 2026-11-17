@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=32';
+import * as V from './views.js?v=33';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=11';
 import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
@@ -516,7 +516,7 @@ async function spinRun(mine) {
   display = ch.pool.map((x) => x.t);
   // победитель декодируется до торможения; если не успел за 6 с (барабан всё это время крутится) — кадр покажет заглушку с названием, без подмены на ходу
   await Promise.all([warm(reelSrc(win.t), 6000), preload(win.t, 600, 1500), new Promise((r) => setTimeout(r, Math.max(0, 650 - (performance.now() - t0))))]);
-  const resetNote = ch.reset ? 'Всё подходящее уже выпадало, начинаю круг заново. ' : '';
+  const resetNote = ch.reset ? 'Подходящее кончилось, начинаю сначала. ' : '';
 
   cruising = false;
   let T;
@@ -816,7 +816,7 @@ async function openShare(t) {
   const d = $('#shareDlg'), title = t.ru || ruCached(t.id) || t.t, url = new URL('?t=' + t.id, document.baseURI).href;
   const meta = [kindOf(t), t.y].filter(Boolean).join(' · ');
   d.innerHTML = `<div class="af shr"><div class="ahead"><h2>Поделиться</h2><button class="px" type="button" data-close aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
-    <div class="shprev load" aria-label="Картинка для сторис"><span>Рисую картинку…</span></div>
+    <div class="shprev load" aria-label="Картинка для сторис"><span>Готовлю картинку…</span></div>
     <button class="abtn" type="button" data-s="link"><span>Отправить ссылку</span></button>
     <button class="btn ghost wide" type="button" data-s="img" disabled>${navigator.canShare ? 'Поделиться картинкой' : 'Скачать картинку'}</button>
     <p class="anote">Картинка 1080×1920 для сторис: постер, название, рейтинг.</p></div>`;
@@ -919,7 +919,7 @@ function watchRoom(id, panel, frame, titleEl) {
   const openOwnRoom = async (film) => {
     if (!alive || openingOwn) return;
     openingOwn = true;
-    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю отдельную комнату для этого фильма…</div>';
+    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю комнату…</div>';
     try {
       const d = await createWatchRoom();
       if (!alive) return;
@@ -1040,7 +1040,7 @@ function watchRoom(id, panel, frame, titleEl) {
     } catch {
       if (my !== gen) return;
       mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
-      V.toast('Плеер сам не нашёлся — открой поиск кнопкой', null, 2800);
+      V.toast('Плеер не нашёлся. Открой поиск кнопкой', null, 2800);
     } finally {
       clearTimeout(timer);
     }
@@ -1439,7 +1439,7 @@ async function openLordWatch(t, btn) {
     if (data.matched === true && (embedUrls.length || pageUrl)) {
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
       startWatchProgress(t);
-      if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
+      if (embedUrls.length > 1) V.toast('Плееров несколько. Переключай вкладки сверху', null, 2600);
       return;
     }
     const leadUrl = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
@@ -1454,12 +1454,12 @@ async function openLordWatch(t, btn) {
       V.toast('Источники не ответили — открой поиск кнопкой внизу', null, 3000);
       return;
     }
-    V.toast('Точного плеера нет — поиск LordFilm в модалке', null, 2400);
+    V.toast('Плеер не нашёлся. Ниже поиск LordFilm', null, 2400);
   } catch (error) {
     console.warn('Watch resolver failed.', error);
     stopWatchProgress(false);
     mountLordSearchPanel(searchUrl, title);
-    V.toast('Не вышло найти автоматически — кнопка поиска в модалке', null, 2800);
+    V.toast('Плеер не нашёлся. Кнопка поиска ниже', null, 2800);
   } finally {
     clearTimeout(timer);
     btn.disabled = false; btn.textContent = originalLabel;

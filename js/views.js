@@ -181,12 +181,12 @@ function grid(el, f, { onTotal } = {}) {
 
 // ---------- подборки ----------
 export const MOODS = [
-  { slug: 'plakat', title: 'Поплакать', sub: 'Драмы, после которых нужен чай', f: { mode: 'movie', genres: ['drama', 'romance'], rating: 7.4, votes: 40000, sort: 'rating' }, spin: { sel: ['drama', 'romance'], rating: 7.5 } },
+  { slug: 'plakat', title: 'Поплакать', sub: 'Драмы и мелодрамы', f: { mode: 'movie', genres: ['drama', 'romance'], rating: 7.4, votes: 40000, sort: 'rating' }, spin: { sel: ['drama', 'romance'], rating: 7.5 } },
   { slug: 'mozg', title: 'Выключить мозг', sub: 'Ничего не надо понимать', f: { mode: 'movie', genres: ['comedy', 'action'], votes: 100000, sort: 'pop' }, spin: { sel: ['comedy', 'action'], rating: 6 } },
   { slug: 'strashno', title: 'На ночь страшное', sub: 'Ужасы и триллеры с хорошим рейтингом', f: { mode: 'movie', genres: ['horror'], rating: 6.8, votes: 40000, sort: 'rating' }, spin: { sel: ['horror', 'thriller'], rating: 7 } },
-  { slug: 'roditeli', title: 'С родителями', sub: 'Без неловких сцен', f: { mode: 'movie', genres: ['family'], rating: 7, votes: 30000, sort: 'rating' }, spin: { sel: ['family', 'animation'], rating: 7 } },
-  { slug: 'golova', title: 'Сломать голову', sub: 'Сюжет, который не отпускает до титров', f: { mode: 'movie', genres: ['mystery', 'thriller'], rating: 7.4, votes: 80000, sort: 'rating' }, spin: { sel: ['mystery', 'thriller'], rating: 7.5 } },
-  { slug: 'kult', title: 'Культовое', sub: 'То, что все цитируют', f: { mode: 'movie', votes: 900000, sort: 'rating' }, spin: { sel: [], rating: 8, known: true } },
+  { slug: 'roditeli', title: 'С родителями', sub: 'Семейное и мультфильмы', f: { mode: 'movie', genres: ['family'], rating: 7, votes: 30000, sort: 'rating' }, spin: { sel: ['family', 'animation'], rating: 7 } },
+  { slug: 'golova', title: 'Сломать голову', sub: 'Триллеры и детективы', f: { mode: 'movie', genres: ['mystery', 'thriller'], rating: 7.4, votes: 80000, sort: 'rating' }, spin: { sel: ['mystery', 'thriller'], rating: 7.5 } },
+  { slug: 'kult', title: 'Культовое', sub: 'Фильмы с большим числом оценок', f: { mode: 'movie', votes: 900000, sort: 'rating' }, spin: { sel: [], rating: 8, known: true } },
 ];
 const collage = new Map();
 async function moodPosters(m) {
@@ -348,7 +348,7 @@ function renderAbout() {
   document.title = 'О сайте · Кинорулетка';
   const li = (n, u, t) => `<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   view.innerHTML = `<div class="wrap about"><h1 class="vh">О сайте</h1>
-    <p class="lead">Кинорулетка подбирает случайный фильм, сериал или аниме по жанру, годам и рейтингу. Есть совместный просмотр с чатом и таймером синхронизации у ведущего.</p>
+    <p class="lead">Кинорулетка выбирает случайный фильм, сериал или аниме. Фильтры: жанр, годы, рейтинг. В комнате есть чат, фильм включает ведущий.</p>
     <h2>Откуда данные</h2><ul class="src">
       ${li('IMDb', 'https://www.imdb.com/', 'названия, рейтинги, постеры; через открытый API api.tiffara.com')}
       ${li('AniList', 'https://anilist.co/', 'аниме: рейтинги, постеры, описания')}
@@ -403,7 +403,7 @@ function renderMe(tab, keep) {
   const data = tab === 'recent' ? rec : L[tab].map((x) => ({ id: x.titleId, t: x.title, ru: x.title, y: x.year, r: x.rating, poster: x.poster }));
   const nOf = (k) => (k === 'recent' ? rec.length : L[k].length);
   const plaque = !S.loggedIn() && tab !== 'recent' ? `<div class="plaque"><p><b>Без входа списки не сохраняются.</b> Они живут, пока открыта эта вкладка.</p><button class="tlink" type="button" data-auth="login">Войти</button></div>` : '';
-  const emptyTxt = { favorites: 'Здесь будут фильмы, которые ты отметишь ♡.', watched: 'Попадёт сюда после досмотра (~90%) в плеере.', recent: 'Здесь появятся фильмы, которые выпадали в рулетке.' }[tab];
+  const emptyTxt = { favorites: 'Пока пусто. Жми сердечко на карточке.', watched: 'Сюда попадает фильм, если досмотреть его в плеере.', recent: 'Сюда попадают фильмы из рулетки.' }[tab];
   view.innerHTML = `<div class="wrap me"><h1 class="vh">Мои списки</h1>
     <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<a role="tab" href="me/${k}" data-nav aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}">${l}<span>${nOf(k) || ''}</span></a>`).join('')}</div>
     ${plaque}
