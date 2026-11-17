@@ -24,6 +24,16 @@ function loadHls() {
   return hlsPromise;
 }
 
+const MEDIA_PROXY = 'https://kino-roulette-kp-mirror-resolver.samevamp.workers.dev/media?u=';
+
+export function playbackStreamUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    if (u.hostname === 'gogo.iframe.cloud' && u.pathname.startsWith('/proxy/')) return MEDIA_PROXY + encodeURIComponent(u.href);
+  } catch { /* оставляем как есть */ }
+  return url;
+}
+
 export function isSitePlayer(url) {
   return /iframe\.cloud|kodik|alloha|youtube|youtu\.be/i.test(String(url || ''));
 }
@@ -80,11 +90,11 @@ export async function mountRoomVideo(frame, streamUrl, title) {
   const Hls = await loadHls();
   if (Hls?.isSupported?.()) {
     const hls = new Hls({ maxBufferLength: 24, capLevelToPlayerSize: true });
-    hls.loadSource(streamUrl);
+    hls.loadSource(playbackStreamUrl(streamUrl));
     hls.attachMedia(video);
     video.__hls = hls;
   } else {
-    video.src = streamUrl;
+    video.src = playbackStreamUrl(streamUrl);
   }
   return video;
 }

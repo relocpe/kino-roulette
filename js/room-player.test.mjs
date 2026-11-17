@@ -1,12 +1,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseStream, kpFromFilm } from './room-player.js';
+import { chooseStream, kpFromFilm, playbackStreamUrl } from './room-player.js';
 
 describe('kpFromFilm', () => {
   it('reads a kinopoisk id from the film or from the iframe.cloud address', () => {
     assert.equal(kpFromFilm({ kinopoiskId: '326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://iframe.cloud/iframe/326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://kodik.info/video/1' }), '');
+  });
+});
+
+describe('playbackStreamUrl', () => {
+  it('sends a catalog proxy file through our worker', () => {
+    const next = playbackStreamUrl('https://gogo.iframe.cloud/proxy/file.m3u8');
+    assert.match(next, /^https:\/\/kino-roulette-kp-mirror-resolver\.samevamp\.workers\.dev\/media\?u=/);
+    assert.equal(playbackStreamUrl('https://cdn.example/film.m3u8'), 'https://cdn.example/film.m3u8');
   });
 });
 

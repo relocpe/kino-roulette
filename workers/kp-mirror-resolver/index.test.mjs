@@ -6,7 +6,7 @@ import {
   mirrorPageUrls,
   resolveKinopoiskMirror,
 } from './index.mjs';
-import { collectStreams, pickPlayable, pickSeasonUrl, resolveVeoStream } from './stream.mjs';
+import { allowedMediaUrl, collectStreams, pickPlayable, pickSeasonUrl, resolveVeoStream, rewritePlaylist } from './stream.mjs';
 
 describe('embedFromKinopoiskId', () => {
   it('builds iframe.cloud URL', () => {
@@ -75,6 +75,30 @@ describe('resolveKinopoiskMirror', () => {
     assert.equal(r.matched, true);
     assert.equal(r.embedUrl, 'https://iframe.cloud/iframe/42');
     assert.equal(r.mirror, 'direct');
+  });
+});
+
+describe('media proxy', () => {
+  it('keeps only the catalog proxy and rewrites a playlist through it', () => {
+    assert.equal(allowedMediaUrl('https://gogo.iframe.cloud/proxy/a.m3u8'), 'https://gogo.iframe.cloud/proxy/a.m3u8');
+    assert.equal(allowedMediaUrl('https://evil.example/proxy/a.m3u8'), '');
+    const text = rewritePlaylist('#EXTM3U\nhttps://gogo.iframe.cloud/proxy/a.m4s\n', 'https://gogo.iframe.cloud/proxy/a.m3u8', 'https://worker.test/media?u=');
+    assert.match(text, /media\?u=https%3A%2F%2Fgogo\.iframe\.cloud%2Fproxy%2Fa\.m4s/);
+  });
+});
+
+describe('call sources', () => {
+  it('follows a call to the playable file', async () => {
+    const fetcher = async (url) => {
+      const u = String(url);
+      if (u.includes('/lite/events')) return { ok: true, json: async () => [{ balanser: 'phantom', show: true }] };
+      if (u.includes('/lite/phantom?')) return { ok: true, json: async () => ({ data: [{ method: 'call', url: 'https://gogo.iframe.cloud/lite/phantom/video?id=1', translate: 'Оригинальный' }] }) };
+      if (u.includes('/phantom/video')) return { ok: true, json: async () => ({ data: [{ method: 'play', url: 'https://gogo.iframe.cloud/proxy/file.m3u8', translate: 'Оригинальный' }] }) };
+      return { ok: false, status: 404 };
+    };
+    const stream = await resolveVeoStream({ kinopoiskId: '7918531', type: 'movie' }, fetcher);
+    assert.equal(stream.url, 'https://gogo.iframe.cloud/proxy/file.m3u8');
+    assert.equal(stream.source, 'phantom');
   });
 });
 

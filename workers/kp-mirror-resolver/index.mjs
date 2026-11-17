@@ -1,4 +1,4 @@
-import { resolveVeoStream } from './stream.mjs';
+import { allowedMediaUrl, resolveVeoStream, rewritePlaylist } from './stream.mjs';
 
 const ALLOWED_ORIGINS = new Set([
   'https://relocpe.github.io',
@@ -15,7 +15,7 @@ function corsHeaders(request) {
   const origin = request.headers.get('Origin');
   return {
     ...(ALLOWED_ORIGINS.has(origin) ? { 'Access-Control-Allow-Origin': origin } : {}),
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
@@ -136,10 +136,38 @@ export async function resolveKinopoiskMirror(body, fetcher = fetch) {
   return { matched: false, reason: 'mirror-unavailable', source: 'kp-mirror', url: lastUrl };
 }
 
+async function proxyMedia(request, url) {
+  const target = allowedMediaUrl(url.searchParams.get('u') || '');
+  if (!target) return json({ error: 'not-found' }, 404, request);
+  const headers = { Accept: '*/*', Referer: 'https://iframe.cloud/' };
+  const range = request.headers.get('Range');
+  if (range) headers.Range = range;
+  let response;
+  try {
+    response = await fetch(target, { headers, redirect: 'follow' });
+  } catch {
+    return json({ error: 'upstream' }, 502, request);
+  }
+  if (!response.ok && response.status !== 206) return json({ error: 'upstream' }, 502, request);
+  const type = response.headers.get('content-type') || '';
+  const playlist = /mpegurl|m3u8/i.test(type) || target.includes('.m3u8');
+  const body = playlist
+    ? rewritePlaylist(await response.text(), target, `${url.origin}/media?u=`)
+    : response.body;
+  const out = new Headers(corsHeaders(request));
+  out.set('Content-Type', playlist ? 'application/vnd.apple.mpegurl' : (type || 'application/octet-stream'));
+  out.set('Cache-Control', 'no-store');
+  out.set('X-Content-Type-Options', 'nosniff');
+  if (response.headers.get('content-range')) out.set('Content-Range', response.headers.get('content-range'));
+  if (response.headers.get('accept-ranges')) out.set('Accept-Ranges', response.headers.get('accept-ranges'));
+  return new Response(body, { status: response.status, headers: out });
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return noContent(request);
     const url = new URL(request.url);
+    if (request.method === 'GET' && url.pathname === '/media') return proxyMedia(request, url);
     if (request.method !== 'POST' || url.pathname !== '/resolve') {
       return json({ error: 'not-found' }, 404, request);
     }
