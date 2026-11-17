@@ -21,7 +21,7 @@ export class WatchPartyRoom {
         room = {
           id: body.id,
           created: Date.now(),
-          hostId: null,
+          hostId: body.hostId ? String(body.hostId).slice(0, 64) : null,
           film: null,
           sync: { at: 0, playing: false, wall: 0 },
           chat: [],

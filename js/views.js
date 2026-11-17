@@ -547,22 +547,60 @@ export function fillSim(sec, list, onPick) {
 
 // ---------- Смотреть вместе ----------
 const WATCH_JOIN_KEY = 'kr:watchJoin';
+const WATCH_BOOT_KEY = 'kr:watchBoot';
 export function pendingWatchRoom() {
   try { return sessionStorage.getItem(WATCH_JOIN_KEY) || ''; } catch { return ''; }
 }
 export function setPendingWatchRoom(id) {
   try { if (id) sessionStorage.setItem(WATCH_JOIN_KEY, id); else sessionStorage.removeItem(WATCH_JOIN_KEY); } catch {}
 }
+export function setWatchBoot(t) {
+  try {
+    if (!t) sessionStorage.removeItem(WATCH_BOOT_KEY);
+    else sessionStorage.setItem(WATCH_BOOT_KEY, JSON.stringify({ id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }));
+  } catch {}
+}
+export function peekWatchBoot() {
+  try { return JSON.parse(sessionStorage.getItem(WATCH_BOOT_KEY) || 'null'); } catch { return null; }
+}
+export function clearWatchBoot() {
+  try { sessionStorage.removeItem(WATCH_BOOT_KEY); } catch {}
+}
+function partyPanel(id) {
+  return `<aside class="wp-side wroom-side" id="wjPanel" aria-label="Чат комнаты">
+      <header class="wp-head">
+        <div class="wp-id"><small>Комната</small><span class="wp-code" id="wpCode">${esc(id)}</span></div>
+        <button type="button" class="btn line wp-invite" id="wpCopy">Пригласить</button>
+      </header>
+      <div class="wp-people" id="wpMembers" aria-live="polite"><span class="wp-chip">Подключаемся…</span></div>
+      <label class="wp-nick">Твоё имя<input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Гость"></label>
+      <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
+      <section class="wp-chat" id="wpChat" aria-label="Чат">
+        <div class="wp-msgs" id="wpMsgs"></div>
+        <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать в чат…"><button type="submit" class="wp-send" aria-label="Отправить">↵</button></form>
+      </section>
+    </aside>`;
+}
 function renderWatch(id) {
-  document.title = `Комната ${id} · Кинорулетка`;
+  document.title = `Смотрим вместе · ${id}`;
   setPendingWatchRoom(id);
-  view.innerHTML = `<div class="wrap watch-join"><h1>Смотрим вместе</h1><p class="tsub">Код комнаты: <b class="rcode">${esc(id)}</b></p>
-    <p class="lead">Выбери фильм в <a href="catalog" data-nav>каталоге</a> или на рулетке и нажми <b>«Смотреть вместе»</b> — откроется плеер с чатом. Гости и вошедшие по аккаунту в одной комнате.</p>
-    <div class="wbtns"><button class="btn primary" type="button" id="wjCopy">Скопировать ссылку</button></div></div>`;
-  $('#wjCopy').onclick = async (e) => {
-    const link = `${location.origin}${BASE}watch/${id}`;
-    try { await navigator.clipboard.writeText(link); e.target.textContent = 'Скопировано'; setTimeout(() => (e.target.textContent = 'Скопировать ссылку'), 1500); } catch { prompt('Ссылка', link); }
-  };
+  if (!id || id.length < 6) {
+    view.innerHTML = `<div class="wrap"><h1 class="vh">Комнаты нет</h1><p class="tsub">Ссылка битая. Попроси новую или открой фильм и нажми «Смотреть вместе».</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>`;
+    return;
+  }
+  view.innerHTML = `<div class="wroom">
+      <div class="wroom-stage">
+        <header class="wroom-bar">
+          <a class="rexit" href="catalog" data-nav>${IC.l}Каталог</a>
+          <h1 id="wjTitle">Подключаемся…</h1>
+          <span class="wroom-code" title="Код комнаты">${esc(id)}</span>
+        </header>
+        <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
+      </div>
+      ${partyPanel(id)}
+    </div>`;
+  const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
+  cleanup = () => stop?.();
 }
 $('#cpop').addEventListener('click', (e) => { if (e.target.id === 'cpop') e.target.close(); });
 

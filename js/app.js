@@ -2,8 +2,8 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=16';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=24';
-import { createWatchRoom, openWatchPanel, watchIdentity, watchRoomLink } from './watch-party.js?v=3';
+import * as V from './views.js?v=25';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=5';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -780,7 +780,9 @@ result.addEventListener('click', (e) => {
   }
   if (act === 'party') {
     if (!curT) return;
-    openLordWatch(curT, b, { party: true });
+    const btn = b;
+    btn.disabled = true;
+    startWatchTogether(curT).finally(() => { if (btn.isConnected) btn.disabled = false; });
   }
 });
 // ---------- Поделиться ----------
@@ -855,35 +857,128 @@ tm.addEventListener('cancel', (e) => { e.preventDefault(); closeTrailer(); });
 tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { if ((prefs.tlang || 'ru') === b.dataset.lang && $('#tmFrame').dataset.vid) return; prefs.tlang = b.dataset.lang; savePrefs(); openTrailer(curT, tBack); }));
 
 // ---------- Смотреть вместе (комната + чат) ----------
-let partyCtl = null;
-function ensurePartyPanel() {
-  const panel = $('#wpPanel');
-  if (!panel) return null;
-  if (!partyCtl) {
-    partyCtl = openWatchPanel(panel, { onToast: (t, _a, ms) => V.toast(t, null, ms) });
-    const nick = $('#wpNick');
-    if (nick) nick.value = watchIdentity().nick;
-  }
-  return partyCtl;
-}
-async function enterWatchParty(t) {
-  const ctl = ensurePartyPanel();
-  if (!ctl) return null;
-  let id = V.pendingWatchRoom() || ctl.roomId?.();
+async function startWatchTogether(t) {
+  let id = V.pendingWatchRoom();
   if (!id) {
     try {
       const d = await createWatchRoom();
       id = d.roomId;
       V.setPendingWatchRoom(id);
-      V.navigate(`watch/${id}`, { replace: true });
     } catch {
       V.toast('Комнату создать не вышло — сервер смотрянки ещё не развернут', null, 4000);
-      return null;
+      return;
     }
   }
+  V.setWatchBoot(t);
+  V.navigate(`watch/${id}`);
+}
+
+function watchRoom(id, panel, frame, titleEl) {
+  if (!panel || !frame) return () => {};
+  const boot = V.peekWatchBoot();
+  let booted = false;
+  let gen = 0;
+
+  const setTitle = (text) => { if (titleEl) titleEl.textContent = text || 'Смотрим вместе'; };
+
+  const showWait = (isHost) => {
+    gen += 1;
+    delete frame.dataset.watchSrc;
+    frame.classList.remove('lord-browse');
+    setTitle('Смотрим вместе');
+    frame.innerHTML = `<div class="tm-load wj-wait"><p>${isHost
+      ? 'Выбери фильм в каталоге и нажми «Смотреть вместе» — он включится здесь у всех.'
+      : 'Ждём, пока ведущий включит фильм. Чат уже работает.'}</p>${isHost ? '<a class="btn primary" href="catalog" data-nav>Выбрать фильм</a>' : ''}</div>`;
+  };
+
+  const showEmbed = (film) => {
+    const title = film.title || 'Фильм';
+    const src = film.embedUrl || film.pageUrl || '';
+    if (!src) return false;
+    setTitle(title);
+    if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) return true;
+    gen += 1;
+    frame.dataset.watchSrc = src;
+    mountLordFrame(film.embedUrl, film.pageUrl, title, film.embedUrl ? [film.embedUrl] : [], frame);
+    return true;
+  };
+
+  async function playTitle(t, ctl) {
+    const my = ++gen;
+    const title = t.ru || ruCached(t.id) || t.t || 'Фильм';
+    setTitle(title);
+    frame.classList.remove('lord-browse');
+    frame.innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
+    const payload = {
+      title,
+      originalTitle: t.t || t.o || '',
+      imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
+      kinopoiskId: kpCached(t.id) || '',
+      year: t.y,
+      type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+    };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 14000);
+    try {
+      const hit = await resolveWatchPayload(payload, controller.signal);
+      if (my !== gen) return;
+      if (!hit) throw new Error('no resolver');
+      const { data, pageUrl, embedUrls } = hit;
+      const embed = embedUrls[0] || '';
+      const lead = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
+      const ok = (data.matched === true && (embedUrls.length || pageUrl)) || (data.lead && lead);
+      if (!ok) {
+        mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
+        return;
+      }
+      const page = data.matched ? (pageUrl || lead) : lead;
+      frame.dataset.watchSrc = embed || page || '';
+      mountLordFrame(embed, page, title, embedUrls, frame);
+      if (ctl.isHost()) ctl.publishFilm({ id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' });
+    } catch {
+      if (my !== gen) return;
+      mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
+      V.toast('Плеер сам не нашёлся — открой поиск кнопкой', null, 2800);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const ctl = openWatchPanel(panel, {
+    onToast: (text, _a, ms) => V.toast(text, null, ms),
+    onHello(info) {
+      if (info.host && boot && !booted) {
+        booted = true;
+        V.clearWatchBoot();
+        playTitle(boot, ctl);
+        return;
+      }
+      if (info.film && showEmbed(info.film)) return;
+      if (info.film?.id && !info.film.embedUrl && !info.film.pageUrl) {
+        playTitle({ id: info.film.id, t: info.film.title, ru: info.film.title, y: info.film.year }, ctl);
+        return;
+      }
+      if (booted) return;
+      showWait(info.host);
+    },
+    onOpenPlayer(film) {
+      if (film && showEmbed(film)) return;
+      if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
+    },
+    onStatus(state) {
+      if (state === 'missing') {
+        setTitle('Комната не найдена');
+        frame.innerHTML = '<div class="tm-load wj-wait"><p>Такой комнаты нет или она уже закрылась.</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>';
+      } else if (state === 'full') {
+        setTitle('Комната полная');
+        frame.innerHTML = '<div class="tm-load">В комнате больше нет мест.</div>';
+      }
+    },
+  });
+  const nick = panel.querySelector('#wpNick');
+  if (nick && !nick.value) nick.value = watchIdentity().nick;
   ctl.join(id);
-  V.toast(`Комната ${id}. Жми «Ссылка» — адрес с /kino-roulette/`, null, 3600);
-  return ctl;
+  return () => ctl.leave();
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
@@ -951,7 +1046,6 @@ function startWatchProgress(t) {
 
 function closeLordModal() {
   if (!lm?.open) return;
-  partyCtl?.leave();
   stopWatchProgress(true);
   $('#lmFrame').innerHTML = '';
   const prog = $('#lmProg');
@@ -967,8 +1061,7 @@ function lordSearchUrl(title, year) {
   return `https://www.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
 }
 
-function mountLordFrame(embedUrl, pageUrl, title, embedUrls = []) {
-  const frame = $('#lmFrame');
+function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lmFrame')) {
   if (!frame) return;
   const list = [...new Set([...(embedUrls || []), embedUrl].filter(Boolean))];
   if (list.length > 1) {
@@ -1033,8 +1126,7 @@ async function resolveWatchPayload(payload, signal) {
   return last ? { data: last, pageUrl: '', embedUrls: [], source: null } : null;
 }
 
-function mountLordSearchPanel(url, title) {
-  const frame = $('#lmFrame');
+function mountLordSearchPanel(url, title, frame = $('#lmFrame')) {
   if (!frame) return;
   frame.classList.remove('lord-browse');
   frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Точную страницу не нашли. Открой поиск и выбери «${esc(title)}».</p><button class="btn primary" type="button" data-lord-tab>Открыть поиск LordFilm</button></div>`;
@@ -1051,7 +1143,7 @@ function openLordInNewTab(url) {
   a.remove();
 }
 
-async function openLordWatch(t, btn, { party = false } = {}) {
+async function openLordWatch(t, btn) {
   const title = t.ru || ruCached(t.id) || t.t || '';
   const searchUrl = lordSearchUrl(title, t.y);
   const originalLabel = btn.textContent;
@@ -1067,10 +1159,6 @@ async function openLordWatch(t, btn, { party = false } = {}) {
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
   stopWatchProgress(false);
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
-  let partyCtlActive = false;
-  if (party) {
-    partyCtlActive = !!(await enterWatchParty(t));
-  }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
   const kpId = kpCached(t.id);
   const payload = {
@@ -1088,9 +1176,6 @@ async function openLordWatch(t, btn, { party = false } = {}) {
     if (data.matched === true && (embedUrls.length || pageUrl)) {
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
       startWatchProgress(t);
-      if (partyCtlActive && partyCtl?.isHost()) {
-        partyCtl.publishFilm({ id: t.id, title, year: t.y, embedUrl: embedUrls[0], pageUrl, mode: 'stream' });
-      }
       if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
       return;
     }
@@ -1098,9 +1183,6 @@ async function openLordWatch(t, btn, { party = false } = {}) {
     if (data.lead && leadUrl) {
       mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
       startWatchProgress(t);
-      if (partyCtlActive && partyCtl?.isHost()) {
-        partyCtl.publishFilm({ id: t.id, title, year: t.y, pageUrl: leadUrl, embedUrl: embedUrls[0], mode: 'stream' });
-      }
       return;
     }
     stopWatchProgress(false);
@@ -1158,6 +1240,7 @@ V.initViews({
       if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Такой страницы нет</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
   },
   leave() {},
+  watchRoom,
   spinWith(m) {
     prefs.sel = [...(m.sel || [])]; prefs.sub = {}; prefs.dec = []; prefs.from = prefs.to = '';
     prefs.rating = m.rating || 0; prefs.known = !!m.known; rating.value = prefs.rating; showRating();

@@ -32,12 +32,13 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/create' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
       const id = newRoomId();
       const stub = env.WATCH.get(env.WATCH.idFromName(id));
       const init = await stub.fetch(new Request('https://do/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, hostId: body.hostId ? String(body.hostId).slice(0, 64) : null }),
       }));
       if (!init.ok) return json({ error: 'init_failed' }, 500, request);
       const base = url.origin;

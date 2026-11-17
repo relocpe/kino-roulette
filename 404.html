@@ -35,7 +35,7 @@
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
 <script src="/kino-roulette/js/dlg.js?v=1"></script>
-<link rel="stylesheet" href="/kino-roulette/css/app.css?v=29">
+<link rel="stylesheet" href="/kino-roulette/css/app.css?v=31">
 <link rel="stylesheet" href="/kino-roulette/css/views.css?v=14">
 </head>
 <body data-fx="none" data-route="roulette">
@@ -155,17 +155,22 @@
       <div class="tm-frame" id="lmFrame"></div>
     </div>
     <aside class="wp-side" id="wpPanel" hidden aria-label="Комната просмотра">
-      <div class="wp-top"><span class="wp-code" id="wpCode"></span><button type="button" class="btn sm" id="wpCopy">Ссылка</button></div>
-      <p class="wp-film" id="wpFilm"></p>
-      <label class="wp-nick">Ник <input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Как вас зовут"></label>
-      <p class="wp-members" id="wpMembers"></p>
-      <div id="wpSync"></div>
-      <div class="wp-chat" id="wpChat"><div class="wp-msgs" id="wpMsgs"></div><form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Сообщение…"><button type="submit">→</button></form></div>
+      <header class="wp-head">
+        <div class="wp-id"><small>Комната</small><span class="wp-code" id="wpCode">····</span></div>
+        <button type="button" class="btn line wp-invite" id="wpCopy">Пригласить</button>
+      </header>
+      <div class="wp-people" id="wpMembers" aria-live="polite"></div>
+      <label class="wp-nick">Твоё имя<input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Гость"></label>
+      <section class="wp-sync" id="wpSync" aria-label="Синхронизация"></section>
+      <section class="wp-chat" id="wpChat" aria-label="Чат">
+        <div class="wp-msgs" id="wpMsgs"></div>
+        <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать в чат…"><button type="submit" class="wp-send" aria-label="Отправить">↵</button></form>
+      </section>
     </aside>
   </div>
 </dialog>
 
 
-<script type="module" src="/kino-roulette/js/app.js?v=39"></script>
+<script type="module" src="/kino-roulette/js/app.js?v=41"></script>
 </body>
 </html>

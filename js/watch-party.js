@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=13';
-import { BASE } from './views.js?v=24';
+import { BASE } from './views.js?v=25';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
@@ -25,7 +25,12 @@ export function saveWatchNick(nick) {
 }
 
 export async function createWatchRoom() {
-  const r = await fetch(`${WATCH_PARTY_API}/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  const who = watchIdentity();
+  const r = await fetch(`${WATCH_PARTY_API}/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostId: who.uid }),
+  });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'create_failed');
   return d;
@@ -44,7 +49,7 @@ function fmtClock(sec) {
   return `${m}:${String(x).padStart(2, '0')}`;
 }
 
-export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
+export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus } = {}) {
   if (!root) return () => {};
   const id = (sel) => root.querySelector(sel);
 
@@ -55,21 +60,35 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
   let sync = { at: 0, playing: false, wall: 0 };
   let film = null;
   let reconnect = 0;
+  let clockTick = 0;
+  let gone = false;
 
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const send = (msg) => { try { ws?.send(JSON.stringify(msg)); } catch {} };
 
+  const clockNow = () => (sync.playing && sync.wall ? sync.at + (Date.now() - sync.wall) / 1000 : sync.at || 0);
+  const paintClock = () => {
+    const el = id('[data-wp-clock]');
+    if (!el) return;
+    const now = clockNow();
+    el.textContent = fmtClock(now);
+    const seek = id('[data-wp-seek]');
+    if (seek && document.activeElement !== seek && sync.playing) seek.value = String(Math.floor(now));
+  };
+  const ensureTick = () => { if (!clockTick) clockTick = setInterval(paintClock, 1000); };
+
   const paintSync = () => {
     const el = id('#wpSync');
     if (!el) return;
-    const now = sync.playing && sync.wall ? sync.at + (Date.now() - sync.wall) / 1000 : sync.at || 0;
+    const now = clockNow();
     const drift = host ? 0 : (window.__wpDrift || 0);
-    el.innerHTML = `<div class="wp-sync-line"><span class="wp-led${sync.playing ? ' on' : ''}"></span><span>${sync.playing ? 'Идёт' : 'Пауза'} · <b>${fmtClock(now)}</b></span>${!host && Math.abs(drift) > 4 ? `<span class="wp-drift">${drift > 0 ? 'отстаёшь' : 'опережаешь'} ~${Math.abs(Math.round(drift))}с</span>` : ''}</div>
+    el.innerHTML = `<div class="wp-sync-line"><span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span><span>${sync.playing ? 'Идёт' : 'Пауза'} · <b data-wp-clock>${fmtClock(now)}</b></span>${!host && Math.abs(drift) > 4 ? `<span class="wp-drift">${drift > 0 ? '−' : '+'}${Math.abs(Math.round(drift))} с</span>` : ''}</div>
       ${host ? `<div class="wp-host-ctl" role="group" aria-label="Управление для всех">
-        <button type="button" data-wp-play>▶ Старт</button>
-        <button type="button" data-wp-pause>⏸ Пауза</button>
-        <input type="range" data-wp-seek min="0" max="7200" value="${Math.floor(now)}" aria-label="Время">
-      </div>` : `<p class="wp-hint muted">Ведущий задаёт темп. Запусти плеер у себя в тот же момент — смотри таймер и чат.</p>`}`;
+        <button type="button" data-wp-play>Старт</button>
+        <button type="button" data-wp-pause>Пауза</button>
+        <input type="range" data-wp-seek min="0" max="7200" step="1" value="${Math.floor(now)}" aria-label="Позиция для гостей">
+      </div>` : `<p class="wp-hint">Таймер ведущего. Включи свой плеер на той же секунде.</p>`}`;
+    ensureTick();
     if (host) {
       const play = id('[data-wp-play]');
       const pause = id('[data-wp-pause]');
@@ -109,10 +128,12 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
   const paintMembers = (members) => {
     const el = id('#wpMembers');
     if (!el) return;
-    el.textContent = members?.length ? members.map((m) => `${m.nick}${m.host ? ' ★' : ''}${m.auth ? ' ✓' : ''}`).join(' · ') : '…';
+    if (!members?.length) { el.innerHTML = '<span class="wp-chip">Подключаемся…</span>'; return; }
+    el.innerHTML = members.map((m) => `<span class="wp-chip${m.host ? ' host' : ''}">${esc(m.nick)}${m.auth ? '<span aria-label="аккаунт">✓</span>' : ''}</span>`).join('');
   };
 
   const connect = (rid) => {
+    gone = false;
     roomId = rid;
     const who = watchIdentity();
     const url = `${WATCH_PARTY_API.replace(/^http/, 'ws')}/watch/${roomId}`;
@@ -126,14 +147,14 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
         hostId = m.room?.hostId || '';
         sync = m.room?.sync || sync;
         film = m.room?.film || film;
+        const box = id('#wpMsgs');
+        if (box) box.innerHTML = '';
         (m.room?.chat || []).forEach(pushChat);
         paintMembers(m.room?.members);
         paintSync();
         const codeEl = id('#wpCode');
         if (codeEl) codeEl.textContent = roomId;
-        if (film?.title && onOpenPlayer && id('#wpFilm')) {
-          id('#wpFilm').textContent = film.title;
-        }
+        onHello?.({ host, film, roomId });
         return;
       }
       if (m.type === 'presence') { paintMembers(m.members); return; }
@@ -150,16 +171,22 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
       }
       if (m.type === 'film') {
         film = m.film;
-        if (id('#wpFilm')) id('#wpFilm').textContent = film?.title || '';
         onOpenPlayer?.(film);
         onToast?.(`Ведущий выбрал: ${film?.title || 'фильм'}`, null, 2600);
         return;
       }
       if (m.type === 'host') onToast?.(`Ведущий: ${m.nick}`, null, 2000);
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      if (gone) return;
       const el = id('#wpMembers');
-      if (el) el.textContent = 'Связь оборвалась, переподключаемся…';
+      if (ev.code === 4000 || ev.code === 4003) {
+        if (el) el.innerHTML = `<span class="wp-chip">${ev.code === 4003 ? 'Комната полная' : 'Комнаты нет'}</span>`;
+        onStatus?.(ev.code === 4003 ? 'full' : 'missing');
+        return;
+      }
+      if (el) el.innerHTML = '<span class="wp-chip">Переподключение…</span>';
+      onStatus?.('down');
       if (++reconnect < 6) setTimeout(() => connect(roomId), 1200 * reconnect);
       else onToast?.('Чат недоступен — обнови страницу', null, 4000);
     };
@@ -167,7 +194,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
 
   id('#wpCopy')?.addEventListener('click', async (e) => {
     const link = watchRoomLink(roomId);
-    try { await navigator.clipboard.writeText(link); e.target.textContent = 'Скопировано'; setTimeout(() => (e.target.textContent = 'Ссылка'), 1500); } catch { prompt('Ссылка', link); }
+    try { await navigator.clipboard.writeText(link); e.target.textContent = 'Скопировано'; setTimeout(() => (e.target.textContent = 'Пригласить'), 1500); } catch { prompt('Ссылка на комнату', link); }
   });
 
   id('#wpForm')?.addEventListener('submit', (e) => {
@@ -185,9 +212,21 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
   });
 
   return {
-    join(rid) { root.hidden = false; root.closest('.tm-box')?.classList.add('has-party'); connect(rid); },
-    leave() { try { ws?.close(); } catch {} ws = null; root.hidden = true; root.closest('.tm-box')?.classList.remove('has-party'); },
-    publishFilm(meta) { if (!host) return; send({ type: 'film', film: meta }); film = meta; if (id('#wpFilm')) id('#wpFilm').textContent = meta.title || ''; },
+    join(rid) {
+      root.hidden = false;
+      root.closest('.tm-box')?.classList.add('has-party');
+      if (roomId === rid && ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      connect(rid);
+    },
+    leave() {
+      gone = true;
+      clearInterval(clockTick); clockTick = 0;
+      try { ws?.close(); } catch {}
+      ws = null;
+      root.hidden = true;
+      root.closest('.tm-box')?.classList.remove('has-party');
+    },
+    publishFilm(meta) { if (!host) return; send({ type: 'film', film: meta }); film = meta; },
     isHost() { return host; },
     setLocalPlayhead(sec) { window.__wpLocalAt = sec; },
     roomId: () => roomId,
