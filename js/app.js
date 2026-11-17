@@ -2,10 +2,11 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=16';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=22';
+import * as V from './views.js?v=23';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
-import { watchedIds, getLists } from './store.js?v=11';
+import { watchedIds, getLists } from './store.js?v=13';
 import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
 import { mountYearRange } from './year-range.js?v=1';
 
@@ -673,6 +674,7 @@ function render(t, full) {
       ${desc}
       <div class="actions">
         <button class="btn primary watch-main" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">${ico.play}${esc(watchLbl)}</button>
+        <button class="btn" type="button" data-act="party" title="Комната с чатом и синхронизацией">Смотреть вместе</button>
         <button class="btn" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
@@ -776,6 +778,10 @@ result.addEventListener('click', (e) => {
     if (!curT) return;
     openLordWatch(curT, b);
   }
+  if (act === 'party') {
+    if (!curT) return;
+    openLordWatch(curT, b, { party: true });
+  }
 });
 // ---------- Поделиться ----------
 async function openShare(t) {
@@ -848,6 +854,37 @@ tm.addEventListener('click', (e) => { if (e.target === tm || e.target.closest('[
 tm.addEventListener('cancel', (e) => { e.preventDefault(); closeTrailer(); });
 tm.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => { if ((prefs.tlang || 'ru') === b.dataset.lang && $('#tmFrame').dataset.vid) return; prefs.tlang = b.dataset.lang; savePrefs(); openTrailer(curT, tBack); }));
 
+// ---------- Смотреть вместе (комната + чат) ----------
+let partyCtl = null;
+function ensurePartyPanel() {
+  const panel = $('#wpPanel');
+  if (!panel) return null;
+  if (!partyCtl) {
+    partyCtl = openWatchPanel(panel, { onToast: (t, _a, ms) => V.toast(t, null, ms) });
+    const nick = $('#wpNick');
+    if (nick) nick.value = watchIdentity().nick;
+  }
+  return partyCtl;
+}
+async function enterWatchParty(t) {
+  const ctl = ensurePartyPanel();
+  if (!ctl) return null;
+  let id = V.pendingWatchRoom() || ctl.roomId?.();
+  if (!id) {
+    try {
+      const d = await createWatchRoom();
+      id = d.roomId;
+      V.setPendingWatchRoom(id);
+      V.navigate(`watch/${id}`, { replace: true });
+    } catch {
+      V.toast('Комнату создать не вышло — сервер смотрянки ещё не развернут', null, 4000);
+      return null;
+    }
+  }
+  ctl.join(id);
+  return ctl;
+}
+
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
 const lm = $('#lmodal');
 const zombiPageRe = /^https:\/\/filmy-pro-zombi\.com\/\d+-.*\.html$/i;
@@ -913,6 +950,7 @@ function startWatchProgress(t) {
 
 function closeLordModal() {
   if (!lm?.open) return;
+  partyCtl?.leave();
   stopWatchProgress(true);
   $('#lmFrame').innerHTML = '';
   const prog = $('#lmProg');
@@ -1012,7 +1050,7 @@ function openLordInNewTab(url) {
   a.remove();
 }
 
-async function openLordWatch(t, btn) {
+async function openLordWatch(t, btn, { party = false } = {}) {
   const title = t.ru || ruCached(t.id) || t.t || '';
   const searchUrl = lordSearchUrl(title, t.y);
   const originalLabel = btn.textContent;
@@ -1028,6 +1066,10 @@ async function openLordWatch(t, btn) {
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
   stopWatchProgress(false);
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
+  let partyCtlActive = false;
+  if (party) {
+    partyCtlActive = !!(await enterWatchParty(t));
+  }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
   const kpId = kpCached(t.id);
   const payload = {
@@ -1045,6 +1087,9 @@ async function openLordWatch(t, btn) {
     if (data.matched === true && (embedUrls.length || pageUrl)) {
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
       startWatchProgress(t);
+      if (partyCtlActive && partyCtl?.isHost()) {
+        partyCtl.publishFilm({ id: t.id, title, year: t.y, embedUrl: embedUrls[0], pageUrl, mode: 'stream' });
+      }
       if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
       return;
     }
@@ -1052,6 +1097,9 @@ async function openLordWatch(t, btn) {
     if (data.lead && leadUrl) {
       mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
       startWatchProgress(t);
+      if (partyCtlActive && partyCtl?.isHost()) {
+        partyCtl.publishFilm({ id: t.id, title, year: t.y, pageUrl: leadUrl, embedUrl: embedUrls[0], mode: 'stream' });
+      }
       return;
     }
     stopWatchProgress(false);

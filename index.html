@@ -35,7 +35,7 @@
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
 <script src="js/dlg.js?v=1"></script>
-<link rel="stylesheet" href="css/app.css?v=28">
+<link rel="stylesheet" href="css/app.css?v=29">
 <link rel="stylesheet" href="css/views.css?v=14">
 </head>
 <body data-fx="none" data-route="roulette">
@@ -48,7 +48,7 @@
     <span>Кинорулетка</span>
   </a>
   <nav class="nav" aria-label="Разделы">
-    <a href="" data-nav data-sec-link="roulette">Рулетка</a><a href="catalog" data-nav data-sec-link="catalog">Каталог</a><a href="together" data-nav data-sec-link="together">На двоих</a><i class="ndot" id="navDot" aria-hidden="true"></i>
+    <a href="" data-nav data-sec-link="roulette">Рулетка</a><a href="catalog" data-nav data-sec-link="catalog">Каталог</a><i class="ndot" id="navDot" aria-hidden="true"></i>
   </nav>
   <div class="tools">
     <button class="tool" id="searchBtn" type="button" aria-label="Поиск" title="Поиск (/)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
@@ -122,13 +122,11 @@
 <nav class="tabbar" aria-label="Разделы">
   <a href="" data-nav data-sec-link="roulette"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="7.5" r="1.6" fill="currentColor"/><circle cx="12" cy="16.5" r="1.6" fill="currentColor"/><circle cx="7.5" cy="12" r="1.6" fill="currentColor"/><circle cx="16.5" cy="12" r="1.6" fill="currentColor"/></svg>Рулетка</a>
   <a href="catalog" data-nav data-sec-link="catalog"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>Каталог</a>
-  <a href="together" data-nav data-sec-link="together"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="5" width="10" height="14" rx="2" transform="rotate(-8 8 12)"/><rect x="11" y="5" width="10" height="14" rx="2" transform="rotate(8 16 12)"/></svg>Вдвоём</a>
   <a href="me/favorites" data-nav data-sec-link="me"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-9.2-9.3C1.7 7.6 3.6 4.5 7 4.5c2 0 3.7 1.2 5 3 1.3-1.8 3-3 5-3 3.4 0 5.3 3.1 4.2 6.2C19.5 15.4 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Списки</a>
 </nav>
 
 <dialog class="adlg" id="auth" aria-label="Вход"></dialog>
 <dialog class="cpop" id="cpop" aria-label="Фильтры"></dialog>
-<dialog class="mdlg" id="matchDlg" aria-label="Совпадения"></dialog>
 <dialog class="adlg" id="shareDlg" aria-label="Поделиться"></dialog>
 
 <dialog class="tmodal" id="tmodal" aria-labelledby="tmTitle">
@@ -146,18 +144,28 @@
 </dialog>
 
 <dialog class="tmodal" id="lmodal" aria-labelledby="lmTitle">
-  <div class="tm-box">
-    <div class="tm-head">
-      <div class="lm-head-txt"><h3 id="lmTitle"></h3><p class="lm-prog" id="lmProg" hidden></p></div>
-      <div class="tm-tools">
-        <button class="tm-x" type="button" data-lclose aria-label="Закрыть">✕</button>
+  <div class="tm-box" id="lmBox">
+    <div class="lm-main">
+      <div class="tm-head">
+        <div class="lm-head-txt"><h3 id="lmTitle"></h3><p class="lm-prog" id="lmProg" hidden></p></div>
+        <div class="tm-tools">
+          <button class="tm-x" type="button" data-lclose aria-label="Закрыть">✕</button>
+        </div>
       </div>
+      <div class="tm-frame" id="lmFrame"></div>
     </div>
-    <div class="tm-frame" id="lmFrame"></div>
+    <aside class="wp-side" id="wpPanel" hidden aria-label="Комната просмотра">
+      <div class="wp-top"><span class="wp-code" id="wpCode"></span><button type="button" class="btn sm" id="wpCopy">Ссылка</button></div>
+      <p class="wp-film" id="wpFilm"></p>
+      <label class="wp-nick">Ник <input id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Как вас зовут"></label>
+      <p class="wp-members" id="wpMembers"></p>
+      <div id="wpSync"></div>
+      <div class="wp-chat" id="wpChat"><div class="wp-msgs" id="wpMsgs"></div><form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Сообщение…"><button type="submit">→</button></form></div>
+    </aside>
   </div>
 </dialog>
 
 
-<script type="module" src="js/app.js?v=36"></script>
+<script type="module" src="js/app.js?v=37"></script>
 </body>
 </html>

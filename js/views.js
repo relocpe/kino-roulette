@@ -1,7 +1,7 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, catalogSize } from './api.js?v=16';
-import * as S from './store.js?v=11';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=16';
+import * as S from './store.js?v=13';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
 import { clearProgress } from './watch-progress.js?v=1';
@@ -279,7 +279,8 @@ function parse(path) {
   if (!p.length) return { name: 'roulette' };
   if (p[0] === 'catalog') return p[1] === 'mood' && p[2] ? { name: 'mood', slug: p[2] } : { name: 'catalog' };
   if (p[0] === 'title' && p[1]) return { name: 'title', id: p[1] };
-  if (p[0] === 'together') return p[1] ? { name: 'room', code: p[1].toUpperCase().slice(0, 4) } : { name: 'together' };
+  if (p[0] === 'watch' && p[1]) return { name: 'watch', id: p[1].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) };
+  if (p[0] === 'together') return { name: 'catalog' };
   if (p[0] === 'about') return { name: 'about' };
   if (p[0] === 'me') return { name: 'me', tab: ['favorites', 'watched', 'recent'].includes(p[1]) ? p[1] : 'favorites' };
   return { name: 'roulette' };
@@ -310,11 +311,10 @@ function show(r, keepScroll) {
   if (r.name === 'catalog') renderCatalog();
   else if (r.name === 'mood') renderMood(r.slug);
   else if (r.name === 'me') renderMe(r.tab);
-  else if (r.name === 'together') renderTogether();
-  else if (r.name === 'room') renderRoom(r.code);
+  else if (r.name === 'watch') renderWatch(r.id);
   else if (r.name === 'about') renderAbout();
 }
-const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', together: 'together', room: 'together', me: 'me' })[n];
+const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', watch: 'catalog', me: 'me' })[n];
 function moveDot() {
   const a = document.querySelector('.nav a.on'), dot = $('#navDot');
   if (!dot) return;
@@ -336,7 +336,7 @@ function renderAbout() {
   document.title = 'О сайте · Кинорулетка';
   const li = (n, u, t) => `<li><a href="${u}" target="_blank" rel="noopener">${n}</a> — ${t}</li>`;
   view.innerHTML = `<div class="wrap about"><h1 class="vh">О сайте</h1>
-    <p class="lead">Кинорулетка подбирает случайный фильм, сериал или аниме по жанру, годам и рейтингу. Можно крутить одному или вдвоём: каждый листает карточки, а сайт показывает совпадения.</p>
+    <p class="lead">Кинорулетка подбирает случайный фильм, сериал или аниме по жанру, годам и рейтингу. Есть совместный просмотр с чатом и таймером синхронизации у ведущего.</p>
     <h2>Откуда данные</h2><ul class="src">
       ${li('IMDb', 'https://www.imdb.com/', 'названия, рейтинги, постеры; через открытый API api.tiffara.com')}
       ${li('AniList', 'https://anilist.co/', 'аниме: рейтинги, постеры, описания')}
@@ -359,22 +359,7 @@ function renderCatalog() {
     <h2 class="hcap">Подборки</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
   fillMoods(view);
   let stop = null;
-  let apiTotal = 0;
-  const paintCount = () => {
-    const c = view.querySelector('.ccount');
-    if (!c) return;
-    if (cat.q) {
-      c.textContent = apiTotal ? `${apiTotal.toLocaleString('ru-RU')} ${plural(apiTotal, 'результат', 'результата', 'результатов')}` : '';
-      return;
-    }
-    const parts = [];
-    if (offlineTotal) parts.push(`~${offlineTotal.toLocaleString('ru-RU')} в офлайн-базе`);
-    if (apiTotal) parts.push(`${apiTotal.toLocaleString('ru-RU')} ${plural(apiTotal, 'название', 'названия', 'названий')} по фильтрам`);
-    c.textContent = parts.join(' · ');
-  };
-  let offlineTotal = 0;
-  catalogSize().then((n) => { offlineTotal = n; paintCount(); }).catch(() => {});
-  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { apiTotal = n || 0; paintCount(); } }); };
+  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'название', 'названия', 'названий')}` : ''; } }); };
   const row = filterRow(cat, { onChange: run }); $('#frow').replaceWith(row);
   const q = $('#q'); let deb = 0;
   q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); run(); }, 250); };
@@ -560,164 +545,25 @@ export function fillSim(sec, list, onPick) {
   sec.querySelectorAll('.sa').forEach((b) => (b.onclick = () => row.scrollBy({ left: +b.dataset.d * row.clientWidth * 0.8, behavior: reduce.matches ? 'auto' : 'smooth' })));
 }
 
-// ---------- На двоих ----------
-const room = { code: '', ws: null, poll: 0, st: null, deck: [], i: 0, ping: 0, stopped: false };
-function leaveRoom() { room.stopped = true; try { room.ws?.close(); } catch {} room.ws = null; clearInterval(room.poll); clearInterval(room.ping); document.body.classList.remove('inroom'); }
-function renderTogether() {
-  leaveRoom();
-  document.title = 'На двоих · Кинорулетка';
-  view.innerHTML = `<div class="tog"><h1>Выбрать фильм вдвоём</h1><p class="tsub">Свайпайте постеры, совпадения появятся сразу</p>
-    <button class="big amber" type="button" id="mk">Создать комнату</button>
-    <button class="big line" type="button" id="hv" aria-expanded="false">У меня есть код</button>
-    <form class="codes" id="codes" hidden autocomplete="off">${[0, 1, 2, 3].map((i) => `<input inputmode="text" maxlength="1" aria-label="Символ ${i + 1}" autocapitalize="characters" spellcheck="false">`).join('')}</form>
-    <p class="ferr" id="tErr"></p>
-    <p class="tfoot">Без аккаунта: комната живёт сутки, второй человек заходит по коду или ссылке.</p></div>`;
-  const err = $('#tErr');
-  $('#mk').onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; err.textContent = '';
-    try { const d = await S.roomCreate({ mode: 'all', genres: [] }, (Math.random() * 2 ** 32) >>> 0); navigate('together/' + d.code); }
-    catch (x) { err.textContent = x.message || 'Не получилось создать комнату'; b.disabled = false; }
+// ---------- Смотреть вместе ----------
+const WATCH_JOIN_KEY = 'kr:watchJoin';
+export function pendingWatchRoom() {
+  try { return sessionStorage.getItem(WATCH_JOIN_KEY) || ''; } catch { return ''; }
+}
+export function setPendingWatchRoom(id) {
+  try { if (id) sessionStorage.setItem(WATCH_JOIN_KEY, id); else sessionStorage.removeItem(WATCH_JOIN_KEY); } catch {}
+}
+function renderWatch(id) {
+  document.title = `Комната ${id} · Кинорулетка`;
+  setPendingWatchRoom(id);
+  view.innerHTML = `<div class="wrap watch-join"><h1>Смотрим вместе</h1><p class="tsub">Код комнаты: <b class="rcode">${esc(id)}</b></p>
+    <p class="lead">Выбери фильм в <a href="catalog" data-nav>каталоге</a> или на рулетке и нажми <b>«Смотреть вместе»</b> — откроется плеер с чатом. Гости и вошедшие по аккаунту в одной комнате.</p>
+    <div class="wbtns"><button class="btn primary" type="button" id="wjCopy">Скопировать ссылку</button></div></div>`;
+  $('#wjCopy').onclick = async (e) => {
+    const link = `${location.origin}${BASE}watch/${id}`;
+    try { await navigator.clipboard.writeText(link); e.target.textContent = 'Скопировано'; setTimeout(() => (e.target.textContent = 'Скопировать ссылку'), 1500); } catch { prompt('Ссылка', link); }
   };
-  const box = $('#codes'), ins = [...box.querySelectorAll('input')];
-  $('#hv').onclick = (e) => { box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden)); if (!box.hidden) ins[0].focus(); };
-  const OK = /[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/;
-  ins.forEach((inp, i) => {
-    inp.oninput = () => {
-      const v = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (v.length > 1) { [...v].slice(0, 4 - i).forEach((c, k) => (ins[i + k].value = c)); }
-      else inp.value = v;
-      const nx = ins.findIndex((x) => !x.value); if (nx >= 0) ins[nx].focus(); else go();
-    };
-    inp.onkeydown = (e) => { if (e.key === 'Backspace' && !inp.value && i) { ins[i - 1].value = ''; ins[i - 1].focus(); } };
-  });
-  async function go() {
-    const code = ins.map((x) => x.value).join('');
-    if (![...code].every((c) => OK.test(c))) { err.textContent = 'В кодах нет букв O, I и цифр 0, 1'; return; }
-    err.textContent = '';
-    try { await S.roomJoin(code); navigate('together/' + code); }
-    catch (x) { err.textContent = x.code === 'room_full' ? 'В комнате уже двое' : x.code === 'room_not_found' ? 'Такой комнаты нет или она истекла' : x.message; ins.forEach((y) => (y.value = '')); ins[0].focus(); }
-  }
 }
-async function renderRoom(code) {
-  leaveRoom(); room.stopped = false; room.code = code; room.deck = []; room.i = 0; room.matches = [];
-  document.body.classList.add('inroom');
-  document.title = `Комната ${code} · Кинорулетка`;
-  view.innerHTML = `<div class="room"><div class="rtop"><a class="rexit" href="together" data-nav>${IC.x}Выйти</a><span class="rcode-s">${code}</span><button class="rmatch" type="button" id="rMatches" hidden>Совпадения · <b>0</b></button></div><div class="rbody" id="rbody"><p class="empty">Подключаемся…</p></div></div>`;
-  let st;
-  try { st = S.roomPid(code) ? await S.roomJoin(code) : await S.roomJoin(code); }
-  catch (x) { $('#rbody').innerHTML = `<div class="tog"><h1>${x.code === 'room_full' ? 'В комнате уже двое' : 'Комнаты нет'}</h1><p class="tsub">${x.code === 'room_full' ? 'Эта комната занята. Создай свою.' : 'Код неверный или комната истекла: они живут сутки.'}</p><a class="big amber" href="together" data-nav>Создать новую</a></div>`; return; }
-  apply(st);
-  connect();
-  $('#rMatches').onclick = () => showMatches();
-  cleanup = leaveRoom;
-}
-function connect() {
-  const code = room.code;
-  try {
-    const ws = S.roomWS(code); room.ws = ws;
-    ws.onmessage = (e) => { if (e.data === 'pong') return; let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
-    ws.onopen = () => { clearInterval(room.poll); room.ping = setInterval(() => { try { ws.send('ping'); } catch {} }, 30000); };
-    ws.onclose = (e) => { clearInterval(room.ping); if (room.stopped || room.code !== code) return; if (e.code === 4000) { $('#rbody').innerHTML = '<div class="tog"><h1>Комната истекла</h1><a class="big amber" href="together" data-nav>Создать новую</a></div>'; return; } startPoll(); };
-    ws.onerror = () => {};
-  } catch { startPoll(); }
-}
-function startPoll() { clearInterval(room.poll); room.poll = setInterval(async () => { if (room.stopped) return; try { apply(await S.roomState(room.code)); } catch {} }, 2500); }
-function onMsg(m) {
-  const st = room.st || {};
-  if (m.type === 'hello') return apply(m.state || m);
-  if (m.type === 'presence') { (st.participants || []).forEach((p) => (p.online = (m.online || []).includes(p.index))); return apply(st); }
-  if (m.type === 'joined') { apply({ ...st, bothJoined: Number(m.participants) >= 2 }); S.roomState(room.code).then(apply).catch(() => {}); return; }
-  if (m.type === 'filters') return apply({ ...st, filters: m.filters });
-  if (m.type === 'started') return apply({ ...st, started: true, seed: m.seed, filters: m.filters });
-  if (m.type === 'progress') { room.progress = m.swipes; drawProgress(); return; }
-  if (m.type === 'match') { const mt = m.match; if (!(st.matches || []).some((x) => x.titleId === mt.titleId)) { st.matches = [...(st.matches || []), mt]; drawMatchCount(); matchPop(mt); } return; }
-  if (m.type === 'unmatch') { st.matches = (st.matches || []).filter((x) => x.titleId !== m.titleId); drawMatchCount(); }
-}
-function apply(st) {
-  const was = room.st; room.st = st;
-  drawMatchCount();
-  if (!st.started) return drawWait(st);
-  if (!was?.started || !room.deck.length) startDeck(st);
-  else drawProgress();
-}
-function drawMatchCount() { const b = $('#rMatches'); if (!b) return; const n = (room.st?.matches || []).length; b.hidden = !n; b.querySelector('b').textContent = n; }
-function drawWait(st) {
-  const body = $('#rbody'); if (!body) return;
-  const both = !!st.bothJoined, me = st.isCreator;
-  const link = location.origin + BASE + 'together/' + st.code;
-  const f = { mode: st.filters?.mode || 'all', genres: st.filters?.genres || [], from: st.filters?.from, to: st.filters?.to, rating: st.filters?.rating || 0, sort: 'pop' };
-  if (!body.querySelector('.wait')) {
-    body.innerHTML = `<div class="wait"><p class="wlbl">Код комнаты</p><p class="rcode">${esc(st.code)}</p>
-      <div class="wbtns"><button class="btn" type="button" id="cp">Скопировать ссылку</button>${navigator.share && matchMedia('(pointer: coarse)').matches ? '<button class="btn" type="button" id="sh">Поделиться</button>' : ''}</div>
-      <p class="wlbl f">${me ? 'Что смотрим' : 'Фильтры задаёт создатель комнаты'}</p><div id="wf"></div>
-      <p class="wstat" id="wst"><i></i><span></span></p><button class="big amber" type="button" id="go" hidden>Начать</button></div>`;
-    $('#cp').onclick = async (e) => { try { await navigator.clipboard.writeText(link); e.target.textContent = 'Ссылка скопирована'; setTimeout(() => (e.target.textContent = 'Скопировать ссылку'), 1800); } catch { prompt('Ссылка на комнату', link); } };
-    const sh = $('#sh'); if (sh) sh.onclick = () => navigator.share({ title: 'Кинорулетка: выберем фильм вдвоём', text: `Код комнаты ${st.code}`, url: link }).catch(() => {});
-    $('#go').onclick = async (e) => { e.target.disabled = true; try { apply(await S.roomStart(st.code)); } catch (x) { toast(x.message); e.target.disabled = false; } };
-  }
-  const row = filterRow(f, { readonly: !me, sort: false, onChange: async () => { try { await S.roomFilters(st.code, { mode: f.mode, genres: f.genres, from: f.from, to: f.to, rating: f.rating }); } catch (x) { toast(x.message); } } });
-  if (!$('#cpop').open) $('#wf').replaceChildren(row);
-  const s = $('#wst span'); $('#wst').classList.toggle('ok', both);
-  s.textContent = both ? (me ? 'Вы оба здесь' : 'Вы оба здесь. Ждём, когда создатель нажмёт «Начать»') : me ? 'Ждём второго…' : 'Подключаемся…';
-  $('#go').hidden = !(both && me);
-}
-// одинаковая колода у обоих: seed + фильтры, перемешивание mulberry32
-function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-async function startDeck(st) {
-  const body = $('#rbody'); body.innerHTML = '<div class="swipe"><div class="deck sk"></div></div>';
-  const f = { mode: st.filters?.mode || 'all', genres: st.filters?.genres || [], from: st.filters?.from, to: st.filters?.to, rating: st.filters?.rating || 0, sort: 'pop', votes: 30000 };
-  let all = [];
-  try { let tok; for (let k = 0; k < 3; k++) { const r = await fetchPage(f, tok); all = all.concat(r.list.filter((t) => t.i)); if (!r.next) break; tok = r.next; } } catch {}
-  const R = rng(st.seed || 1); const deck = all.slice();
-  for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
-  const done = new Set((st.mySwipes || []).map((x) => x.titleId));
-  room.deck = deck.filter((t) => !done.has(t.id)); room.i = 0; room.total = deck.length;
-  ruTitles(room.deck.slice(0, 60).map((t) => t.id)).then(() => { const h = document.querySelector('.stitle'), t = room.deck[room.i]; if (h && t && ruCached(t.id)) h.textContent = ruCached(t.id); });
-  if (!room.deck.length) { body.innerHTML = '<div class="tog"><h1>Колода пуста</h1><p class="tsub">Под такие фильтры ничего не нашлось или вы всё пролистали.</p></div>'; return; }
-  drawCard();
-}
-function drawProgress() { const p = $('#rprog'); if (!p || !room.progress) return; const me = room.st?.you ?? 0; p.textContent = `Ты ${room.progress[me] ?? 0} · партнёр ${room.progress[1 - me] ?? 0}`; }
-function drawCard() {
-  const body = $('#rbody'), t = room.deck[room.i];
-  if (!t) { body.innerHTML = `<div class="tog"><h1>Карточки кончились</h1><p class="tsub">${(room.st?.matches || []).length ? 'Совпадения ждут вас выше.' : 'Совпадений пока нет. Подождите партнёра или создайте комнату с другими фильтрами.'}</p></div>`; return; }
-  const meta = [yr(t), t.r ? `${t.r.toFixed(1)}★` : ''].filter(Boolean).join(' · ');
-  body.innerHTML = `<div class="swipe"><div class="deck"><div class="scard" id="sc"><img src="${esc(poster(t.i, 600))}" alt="Постер: ${esc(ruCached(t.id) || t.t)}" draggable="false"><span class="stamp like">Смотрим</span><span class="stamp nope">Мимо</span></div>${room.deck[room.i + 1] ? `<div class="scard under"><img src="${esc(poster(room.deck[room.i + 1].i, 600))}" alt=""></div>` : ''}</div>
-    <h2 class="stitle">${esc(ruCached(t.id) || t.t)}</h2><p class="smeta">${esc(meta)}</p>
-    <div class="sbtns"><button class="sb no" type="button" aria-label="Мимо">${IC.x}</button><button class="sb yes" type="button" aria-label="Смотрим">${IC.heart}</button></div><p class="rprog" id="rprog"></p></div>`;
-  drawProgress();
-  const c = $('#sc');
-  const swipe = async (like) => {
-    if (c.dataset.gone) return; c.dataset.gone = '1';
-    const dir = like ? 1 : -1;
-    if (!reduce.matches) await c.animate([{ transform: c.style.transform || 'none' }, { transform: `translateX(${dir * innerWidth * 0.9}px) rotate(${dir * 18}deg)`, opacity: 0 }], { duration: 260, easing: 'ease-in', fill: 'forwards' }).finished;
-    room.i++; drawCard();
-    try { const r = await S.roomSwipe(room.code, t.id, like, { title: ruCached(t.id) || t.t, year: Number(t.y) || undefined, poster: poster(t.i, 300), type: /tv/.test(t.k) ? 'tv' : 'movie', rating: t.r }); if (r.match) { const st = room.st; const mt = { titleId: t.id, title: t.t, year: t.y, poster: poster(t.i, 300) }; if (!(st.matches || []).some((x) => x.titleId === t.id)) { st.matches = [...(st.matches || []), mt]; drawMatchCount(); matchPop(mt); } } }
-    catch (x) { toast(x.message); }
-  };
-  body.querySelector('.no').onclick = () => swipe(false);
-  body.querySelector('.yes').onclick = () => swipe(true);
-  let x0 = 0, y0 = 0, dx = 0, drag = false;
-  c.onpointerdown = (e) => { drag = true; x0 = e.clientX; y0 = e.clientY; dx = 0; c.setPointerCapture(e.pointerId); c.style.transition = 'none'; };
-  c.onpointermove = (e) => { if (!drag) return; dx = e.clientX - x0; const dy = e.clientY - y0; c.style.transform = `translate(${dx}px,${dy * 0.2}px) rotate(${dx / 18}deg)`; c.style.setProperty('--like', Math.max(0, Math.min(1, dx / 110))); c.style.setProperty('--nope', Math.max(0, Math.min(1, -dx / 110))); };
-  c.onpointerup = c.onpointercancel = () => { if (!drag) return; drag = false; if (Math.abs(dx) > 110) swipe(dx > 0); else { c.style.transition = 'transform .25s cubic-bezier(.16,1,.3,1)'; c.style.transform = ''; c.style.setProperty('--like', 0); c.style.setProperty('--nope', 0); } };
-  const kd = (e) => { if (route.name !== 'room' || document.querySelector('dialog[open]')) return document.removeEventListener('keydown', kd); if (e.key === 'ArrowLeft') swipe(false); if (e.key === 'ArrowRight') swipe(true); };
-  document.addEventListener('keydown', kd, { once: true });
-}
-function matchPop(mt) {
-  const d = $('#matchDlg');
-  d.innerHTML = `<div class="mp"><p class="wlbl">Совпадение</p>${mt.poster ? `<img src="${esc(mt.poster)}" alt="">` : ''}<h2>${esc(mt.title || '')}</h2><p class="smeta">${esc(mt.year || '')}</p><div class="wbtns"><a class="btn primary" href="title/${esc(mt.titleId)}" data-nav>Смотрим это</a><button class="btn" type="button" data-close>Дальше</button></div></div>`;
-  d.querySelector('[data-close]').onclick = () => d.close();
-  d.querySelector('a').addEventListener('click', () => { d.close(); leaveRoom(); });
-  if (!d.open) d.showModal();
-}
-function showMatches() {
-  const d = $('#matchDlg'), ms = room.st?.matches || [];
-  d.innerHTML = `<div class="mp list"><div class="ahead"><h2>Совпадения</h2><button class="px" type="button" data-close aria-label="Закрыть">${IC.x}</button></div><div class="mlist">${ms.map((m) => `<a href="title/${esc(m.titleId)}" data-nav class="hitem">${m.poster ? `<img src="${esc(m.poster)}" alt="">` : '<span class="ph"></span>'}<span><b>${esc(m.title || m.titleId)}</b><small>${esc(m.year || '')}</small></span></a>`).join('')}</div></div>`;
-  d.querySelector('[data-close]').onclick = () => d.close();
-  d.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => { d.close(); leaveRoom(); }));
-  if (!d.open) d.showModal();
-}
-$('#matchDlg').addEventListener('click', (e) => { if (e.target.id === 'matchDlg') e.target.close(); });
 $('#cpop').addEventListener('click', (e) => { if (e.target.id === 'cpop') e.target.close(); });
 
 // ---------- старт ----------

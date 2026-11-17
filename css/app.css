@@ -395,6 +395,35 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 @media (max-width: 600px) { .tm-head h3 { font-size: 18px; } .tm-yt { display: none; } }
 @media (prefers-reduced-motion: reduce) { .tm-box { animation: none; } }
 
+.tm-box.has-party { width: min(1280px, 98vw); display: grid; grid-template-columns: minmax(0, 1fr) min(320px, 34vw); gap: 14px; align-items: start; }
+.lm-main { min-width: 0; }
+.wp-side { display: flex; flex-direction: column; gap: 10px; max-height: min(85vh, calc(100dvh - 80px)); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; }
+.wp-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wp-code { font-weight: 600; letter-spacing: .06em; }
+.btn.sm { padding: 6px 10px; font-size: 12px; min-height: 32px; }
+.wp-film { color: var(--ink-2); margin: 0; }
+.wp-nick { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-3); }
+.wp-nick input { border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; color: var(--ink); }
+.wp-members { color: var(--ink-3); margin: 0; line-height: 1.35; }
+.wp-sync-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wp-led { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+.wp-led.on { background: #5dd879; box-shadow: 0 0 8px #5dd87980; }
+.wp-host-ctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.wp-host-ctl button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
+.wp-host-ctl input[type=range] { flex: 1 1 100px; min-width: 80px; }
+.wp-hint { margin: 4px 0 0; font-size: 12px; }
+.wp-chat { flex: 1; min-height: 120px; display: flex; flex-direction: column; border-top: 1px solid var(--line); padding-top: 8px; }
+.wp-msgs { flex: 1; overflow: auto; max-height: 28vh; display: flex; flex-direction: column; gap: 6px; }
+.wp-msg { margin: 0; line-height: 1.35; word-break: break-word; }
+.wp-msg b { color: var(--amber); font-weight: 600; margin-right: 6px; }
+.wp-form { display: flex; gap: 6px; margin-top: 8px; }
+.wp-form input { flex: 1; border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; color: var(--ink); }
+.wp-form button { border: 0; background: var(--amber); color: #1a1208; border-radius: 8px; padding: 0 14px; font-weight: 600; }
+@media (max-width: 900px) {
+  .tm-box.has-party { grid-template-columns: 1fr; width: min(1180px, 94vw); }
+  .wp-side { max-height: 40vh; }
+}
+
 /* телефоны и встроенный браузер Telegram: без SVG-фильтров на карточках, меньше размытия */
 @media (pointer: coarse) {
   .card, .card.c { filter: none; }

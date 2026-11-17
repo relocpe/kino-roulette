@@ -90,15 +90,3 @@ export async function init() {
   emitAuth();
 }
 
-// ---------- комнаты «На двоих» ----------
-const pidKey = (code) => 'kr:room:' + code.toUpperCase();
-export const roomPid = (code) => localStorage.getItem(pidKey(code)) || '';
-const pidHdr = (code) => ({ headers: { 'X-Participant': roomPid(code) } });
-export async function roomCreate(filters, seed) { const d = await api('POST', '/rooms', { filters, seed }); localStorage.setItem(pidKey(d.code), d.participantId); return d; }
-export async function roomJoin(code) { const d = await api('POST', `/rooms/${code}/join`, { participantId: roomPid(code) || undefined }); localStorage.setItem(pidKey(d.code || code), d.participantId); return d; }
-export const roomState = (code) => api('GET', `/rooms/${code}?pid=${encodeURIComponent(roomPid(code))}`);
-export const roomFilters = (code, filters) => api('POST', `/rooms/${code}/filters`, { filters }, pidHdr(code));
-export const roomStart = (code) => api('POST', `/rooms/${code}/start`, {}, pidHdr(code));
-export const roomSwipe = (code, titleId, like, snapshot) => api('POST', `/rooms/${code}/swipe`, { titleId, like, snapshot }, pidHdr(code));
-export const roomWS = (code) => new WebSocket(API.replace(/^http/, 'ws') + `/rooms/${code}/ws?pid=${encodeURIComponent(roomPid(code))}`);
-export const roomForget = (code) => localStorage.removeItem(pidKey(code));
