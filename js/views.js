@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=15';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, catalogSize } from './api.js?v=16';
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
@@ -359,7 +359,22 @@ function renderCatalog() {
     <h2 class="hcap">Подборки</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
   fillMoods(view);
   let stop = null;
-  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'название', 'названия', 'названий')}` : ''; } }); };
+  let apiTotal = 0;
+  const paintCount = () => {
+    const c = view.querySelector('.ccount');
+    if (!c) return;
+    if (cat.q) {
+      c.textContent = apiTotal ? `${apiTotal.toLocaleString('ru-RU')} ${plural(apiTotal, 'результат', 'результата', 'результатов')}` : '';
+      return;
+    }
+    const parts = [];
+    if (offlineTotal) parts.push(`~${offlineTotal.toLocaleString('ru-RU')} в офлайн-базе`);
+    if (apiTotal) parts.push(`${apiTotal.toLocaleString('ru-RU')} ${plural(apiTotal, 'название', 'названия', 'названий')} по фильтрам`);
+    c.textContent = parts.join(' · ');
+  };
+  let offlineTotal = 0;
+  catalogSize().then((n) => { offlineTotal = n; paintCount(); }).catch(() => {});
+  const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { apiTotal = n || 0; paintCount(); } }); };
   const row = filterRow(cat, { onChange: run }); $('#frow').replaceWith(row);
   const q = $('#q'); let deb = 0;
   q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); run(); }, 250); };

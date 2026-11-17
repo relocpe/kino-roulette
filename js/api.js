@@ -22,7 +22,7 @@ const qs = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== n
 // офлайн-каталог грузится лениво — только если API не ответил
 let snapshot = null;
 async function snap() {
-  if (!snapshot) snapshot = fetch('data/catalog.json?v=11').then((r) => r.json()).then((d) => {
+  if (!snapshot) snapshot = fetch('data/catalog.json?v=12').then((r) => r.json()).then((d) => {
     const T = {};
     for (const row of d.titles) {
       const [id, t, o, k, y, e, r10, v, g, i, sec, tg, ep] = row;
@@ -33,9 +33,14 @@ async function snap() {
   });
   return snapshot;
 }
+/** Число постеров во встроенном catalog.json (офлайн-база). */
+export async function catalogSize() {
+  const sn = await snap();
+  return Object.values(sn.titles).filter((t) => t.i).length;
+}
 let seeds = null;
 export async function seedPosters() {
-  if (!seeds) seeds = fetch('data/seed.json?v=11').then((r) => r.json());
+  if (!seeds) seeds = fetch('data/seed.json?v=12').then((r) => r.json());
   return seeds;
 }
 
