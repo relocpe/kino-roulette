@@ -752,8 +752,8 @@ function render(t, full) {
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
   // выбранные жанры — первыми (в «Аниме» — их соответствия на AniList)
   const wantG = [].concat(byId[curG]?.q?.genres || [], t.src === 'al' ? prefs.sel.flatMap((id) => byId[id]?.al?.g || []) : []);
-  const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ').toLowerCase();
-  const metaLine = [kindOf(t), years, country, genres].filter(Boolean).join(' · ');
+  const genresRu = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
+  const metaLine = [kindOf(t), years, country].filter(Boolean).join(' · ');
   // имена людей — по-русски из Wikidata (по nm-id), если там есть; иначе оригинальное написание
   const ruN = (names, ids) => names.map((n, i) => ruCached(ids?.[i]) || n);
   const dirs = t.src === 'al' ? [] : ruN((t.directors || []).slice(0, 2), t.dirIds), cast = t.src === 'al' ? [] : ruN((t.stars || []).slice(0, 3), t.starIds);
@@ -764,7 +764,7 @@ function render(t, full) {
   const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
     : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
-  const posterHTML = `<div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>`;
+  const posterHTML = `<div class="pcol"><div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>${genresRu ? `<p class="rgenres">${esc(genresRu)}</p>` : ''}</div>`;
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
   const facts = [
     t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
@@ -792,8 +792,16 @@ function render(t, full) {
       </div>
     </div>
   `;
-  if (keepPoster) { result.querySelector('.info')?.remove(); result.insertAdjacentHTML('beforeend', infoHTML); }
-  else result.innerHTML = posterHTML + infoHTML;
+  if (keepPoster) {
+    result.querySelector('.info')?.remove();
+    const pcol = result.querySelector('.pcol');
+    let rg = pcol?.querySelector('.rgenres');
+    if (genresRu) {
+      if (rg) rg.textContent = genresRu;
+      else if (pcol) pcol.insertAdjacentHTML('beforeend', `<p class="rgenres">${esc(genresRu)}</p>`);
+    } else rg?.remove();
+    result.insertAdjacentHTML('beforeend', infoHTML);
+  } else result.innerHTML = posterHTML + infoHTML;
   V.remember(t); V.syncButtons(result);
   if (full) loadSimilar(t);
   // точная ссылка на Кинопоиск (Wikidata P2603) и русское название, если их ещё нет в кэше

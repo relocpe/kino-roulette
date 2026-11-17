@@ -62,7 +62,7 @@ html[data-beta="1"] .nav a {
 html[data-beta="1"] .ndot {
   width: 4px;
   height: 2px;
-  bottom: 14px;
+  bottom: 12px;
   border-radius: 2px;
   background: transparent;
   overflow: visible;
@@ -92,13 +92,12 @@ html[data-beta="1"] .amenu > * {
 @media (pointer: fine) {
   html[data-beta="1"] .top {
     background: rgb(12 11 10 / .5);
-    border-bottom: 1px solid rgb(241 235 226 / .06);
+    box-shadow: inset 0 -1px 0 rgb(241 235 226 / .08);
     -webkit-backdrop-filter: blur(16px) saturate(1.08);
     backdrop-filter: blur(16px) saturate(1.08);
   }
   html[data-beta="1"] body.has-result .top {
     background: rgb(12 11 10 / .32);
-    border-bottom-color: rgb(241 235 226 / .08);
   }
 }
 
@@ -139,7 +138,7 @@ html[data-beta="1"] .tabbar a.on::after {
 /* ---------- рулетка ---------- */
 html[data-beta="1"] .card {
   border-radius: var(--r-10);
-  box-shadow: 0 0 0 1px rgb(241 235 226 / .06), 0 16px 32px -20px rgb(0 0 0 / .72);
+  box-shadow: 0 16px 32px -20px rgb(0 0 0 / .72);
 }
 html[data-beta="1"] .gate::before { border-radius: 14px; }
 html[data-beta="1"] .vig { background: none; }
@@ -203,6 +202,7 @@ html[data-beta="1"] .opts button {
 
 /* ---------- карточка фильма ---------- */
 html[data-beta="1"] .rmeta { color: var(--ink-3); letter-spacing: .01em; }
+html[data-beta="1"] .rgenres { padding-top: 20px; color: rgb(241 235 226 / .55); line-height: 20px; }
 html[data-beta="1"] .facts { border-top: 1px solid rgb(241 235 226 / .16); }
 html[data-beta="1"] .fact:not(.score) b { font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -.01em; }
 html[data-beta="1"] .tile small,
@@ -389,7 +389,7 @@ html[data-beta="1"] .scard {
 html[data-beta="1"] .rcode { letter-spacing: .16em; font-weight: 650; }
 @media (max-width: 900px) {
   html[data-beta="1"] .wroom:not(:fullscreen):not(.is-full) .wroom-frame { border-radius: var(--r-14); }
-  html[data-beta="1"] .wroom .wp-rail {
+  html[data-beta="1"] .wroom:not(:fullscreen):not(.is-full) .wp-rail {
     border-top-color: rgb(241 235 226 / .08);
     box-shadow: none;
   }
@@ -499,8 +499,7 @@ html[data-beta="1"] .about .lead { letter-spacing: -.02em; }
 @media (max-width: 760px) {
   html[data-beta="1"] .panel,
   html[data-beta="1"] .adlg,
-  html[data-beta="1"] .cpop.sheet,
-  html[data-beta="1"] .mdlg {
+  html[data-beta="1"] .cpop.sheet {
     border-radius: var(--r-22) var(--r-22) 0 0;
     box-shadow: inset 0 1px 0 rgb(241 235 226 / .06), 0 -24px 48px -20px rgb(0 0 0 / .55);
   }
@@ -566,6 +565,10 @@ html[data-beta="1"] .about .lead { letter-spacing: -.02em; }
 @media (prefers-reduced-motion: no-preference) {
   html[data-beta="1"] .spin:active,
   html[data-beta="1"] .mspin:active,
+  html[data-beta="1"] .big.amber:active {
+    transform: scale(.98);
+    filter: brightness(.98);
+  }
   html[data-beta="1"] .big:active,
   html[data-beta="1"] .abtn:active,
   html[data-beta="1"] .pfoot .ok:active,
@@ -597,9 +600,12 @@ html[data-beta="1"] .about .lead { letter-spacing: -.02em; }
   html[data-beta="1"] .panel[open]:not(.pop):not(.out) .panel-in > .sec,
   html[data-beta="1"] .cpop.sheet[open]:not(.out) .cpin > section,
   html[data-beta="1"] .tm-box,
-  html[data-beta="1"] .panel.pop[open],
+  html[data-beta="1"] .panel[open],
+  html[data-beta="1"] .panel.out,
   html[data-beta="1"] .cpop[open],
+  html[data-beta="1"] .cpop.out,
   html[data-beta="1"] .adlg[open],
+  html[data-beta="1"] .adlg.out,
   html[data-beta="1"] .mdlg[open] { animation: none; }
   html[data-beta="1"] .pf:hover,
   html[data-beta="1"] .pf:active,

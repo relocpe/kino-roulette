@@ -146,7 +146,9 @@ body.has-result .toast { left: var(--pw); }
 /* результат: журнальный разворот, постер во всю высоту */
 .result { position: absolute; z-index: 3; top: -64px; left: 0; right: 0; min-height: 100dvh; display: grid; grid-template-columns: var(--pw) minmax(0, 1fr); outline: none; touch-action: pan-y; }
 .result[hidden] { display: none; }
-.poster { position: sticky; top: 0; width: var(--pw); height: 100dvh; overflow: hidden; background: #1a1713; transform-origin: 0 0; }
+.pcol { min-width: 0; width: var(--pw); }
+.rgenres { padding: 18px clamp(20px, 3vw, 28px) 0; font-size: 14px; line-height: 21px; color: var(--ink-3); text-wrap: pretty; }
+.poster { position: sticky; top: 0; width: 100%; height: 100dvh; overflow: hidden; background: #1a1713; transform-origin: 0 0; }
 .poster img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; transform: scale(1.04); }
 .poster::after { content: ''; position: absolute; inset: 0 0 auto; height: 160px; background: linear-gradient(rgb(12 11 10 / .75), rgb(12 11 10 / .35) 50%, transparent); pointer-events: none; }
 .poster.miss img { display: none; }
@@ -360,6 +362,8 @@ body.authed .panel .sec[data-sec="beta"] { display: none !important; }
   /* результат: постер во всю ширину сверху, ниже текст */
   .result { top: -52px; display: block; }
   body.has-result .fxwrap { -webkit-mask-image: linear-gradient(#000 40dvh, rgb(0 0 0 / .1) 70dvh); mask-image: linear-gradient(#000 40dvh, rgb(0 0 0 / .1) 70dvh); }
+  .pcol { width: 100%; }
+  .rgenres { padding: 14px 20px 4px; font-size: 13px; line-height: 19px; }
   .poster { position: relative; width: 100%; height: min(54dvh, 130vw); }
   .poster img { object-position: 50% 22%; }
   .poster::before { z-index: 1; }
