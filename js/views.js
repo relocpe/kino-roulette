@@ -38,7 +38,8 @@ export function toast(msg, btn, ms = 2400) {
 
 // ---------- ♡ и «просмотрено» ----------
 const items = new Map(); // id → снимок для списков
-export function remember(t) { const s = S.snap(t, t.i ? poster(t.i, 300) : t.poster); items.set(t.id, s); return s; }
+const titles = new Map(); // id → полный тайтл, чтобы клик по плитке в комнате включил фильм
+export function remember(t) { titles.set(t.id, t); const s = S.snap(t, t.i ? poster(t.i, 300) : t.poster); items.set(t.id, s); return s; }
 let likes = 0, nudged = false;
 export async function act(list, id, btn) {
   const item = items.get(id); if (!item) return;
@@ -382,7 +383,43 @@ function renderCatalog() {
 }
 let focusSearch = false;
 export function openSearch() { focusSearch = true; if (route.name === 'catalog') { $('#q')?.focus(); focusSearch = false; } else navigate('catalog'); }
-addEventListener('keydown', (e) => { if (e.key === '/' && !e.target.closest('input,textarea,select,[contenteditable]') && !document.querySelector('dialog[open]')) { e.preventDefault(); openSearch(); } });
+addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.target.closest('input,textarea,select,[contenteditable]') || document.querySelector('dialog[open]')) return;
+  const pick = document.querySelector('#wjPick');
+  if (document.body.classList.contains('inroom')) {
+    if (pick && !pick.hidden) { e.preventDefault(); pick.querySelector('input[type="search"]')?.focus(); }
+    return;
+  }
+  e.preventDefault();
+  openSearch();
+});
+/** Каталог внутри комнаты: тот же поиск, фильтры и сетка. Клик по плитке выбирает фильм и не уходит со страницы. */
+export function mountRoomCatalog(host, onPick) {
+  const f = { q: '', mode: 'all', genres: [], from: undefined, to: undefined, rating: 0, sort: 'rating' };
+  host.innerHTML = `<div class="wpick-head"><h2>Выбрать фильм</h2><button type="button" class="wroom-text" data-x="close">Закрыть</button></div>
+    <label class="search">${IC.search}<input type="search" placeholder="Название фильма, сериала или аниме" autocomplete="off" enterkeyhint="search" aria-label="Название"></label>
+    <div data-frow></div><div class="grid" data-grid></div>`;
+  let stop = null;
+  const gridEl = host.querySelector('[data-grid]');
+  const run = () => { stop?.(); stop = grid(gridEl, { ...f }); };
+  const row = filterRow(f, { onChange: run });
+  host.querySelector('[data-frow]').replaceWith(row);
+  const q = host.querySelector('input[type="search"]');
+  let deb = 0;
+  q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { f.q = q.value.trim(); row.classList.toggle('dim', !!f.q); run(); }, 250); };
+  host.addEventListener('click', (e) => {
+    if (e.target.closest('[data-x="close"]')) { onPick(null); return; }
+    const a = e.target.closest('a.tile');
+    if (!a || !host.contains(a)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const t = titles.get(a.dataset.id);
+    if (t) onPick(t);
+  });
+  run();
+  requestAnimationFrame(() => q.focus());
+  return () => { clearTimeout(deb); stop?.(); };
+}
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 
 function renderMood(slug) {
@@ -650,19 +687,16 @@ function renderWatch(id) {
         <div class="wroom-tools" id="wjTools" hidden>
           <label class="wroom-pick"><span class="sr">Сезон</span><select id="wjSeason"></select></label>
           <label class="wroom-pick"><span class="sr">Серия</span><select id="wjEpisode"></select></label>
-          <button type="button" class="wroom-text" id="wjNext">Другой фильм</button>
+          <button type="button" class="wroom-text" id="wjNext">Каталог</button>
           <button type="button" class="wroom-text" id="wjRand">Случайный</button>
           <button type="button" class="wroom-text" id="wjGo">Начинаем</button>
-          <div class="wroom-find" id="wjFind" hidden>
-            <input id="wjQ" type="search" placeholder="Название" autocomplete="off" enterkeyhint="search" aria-label="Название фильма">
-            <div class="wroom-hits" id="wjHits"></div>
-          </div>
         </div>
         <div class="wroom-screen">
           <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
           <div class="wroom-count" id="wjCount" hidden></div>
         </div>
         <section class="wp-sync" id="wpSync" hidden></section>
+        <div class="wpick" id="wjPick" hidden></div>
       </div>
       <div class="wroom-hot" aria-hidden="true"></div>
       <button type="button" class="wp-peek" id="wjPeek">Чат</button>

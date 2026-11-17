@@ -503,17 +503,19 @@ input.wp-nick:focus-visible { outline: none; border-color: rgb(241 235 226 / .32
 .wroom-bar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: nowrap; }
 .wroom-bar .rexit { flex: none; font-size: 14px; padding: 4px 0; }
 .wroom-tools { position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.wroom-tools[hidden], .wroom-find[hidden], .wroom-pick[hidden], .wroom-count[hidden] { display: none; }
+.wroom-tools[hidden], .wroom-pick[hidden], .wroom-count[hidden] { display: none; }
 .wroom-pick { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; }
 .wroom-pick select { height: 32px; max-width: 160px; padding: 0 28px 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A948B' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") right 8px center no-repeat; color: var(--ink); font: inherit; font-size: 13px; -webkit-appearance: none; appearance: none; cursor: pointer; }
 .wroom-pick select:hover { border-color: rgb(241 235 226 / .24); background-color: var(--surface-2); }
-.wroom-find { position: absolute; z-index: 8; top: calc(100% + 6px); left: 0; width: min(420px, 100%); padding: 8px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); box-shadow: 0 24px 60px -12px #000; display: flex; flex-direction: column; gap: 6px; }
-.wroom-find input { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 0 12px; font: inherit; font-size: 14px; outline: none; }
-.wroom-find input:focus { border-color: rgb(241 235 226 / .24); }
-.wroom-hits { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow: auto; }
-.wroom-hits:empty { display: none; }
-.wroom-hits button { text-align: left; background: none; border: 0; border-radius: 8px; color: var(--ink); padding: 9px 10px; font: inherit; font-size: 14px; cursor: pointer; }
-.wroom-hits button:hover, .wroom-hits button:focus-visible { background: rgb(241 235 226 / .06); color: var(--ink); }
+.wpick { position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column; gap: 0; padding: 16px 20px 24px; background: var(--bg); overflow: auto; }
+.wpick[hidden] { display: none; }
+.wpick-head { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+.wpick-head h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; }
+.wpick-head .wroom-text { margin-left: auto; }
+.wpick .search { position: sticky; top: 0; z-index: 2; }
+.wpick .crow { margin: 16px 0 14px; }
+.wpick .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px 12px; }
+.wpick .tacts { display: none; }
 .wroom-screen { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wroom-count { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; font: 600 18vw/1 'Golos', system-ui, sans-serif; color: var(--ink); pointer-events: none; text-shadow: 0 10px 40px #000; }
 body.inroom .wroom { min-height: 100dvh; }
@@ -535,6 +537,8 @@ body.inroom .wroom { min-height: 100dvh; }
   .wroom.chat-hidden .wroom-stage { flex: 1 1 auto; }
   .wroom.chat-hidden .wroom-screen { flex: 1 1 auto; }
   .wroom.chat-hidden .wroom-frame { flex: 1 1 auto; height: 100%; aspect-ratio: auto; }
+  .wroom.picking .wroom-stage { flex: 1 1 auto; min-height: 0; }
+  .wroom.picking .wp-rail, .wroom.picking .wp-peek { display: none; }
   .wroom .wp-rail { flex: 1 1 auto; height: auto; min-height: 0; border-left: 0; border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
   .wp-syncbtn { margin-left: 0; }
 }
@@ -553,7 +557,7 @@ body.inroom .wroom { min-height: 100dvh; }
 .wroom:fullscreen .wroom-screen, .wroom.is-full .wroom-screen { flex: 1 1 auto; height: 100%; min-height: 0; }
 .wroom:fullscreen .wroom-bar, .wroom.is-full .wroom-bar { position: absolute; z-index: 4; left: 0; right: 48px; top: 0; padding: 12px 16px; background: linear-gradient(rgb(0 0 0 / .85), transparent); opacity: 0; transition: opacity .2s; }
 .wroom:fullscreen .wroom-tools, .wroom.is-full .wroom-tools { position: absolute; z-index: 5; left: 0; right: 48px; top: 52px; padding: 0 16px 12px; opacity: 0; transition: opacity .2s; }
-.wroom:fullscreen .wroom-find, .wroom.is-full .wroom-find { left: 16px; max-width: calc(100% - 32px); }
+.wroom:fullscreen .wpick, .wroom.is-full .wpick { padding: 16px; }
 .wroom:fullscreen:hover .wroom-bar,
 .wroom:fullscreen:focus-within .wroom-bar,
 .wroom.is-full:hover .wroom-bar,

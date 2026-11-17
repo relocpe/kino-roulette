@@ -1,8 +1,8 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=21';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle } from './api.js?v=21';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=40';
+import * as V from './views.js?v=41';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=18';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
@@ -1073,8 +1073,8 @@ function watchRoom(id, panel, frame, titleEl) {
     frame.classList.remove('lord-browse');
     setTitle('Смотрим вместе');
     frame.innerHTML = `<div class="tm-load wj-wait"><p>${isHost
-      ? 'Выбери фильм в каталоге и нажми «Смотреть вместе» — он включится здесь у всех.'
-      : 'Ждём, пока ведущий включит фильм. Чат уже работает.'}</p>${isHost ? '<a class="btn primary" href="catalog" data-nav>Выбрать фильм</a>' : ''}</div>`;
+      ? 'Выбери фильм в каталоге — он включится здесь у всех.'
+      : 'Ждём, пока ведущий включит фильм. Чат уже работает.'}</p>${isHost ? '<button type="button" class="btn primary" data-room-pick>Выбрать фильм</button>' : ''}</div>`;
   };
 
   let bridge = null;
@@ -1578,58 +1578,38 @@ function watchRoom(id, panel, frame, titleEl) {
   };
   roomEl?.querySelector('#wjSeason')?.addEventListener('change', () => pickEpisode(true));
   roomEl?.querySelector('#wjEpisode')?.addEventListener('change', () => pickEpisode(false));
-  const find = roomEl?.querySelector('#wjFind');
-  const findQ = roomEl?.querySelector('#wjQ');
-  const findHits = roomEl?.querySelector('#wjHits');
-  let findTimer = 0;
-  const closeFind = () => { if (find) find.hidden = true; };
-  roomEl?.querySelector('#wjNext')?.addEventListener('click', () => {
-    if (!ctl.isHost() || !find) return;
-    find.hidden = !find.hidden;
-    if (!find.hidden) findQ?.focus();
-  });
-  const onDocClick = (e) => {
-    if (!find || find.hidden) return;
-    if (e.target.closest('#wjFind, #wjNext')) return;
-    closeFind();
+  const pick = roomEl?.querySelector('#wjPick');
+  let stopPick = null;
+  const closePick = () => {
+    if (!pick) return;
+    pick.hidden = true;
+    roomEl?.classList.remove('picking');
   };
+  const openPick = () => {
+    if (!ctl.isHost() || !pick) return;
+    pick.hidden = false;
+    roomEl?.classList.add('picking');
+    if (pick.dataset.live === '1') { pick.querySelector('input[type="search"]')?.focus(); return; }
+    pick.dataset.live = '1';
+    stopPick = V.mountRoomCatalog(pick, (t) => {
+      closePick();
+      if (t) playTitle(t, ctl);
+    });
+  };
+  roomEl?.querySelector('#wjNext')?.addEventListener('click', openPick);
   const onDocKey = (e) => {
-    if (e.key === 'Escape' && find && !find.hidden) { closeFind(); roomEl?.querySelector('#wjNext')?.focus(); }
+    if (e.key !== 'Escape' || !pick || pick.hidden || document.querySelector('dialog[open]')) return;
+    closePick();
+    roomEl?.querySelector('#wjNext')?.focus();
   };
-  document.addEventListener('click', onDocClick);
   document.addEventListener('keydown', onDocKey);
   roomEl?.querySelector('#wjRand')?.addEventListener('click', async () => {
     if (!ctl.isHost()) return;
     const list = await genreTape([], { mode: 'all' }).catch(() => []);
     const t = list[Math.floor(Math.random() * list.length)];
     if (!t) { V.toast('Случайный фильм не нашёлся', null, 2200); return; }
-    if (find) find.hidden = true;
+    closePick();
     playTitle(t, ctl);
-  });
-  findQ?.addEventListener('input', () => {
-    clearTimeout(findTimer);
-    const text = findQ.value.trim();
-    findTimer = setTimeout(async () => {
-      if (!findHits) return;
-      if (text.length < 2) { findHits.replaceChildren(); return; }
-      const rows = await searchTitles(text).catch(() => []);
-      await ruTitles(rows.map((item) => item.id));
-      findHits.replaceChildren();
-      if (!rows.length) { findHits.innerHTML = '<p class="wp-wait">Ничего не нашли</p>'; return; }
-      for (const t of rows) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        const name = ruCached(t.id) || t.t;
-        btn.textContent = t.y ? `${name}, ${t.y}` : name;
-        btn.addEventListener('click', () => {
-          find.hidden = true;
-          findQ.value = '';
-          findHits.replaceChildren();
-          playTitle({ ...t, ru: ruCached(t.id) }, ctl);
-        });
-        findHits.append(btn);
-      }
-    }, 250);
   });
   roomEl?.querySelector('#wjGo')?.addEventListener('click', () => {
     if (!ctl.isHost()) return;
@@ -1652,6 +1632,7 @@ function watchRoom(id, panel, frame, titleEl) {
 
   ctl.join(id);
   frame.addEventListener('click', (e) => {
+    if (e.target.closest('[data-room-pick]')) { openPick(); return; }
     if (!e.target.closest('[data-lsrc]')) return;
     bridgeIframe = null;
     setTimeout(attachBridge, 0);
@@ -1697,10 +1678,9 @@ function watchRoom(id, panel, frame, titleEl) {
     clearInterval(follow);
     clearTimeout(readyTimer);
     clearTimeout(countTimer);
-    clearTimeout(findTimer);
+    stopPick?.();
     document.removeEventListener('fullscreenchange', syncFull);
     document.removeEventListener('webkitfullscreenchange', syncFull);
-    document.removeEventListener('click', onDocClick);
     document.removeEventListener('keydown', onDocKey);
     bridge?.destroy();
     ctl.leave();
