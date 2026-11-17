@@ -78,6 +78,7 @@ async function attachStream(result, body, fetcher) {
   try {
     const stream = await resolveVeoStream(body, fetcher);
     if (stream?.url) result.stream = { url: stream.url, label: stream.label || '', source: stream.source || '' };
+    else if (stream?.status) result.streamStatus = stream.status;
   } catch {
     /* страница плеера всё равно остаётся */
   }

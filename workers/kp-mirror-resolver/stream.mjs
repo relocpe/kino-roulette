@@ -70,36 +70,45 @@ function itemHref(value) {
 }
 
 async function readJson(url, fetcher) {
-  const response = await fetcher(url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    },
-    redirect: 'follow',
-  });
-  if (!response?.ok) return null;
+  let status = 0;
   try {
-    return await response.json();
+    const response = await fetcher(url, {
+      headers: {
+        Accept: 'application/json,text/plain,*/*',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        Origin: 'https://iframe.cloud',
+        Referer: 'https://iframe.cloud/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      },
+      redirect: 'follow',
+    });
+    status = response?.status || 0;
+    if (!response?.ok) return { status, json: null };
+    return { status, json: await response.json() };
   } catch {
-    return null;
+    return { status, json: null };
   }
 }
 
 async function resolveOnce(meta, fetcher) {
   const q = streamQuery(meta);
   if (!q) return null;
+  let status = 0;
   for (const source of SOURCES) {
-    const json = await readJson(`${GOGO}/lite/${source}?${q}`, fetcher);
+    const got = await readJson(`${GOGO}/lite/${source}?${q}`, fetcher);
+    status = got?.status || status;
+    const json = got?.json;
     if (!json) continue;
     const direct = pickPlayable(json);
     if (direct) return { ...direct, source };
     const season = pickSeasonUrl(json);
     if (!season) continue;
     const episodes = await readJson(season, fetcher);
-    const episode = pickPlayable(episodes);
+    status = episodes?.status || status;
+    const episode = pickPlayable(episodes?.json);
     if (episode) return { ...episode, source };
   }
-  return null;
+  return status ? { status } : null;
 }
 
 export async function resolveVeoStream(meta, fetcher = fetch) {
