@@ -150,6 +150,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     heard: () => heard,
     destroy() {
       clearInterval(poll);
+      iframe.removeEventListener('load', kick);
       window.removeEventListener('message', onMessage);
     },
   };

@@ -84,6 +84,29 @@ body.has-result .mark { text-shadow: 0 1px 14px rgb(0 0 0 / .55); }
 .card:not(.ok) { background: linear-gradient(160deg, #221e19, #15120f); }
 .gate { position: absolute; z-index: 3; left: 50%; top: 36px; width: calc(var(--cw) + 12px); height: calc(var(--cw) * 1.5 + 12px); transform: translateX(-50%); pointer-events: none; }
 .gate i { display: none; }
+.gate::before, .gate::after { content: ''; position: absolute; pointer-events: none; }
+.gate::before {
+  inset: 2px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 80%, transparent);
+  box-shadow: 0 12px 28px -16px color-mix(in srgb, var(--accent) 60%, transparent);
+  opacity: .6; transition: opacity .5s var(--ease);
+}
+.gate::after {
+  left: calc(50% - 11px); top: calc(100% + 10px); width: 22px; height: 2px; border-radius: 2px;
+  background: var(--accent); opacity: .85; transform-origin: 50% 50%;
+  transition: opacity .5s var(--ease), transform .5s var(--ease);
+}
+.gate.mv::before { opacity: .22; transition-duration: .2s; }
+.gate.mv::after { opacity: .4; transform: scaleX(.35); transition-duration: .2s; }
+body.spinning .gate::before { opacity: .28; }
+body.spinning .gate::after { opacity: .7; transform: scaleX(.6); }
+.reel.landed .gate::before { animation: kr-lock .55s var(--ease) both; }
+.reel.landed .gate::after { opacity: 1; transform: none; }
+@keyframes kr-lock { from { opacity: .28; transform: scale(1.03); } to { opacity: .85; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .gate::before, .gate::after { transition: none; }
+  .reel.landed .gate::before { animation: none; opacity: .85; }
+}
 .stage.show .reel { opacity: 0; visibility: hidden; }
 
 /* пульт */

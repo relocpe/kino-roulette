@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=18';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=19';
 import * as S from './store.js?v=13';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
@@ -60,7 +60,7 @@ export function syncButtons(root = document) {
   root.querySelectorAll('[data-seen]').forEach((b) => { const on = S.has('watched', b.dataset.seen); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.title = on ? 'Не смотрел' : 'Просмотрено'; });
   const n = S.count(), badge = $('#listBadge'); if (badge) { badge.textContent = n > 99 ? '99+' : String(n); badge.hidden = !n; }
 }
-export const iconBtns = (id, cls = 'ib2') => `<button class="${cls} fav" type="button" data-fav="${esc(id)}" aria-pressed="false" aria-label="В любимые">${IC.heart}</button><button class="${cls} seen" type="button" data-seen="${esc(id)}" aria-pressed="false" aria-label="Просмотрено">${IC.eye}</button>`;
+export const iconBtns = (id, cls = 'ib2') => `<button class="${cls} fav" type="button" data-fav="${esc(id)}" aria-pressed="false" aria-label="В любимые">${IC.heart}</button>`;
 document.addEventListener('click', (e) => {
   const f = e.target.closest('[data-fav]'), w = e.target.closest('[data-seen]');
   if (f || w) { e.preventDefault(); e.stopPropagation(); act(f ? 'favorites' : 'watched', (f || w).dataset[f ? 'fav' : 'seen'], f || w); }
@@ -402,7 +402,7 @@ function renderMe(tab, keep) {
   const data = tab === 'recent' ? rec : L[tab].map((x) => ({ id: x.titleId, t: x.title, ru: x.title, y: x.year, r: x.rating, poster: x.poster }));
   const nOf = (k) => (k === 'recent' ? rec.length : L[k].length);
   const plaque = !S.loggedIn() && tab !== 'recent' ? `<div class="plaque"><p><b>Без входа списки не сохраняются.</b> Они живут, пока открыта эта вкладка.</p><button class="tlink" type="button" data-auth="login">Войти</button></div>` : '';
-  const emptyTxt = { favorites: 'Здесь будут фильмы, которые ты отметишь ♡.', watched: 'Попадёт сюда после досмотра (~90%) в плеере или если отметишь глазом.', recent: 'Здесь появятся фильмы, которые выпадали в рулетке.' }[tab];
+  const emptyTxt = { favorites: 'Здесь будут фильмы, которые ты отметишь ♡.', watched: 'Попадёт сюда после досмотра (~90%) в плеере.', recent: 'Здесь появятся фильмы, которые выпадали в рулетке.' }[tab];
   view.innerHTML = `<div class="wrap me"><h1 class="vh">Мои списки</h1>
     <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<a role="tab" href="me/${k}" data-nav aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}">${l}<span>${nOf(k) || ''}</span></a>`).join('')}</div>
     ${plaque}

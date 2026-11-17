@@ -280,6 +280,23 @@ async function fallbackPair(g, s) {
   return ids.map((id) => sn.titles[id]).filter(Boolean).filter((t) => !isIndianTitle(t));
 }
 
+/** Постеры для ленты барабана под выбранные жанры: из встроенного каталога, по тем же правилам, что и подбор. */
+export async function genreTape(P, f) {
+  await animeReady;
+  let pairs = P;
+  if (f.mode === 'anime') pairs = P.filter(([g]) => g?.al).map(([g]) => [ANIME, { id: 'al_' + g.id, al: g.al }]);
+  else pairs = P.filter(([g]) => !g?.animeOnly && g?.src !== 'anilist');
+  if (!pairs.length) return [];
+  const collect = async (ff) => {
+    const out = new Map();
+    for (const [g, s] of pairs) for (const t of await fallbackPair(g, s)) if (!out.has(t.id) && matchLocal(t, g, s, ff)) out.set(t.id, t);
+    return [...out.values()];
+  };
+  let list = await collect(f);
+  if (list.length < 12) list = await collect({ ...f, vm: 0, vs: 0 });
+  return list;
+}
+
 /** Поиск по встроенному каталогу (~15k постеров) — дополняет live IMDb search */
 export async function searchSnapTitles(q, mode = 'all') {
   const needle = String(q || '').trim().toLowerCase();

@@ -1,10 +1,10 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=18';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=29';
+import * as V from './views.js?v=30';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=10';
-import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=5';
+import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { hostChange, guestNeedsSeek, localPosition } from './sync-policy.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -111,7 +111,7 @@ function pickSub(g, s) {
   if (s && prefs.sub[g] !== s) prefs.sub[g] = s; else delete prefs.sub[g];
   changed();
 }
-function changed() { syncUI(); savePrefs(); applyFx(); if (document.body.classList.contains('has-result') && !spinning) setSpin('Крутить'); }
+function changed() { syncUI(); savePrefs(); applyFx(); scheduleRetape(); if (document.body.classList.contains('has-result') && !spinning) setSpin('Крутить'); }
 
 function syncChips() {
   const full = prefs.sel.length >= MAX;
@@ -130,7 +130,7 @@ function syncChips() {
 }
 
 // режим
-document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { const was = prefs.mode; prefs.mode = b.dataset.mode; prefs.sel = prefs.sel.filter((id) => genreOk(byId[id], prefs.mode)); changed(); if (was !== prefs.mode) retape(); if (picker.dataset.sec === 'type') closePanel(picker); }));
+document.querySelectorAll('#types button[data-mode]').forEach((b) => b.addEventListener('click', () => { const was = prefs.mode; prefs.mode = b.dataset.mode; prefs.sel = prefs.sel.filter((id) => genreOk(byId[id], prefs.mode)); changed(); if (picker.dataset.sec === 'type') closePanel(picker); }));
 
 // десятилетия: одно или диапазон
 const NOW = new Date().getFullYear();
@@ -373,8 +373,9 @@ function warm(src, ms = 2500) {
 const isWarm = (t) => !!decoded.get(reelSrc(t))?.ok;
 function visRange() { const first = Math.floor((pos - CX) / P) - 1; return [first, first + K]; }
 let tapeGen = 0;
-async function buildTape(list, n = 24, regrow = false) {
-  const pool = list.filter((t) => t?.i).sort(() => Math.random() - 0.5).slice(0, n);
+async function buildTape(list, n = TAPE_N, regrow = false) {
+  const uniq = new Map(); for (const t of list) if (t?.i && !uniq.has(t.id)) uniq.set(t.id, t);
+  const pool = [...uniq.values()].sort(() => Math.random() - 0.5).slice(0, n);
   if (!pool.length) return;
   let rg = regrow; const gen = regrow ? ++tapeGen : tapeGen;
   const commit = (next) => {
@@ -388,8 +389,13 @@ async function buildTape(list, n = 24, regrow = false) {
   };
   // первый раз (медленная сеть) лента растёт по мере декодирования; в ленту попадают только готовые постеры
   const grow = !tape.length || regrow, got = []; // regrow: смена режима «Что» — лента меняется, как только готовы первые постеры
-  await Promise.all(pool.map((t) => warm(reelSrc(t), 15000).then((ok) => { if (!ok) return; got.push(t); if (grow && got.length >= 4) commit([...got]); })));
-  if (!grow && got.length >= Math.min(6, pool.length)) commit(got);
+  let shown = 0; const show = () => { if (got.length > shown) { shown = got.length; commit([...got]); } };
+  // лента появляется, когда готов десяток постеров (иначе на старте видны повторы), либо через 2.5 с с тем, что успело загрузиться
+  const early = grow ? setTimeout(() => { if (!shown && got.length >= 4) show(); }, 2500) : 0;
+  await Promise.all(pool.map((t) => warm(reelSrc(t), 15000).then((ok) => { if (!ok) return; got.push(t); if (grow && !shown && got.length >= Math.min(12, pool.length)) show(); })));
+  clearTimeout(early);
+  if (grow && got.length >= 4) show();
+  else if (!grow && got.length >= Math.min(6, pool.length)) commit(got);
   else if (!tape.length) commit(pool); // ничего не загрузилось: покажем заглушки с названиями
 }
 function itemAt(v) { return items.has(v) ? items.get(v) : tape.length ? tape[mod(v, tape.length)] : null; }
@@ -418,9 +424,19 @@ function paint(force) {
 }
 addEventListener('resize', () => measure(), { passive: true });
 // лента-заполнитель — только из тайтлов текущего режима «Что» (аниме не мелькает в «Фильмах», и наоборот)
-const seedsFor = () => Promise.all([seedPosters(), animeReady]).then(([s]) => s.filter((t) => fitsMode(t, prefs.mode)));
-function retape() { tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, 24, true); }).catch(() => {}); }
-let tapeReady = seedsFor().then((s) => { display = s; return buildTape(s); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
+const TAPE_N = 64;
+async function seedsFor() {
+  const [s] = await Promise.all([seedPosters(), animeReady]);
+  const base = s.filter((t) => fitsMode(t, prefs.mode));
+  if (!prefs.sel.length) return base;
+  try { const g = await genreTape(pairs(), filters()); return g.length ? g : base; } catch { return base; }
+}
+var tapeKey = '';
+const tapeKeyNow = () => JSON.stringify([prefs.mode, prefs.sel, prefs.sub, prefs.from, prefs.to, prefs.rating, prefs.known]);
+function retape() { tapeKey = tapeKeyNow(); tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, TAPE_N, true); }).catch(() => {}); }
+var retapeTimer = 0;
+function scheduleRetape() { if (tapeKeyNow() === tapeKey) return; clearTimeout(retapeTimer); retapeTimer = setTimeout(() => { if (!spinning && tapeKeyNow() !== tapeKey) retape(); }, 250); }
+let tapeReady = (tapeKey = tapeKeyNow(), seedsFor()).then((s) => { display = s; return buildTape(s, TAPE_N); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
 
 // покой: лента шагает — карточка стоит ровно в рамке 2.6 с, затем переезд ровно на одну карточку за 0.9 с.
@@ -463,7 +479,7 @@ async function spin() {
   say('');
   if (!result.hidden) await collapse();
   endMove();
-  if (!tape.length) await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
+  await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
   reel.classList.remove('landed');
   applyFx(); phase('spin');
   const P0 = plan(); let lastQ = -1;
@@ -509,7 +525,8 @@ async function spin() {
     T = Math.round((pos + dist0) / P);
     // соседи победителя — только из уже декодированной ленты и только за краем видимой части
     const [va, vb] = visRange();
-    const pickN = () => tape[Math.floor(Math.random() * tape.length)];
+    const shuf = tape.filter((x) => x.id !== win.t.id).sort(() => Math.random() - 0.5); let sn = 0;
+    const pickN = () => shuf[sn++ % shuf.length];
     for (let i = -6; i <= 4; i++) { const vv = T + i; if (vv >= va && vv < vb) continue; if (i) { if (tape.length) items.set(vv, pickN()); } else items.set(vv, win.t); }
     if (T >= va && T < vb) items.set(T, win.t);
     cards.forEach((c) => { if (c.vi != null && Math.abs(c.vi - T) <= 6 && !(c.vi >= va && c.vi < vb)) c.vi = null; });
@@ -771,7 +788,7 @@ result.addEventListener('click', (e) => {
   if (act === 'again') spin();
   if (act === 'edit') { if (!spinning) collapse().then(() => $('#fGenre').focus()); }
   if (act === 'share') openShare(curT);
-  if (act === 'more') { $('#desc').classList.add('open'); b.remove(); }
+  if (act === 'more') { $('#desc')?.classList.add('open'); b.remove(); }
   if (act === 'where') {
     const w = $('#where'), op = w.hidden; w.hidden = !op; b.setAttribute('aria-expanded', op);
     if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
