@@ -1,6 +1,7 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
 import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=21';
+import { buildShelves, shelfById, MIN_SHELF } from './curated.js?v=1';
 import * as S from './store.js?v=14';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=2';
@@ -203,6 +204,36 @@ function fillMoods(root) {
   root.querySelectorAll('.mood').forEach((a) => { const m = MOODS.find((x) => x.slug === a.dataset.slug); moodPosters(m).then((u) => { a.querySelector('.mcol').innerHTML = collHTML(u); }); });
 }
 
+let curatedTitles = null;
+function loadCurated() {
+  if (!curatedTitles) curatedTitles = fetch('data/curated.json?v=1').then((r) => { if (!r.ok) throw new Error('curated'); return r.json(); }).then((d) => d.titles || []);
+  return curatedTitles;
+}
+function shelfCard(t) {
+  remember(t);
+  const title = t.ru || ruCached(t.id) || t.t || '';
+  const meta = [yr(t), t.r ? `${Number(t.r).toFixed(1)}★` : ''].filter(Boolean).join(' · ');
+  const src = t.i ? poster(t.i, 300) : '';
+  return `<a class="stile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}</div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
+}
+const shelfSkel = () => `<div class="srow">${Array.from({ length: 8 }, () => '<div class="stile sk"><div class="tp"></div><b></b></div>').join('')}</div>`;
+let shelfGen = 0;
+function mountShelves(box) {
+  const gen = ++shelfGen;
+  box.hidden = !!cat.q;
+  box.innerHTML = `<h2 class="hcap">Подборки</h2>${shelfSkel()}`;
+  loadCurated().then((titles) => {
+    if (gen !== shelfGen || !box.isConnected) return;
+    const shelves = buildShelves(titles).filter((s) => s.items.length >= MIN_SHELF);
+    box.innerHTML = shelves.length ? `<h2 class="hcap">Подборки</h2><div class="shelves">${shelves.map((s) => `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow">${s.items.map(shelfCard).join('')}</div></section>`).join('')}</div>` : '';
+    localize(box);
+  }).catch(() => {
+    if (gen !== shelfGen || !box.isConnected) return;
+    box.innerHTML = `<h2 class="hcap">Подборки</h2><p class="empty">Подборки не загрузились. <button class="tlink" type="button" data-cur-retry>Повторить</button></p>`;
+    box.querySelector('[data-cur-retry]').onclick = () => { curatedTitles = null; mountShelves(box); };
+  });
+}
+
 // ---------- фильтры каталога ----------
 const DECS = [[0, 1969, 'до 70-х'], [1970, 1979, '70-е'], [1980, 1989, '80-е'], [1990, 1999, '90-е'], [2000, 2009, '00-е'], [2010, 2019, '10-е'], [2020, YEAR_RANGE_MAX, '20-е']];
 const cat = { q: '', mode: 'all', genres: [], from: undefined, to: undefined, rating: 0, sort: 'rating' };
@@ -290,10 +321,14 @@ export let route = { name: 'roulette' };
 function parse(path) {
   const p = path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean).map(decodeURIComponent);
   if (!p.length) return { name: 'roulette' };
-  if (p[0] === 'catalog') return p[1] === 'mood' && p[2] ? { name: 'mood', slug: p[2] } : { name: 'catalog' };
+  if (p[0] === 'catalog') {
+    if (p[1] === 'mood' && p[2]) return { name: 'mood', slug: p[2] };
+    if (p[1] === 'list' && p[2]) return { name: 'list', slug: p[2] };
+    return { name: 'catalog' };
+  }
   if (p[0] === 'title' && p[1]) return { name: 'title', id: p[1] };
   if (p[0] === 'watch' && p[1]) return { name: 'watch', id: p[1].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) };
-  if (p[0] === 'together') return { name: 'catalog' };
+  if (p[0] === 'together') return { name: 'list', slug: 'dvoe' };
   if (p[0] === 'about') return { name: 'about' };
   if (p[0] === 'me') return { name: 'me', tab: ['favorites', 'watched', 'recent'].includes(p[1]) ? p[1] : 'favorites' };
   return { name: 'roulette' };
@@ -323,11 +358,12 @@ function show(r, keepScroll) {
   if (!keepScroll) scrollTo(0, 0);
   if (r.name === 'catalog') renderCatalog();
   else if (r.name === 'mood') renderMood(r.slug);
+  else if (r.name === 'list') renderList(r.slug);
   else if (r.name === 'me') renderMe(r.tab);
   else if (r.name === 'watch') renderWatch(r.id);
   else if (r.name === 'about') renderAbout();
 }
-const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', watch: 'catalog', me: 'me' })[n];
+const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', list: 'catalog', watch: 'catalog', me: 'me' })[n];
 function moveDot() {
   const a = document.querySelector('.nav a.on'), dot = $('#navDot');
   if (!dot) return;
@@ -369,13 +405,15 @@ function renderCatalog() {
   document.title = 'Каталог · Кинорулетка';
   view.innerHTML = `<div class="wrap cat"><h1 class="sr">Каталог</h1>
     <label class="search">${IC.search}<input id="q" type="search" placeholder="Название фильма, сериала или аниме" autocomplete="off" enterkeyhint="search" value="${esc(cat.q)}"><kbd>/</kbd></label>
-    <h2 class="hcap">Подборки</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
+    <div id="shelves"></div>
+    <h2 class="hcap">Настроение</h2>${moodCards()}<div id="frow"></div><div class="grid" id="grid"></div></div>`;
   fillMoods(view);
+  mountShelves($('#shelves'));
   let stop = null;
   const run = () => { stop?.(); stop = grid($('#grid'), { ...cat }, { onTotal: (n) => { const c = view.querySelector('.ccount'); if (c) c.textContent = n ? `${n.toLocaleString('ru-RU')} ${plural(n, 'название', 'названия', 'названий')}` : ''; } }); };
   const row = filterRow(cat, { onChange: run }); $('#frow').replaceWith(row);
   const q = $('#q'); let deb = 0;
-  q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); run(); }, 250); };
+  q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { cat.q = q.value.trim(); row.classList.toggle('dim', !!cat.q); const box = $('#shelves'); if (box) box.hidden = !!cat.q; run(); }, 250); };
   row.classList.toggle('dim', !!cat.q);
   if (focusSearch) { focusSearch = false; requestAnimationFrame(() => q.focus()); }
   run();
@@ -430,6 +468,32 @@ function renderMood(slug) {
   view.querySelector('.mspin').onclick = () => { navigate(''); H.spinWith?.(m.spin); };
   const stop = grid($('#grid'), { mode: 'all', ...m.f });
   cleanup = stop;
+}
+
+function renderList(slug) {
+  const spec = shelfById(slug);
+  if (!spec) return navigate('catalog', { replace: true });
+  document.title = `${spec.title} · Кинорулетка`;
+  view.innerHTML = `<div class="wrap"><header class="mhead"><div class="mcol mc5"></div><div class="mtxt"><a class="back" href="catalog" data-nav>${IC.l}Каталог</a><h1>${esc(spec.title)}</h1><p>${esc(spec.text)}</p></div></header><div class="grid" id="grid">${skel(mobile() ? 12 : 16)}</div></div>`;
+  const gen = ++shelfGen;
+  loadCurated().then((titles) => {
+    if (gen !== shelfGen || route.name !== 'list' || route.slug !== slug) return;
+    const items = buildShelves(titles, [spec])[0]?.items || [];
+    const gridEl = $('#grid');
+    if (!gridEl) return;
+    if (!items.length) { gridEl.innerHTML = '<p class="empty">В этой подборке пока пусто.</p>'; return; }
+    gridEl.innerHTML = items.map(tile).join('');
+    const col = view.querySelector('.mcol');
+    if (col) col.innerHTML = collHTML(items.slice(0, 5).map((t) => poster(t.i, 300)), 5);
+    localize(view);
+    syncButtons(view);
+  }).catch(() => {
+    if (route.name !== 'list' || route.slug !== slug) return;
+    const gridEl = $('#grid');
+    if (!gridEl) return;
+    gridEl.innerHTML = `<div class="empty err"><p>Подборка не загрузилась.</p><button class="btn" type="button" data-retry>Повторить</button></div>`;
+    gridEl.querySelector('[data-retry]').onclick = () => { curatedTitles = null; renderList(slug); };
+  });
 }
 
 // ---------- Мои списки ----------

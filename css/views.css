@@ -60,6 +60,14 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 .mcol img { flex: 1; min-width: 0; height: 100%; object-fit: cover; filter: saturate(.85); }
 .mood::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgb(12 11 10 / .1), rgb(12 11 10 / .92)); }
 .mood b { position: absolute; left: 14px; bottom: 12px; right: 14px; font-size: 17px; line-height: 22px; font-weight: 600; }
+.shelves { display: grid; gap: 28px; }
+.shelf .shd { align-items: flex-end; gap: 16px; }
+.shelf .shd > div { min-width: 0; }
+.shelf h2 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; }
+.shelf p { margin-top: 4px; max-width: 62ch; color: var(--ink-3); font-size: 14px; line-height: 20px; }
+.shelf .tlink { flex: none; white-space: nowrap; }
+.shelf .srow { padding-top: 12px; }
+.shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
 
 /* строка фильтров */
 .crow { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; flex-wrap: wrap; }
@@ -265,6 +273,9 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
   .moods { grid-auto-columns: 160px; margin: 0 -16px; padding: 0 16px; }
   .mood { height: 96px; }
   .mood b { font-size: 15px; left: 12px; bottom: 10px; }
+  .shelf h2 { font-size: 18px; line-height: 24px; }
+  .shelf .shd { align-items: flex-start; }
+  .shelf .srow { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
   .tile b { font-size: 12px; line-height: 16px; margin-top: 6px; }
   .tile small { font-size: 11px; }
