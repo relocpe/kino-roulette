@@ -1,6 +1,11 @@
 // Свой плеер комнаты. iframe.cloud рисует кино, но play и паузу родителю не сообщает,
 // поэтому гости не стартуют. Здесь тот же поток, а кнопки уже наши.
 
+export function kpEmbed(id) {
+  const n = String(id || '').replace(/\D/g, '');
+  return n ? `https://iframe.cloud/iframe/${n}` : '';
+}
+
 export function kpFromFilm(film) {
   const direct = String(film?.kinopoiskId || '').replace(/\D/g, '');
   if (direct) return direct;

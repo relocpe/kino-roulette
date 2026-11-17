@@ -16,6 +16,10 @@ export function playerKind(url) {
   return 'unknown';
 }
 
+export function isLordSite(url) {
+  return /2026-lord\.pics|lordfilm/i.test(String(url || ''));
+}
+
 export function preferEmbeds(urls) {
   const list = [...new Set((urls || []).filter(Boolean))];
   return list.sort((a, b) => Number(DIRECT.test(b)) - Number(DIRECT.test(a)));

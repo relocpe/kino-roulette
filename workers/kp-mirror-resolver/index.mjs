@@ -111,40 +111,58 @@ export async function resolveKinopoiskMirror(body, fetcher = fetch) {
   const mirrors = mirrorPageUrls(id, type);
   const fallback = embedFromKinopoiskId(id);
   let lastUrl = mirrors[0] || '';
+  let used = fetcher;
+  let stop = () => {};
+  if (fetcher === fetch) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    stop = () => clearTimeout(timer);
+    used = (url, init = {}) => fetch(url, { ...init, signal: ctl.signal });
+  }
+
+  const finish = async (result) => {
+    try {
+      return await attachStream(result, body, used);
+    } finally {
+      stop();
+    }
+  };
 
   for (const startUrl of mirrors) {
     lastUrl = startUrl;
     try {
-      const response = await fetcher(startUrl, { headers: FETCH_HEADERS, redirect: 'follow' });
+      const response = await used(startUrl, { headers: FETCH_HEADERS, redirect: 'follow' });
       if (!response.ok) continue;
       const html = await response.text();
       const embedUrls = extractMirrorEmbeds(html);
       const pageUrl = response.url || startUrl;
       if (embedUrls.length) {
-        return attachStream({
+        return finish({
           matched: true,
           source: 'kp-mirror',
           url: pageUrl,
           embedUrl: embedUrls[0],
           embedUrls,
           mirror: startUrl,
-        }, body, fetcher);
+        });
       }
     } catch {
-      /* try next mirror */
+      /* зеркало не ответило — плеер по номеру всё равно есть */
+      break;
     }
   }
 
   if (fallback) {
-    return attachStream({
+    return finish({
       matched: true,
       source: 'kp-mirror',
       url: lastUrl || mirrors[0],
       embedUrl: fallback,
       embedUrls: [fallback],
       mirror: 'direct',
-    }, body, fetcher);
+    });
   }
+  stop();
   return { matched: false, reason: 'mirror-unavailable', source: 'kp-mirror', url: lastUrl };
 }
 

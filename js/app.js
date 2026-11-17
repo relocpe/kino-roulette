@@ -4,8 +4,8 @@ import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, 
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=37';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=16';
-import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
-import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=4';
+import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
+import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=5';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -961,10 +961,13 @@ async function resolveOwnStream(film) {
   const fallback = /^https:\/\//i.test(film?.streamUrl || '') ? film.streamUrl : '';
   const empty = { url: fallback, voice: film?.voice || '', streams: [] };
   if (!kp) return empty;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
   try {
     const response = await fetch(KP_MIRROR_RESOLVER, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: ctl.signal,
       body: JSON.stringify({
         kinopoiskId: kp,
         type: film?.type === 'tv' ? 'tv' : 'movie',
@@ -987,7 +990,19 @@ async function resolveOwnStream(film) {
     return { url, voice: film?.voice || picked?.label || '', streams, series: data.series || null };
   } catch {
     return empty;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+function kpIdFor(t) {
+  const have = kpCached(t?.id);
+  if (have) return Promise.resolve(have);
+  if (!t?.id) return Promise.resolve('');
+  return Promise.race([
+    ruTitles([t.id]).then(() => kpCached(t.id)),
+    new Promise((resolve) => setTimeout(() => resolve(kpCached(t.id)), 1600)),
+  ]);
 }
 
 function watchRoom(id, panel, frame, titleEl) {
@@ -1117,7 +1132,12 @@ function watchRoom(id, panel, frame, titleEl) {
     titleRu(film.id);
     const my = ++gen;
     frame.classList.remove('lord-browse');
-    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю фильм…</div>';
+    const siteNow = embedUrl && isSitePlayer(embedUrl) && !(hinted && !isSitePlayer(hinted)) ? embedUrl : '';
+    if (siteNow) {
+      frame.dataset.watchSrc = siteNow;
+      mountLordFrame(siteNow, '', title, [siteNow], frame);
+      attachBridge();
+    } else frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю фильм…</div>';
     const run = async () => {
       const own = kpFromFilm(film) ? await resolveOwnStream(film) : { url: hinted, voice: film.voice || '', streams: [] };
       if (my !== gen) return;
@@ -1163,8 +1183,12 @@ function watchRoom(id, panel, frame, titleEl) {
         }
       };
       const initial = choices.find((item) => item.url === stream) || choices[0];
-      if (initial) {
+      if (initial && !(initial.url === siteNow && frame.querySelector('iframe'))) {
         await play(initial, Math.max(choices.length - 1, 0), false);
+        return;
+      }
+      if (siteNow) {
+        renderPicks(frame, choices, siteNow, (next) => play(next, 0, true));
         return;
       }
       const src = embedUrl || pageUrl;
@@ -1196,6 +1220,37 @@ function watchRoom(id, panel, frame, titleEl) {
       season: spot?.season || undefined,
       episode: spot?.episode || undefined,
     };
+    const knownKp = payload.kinopoiskId || await kpIdFor(t);
+    if (my !== gen) return;
+    if (knownKp) {
+      payload.kinopoiskId = knownKp;
+      const next = {
+        id: t.id,
+        title,
+        originalTitle: payload.originalTitle,
+        imdbId: payload.imdbId || undefined,
+        year: t.y,
+        embedUrl: kpEmbed(knownKp),
+        kinopoiskId: knownKp,
+        type: payload.type,
+        season: payload.season,
+        episode: payload.episode,
+        mode: 'stream',
+      };
+      const changed = !lastFilm || lastFilm.id !== next.id || lastFilm.season !== next.season || lastFilm.episode !== next.episode;
+      lastFilm = next;
+      if (ctl.isHost()) {
+        ctl.publishFilm(lastFilm);
+        if (changed) {
+          resumeAt = spot ? spot.seconds : 0;
+          ctl.pushSync(resumeAt, false, true);
+          hostState = { tick: null, stallSince: 0, sentAt: resumeAt, sentPlaying: false, sentWall: Date.now() };
+        }
+        if (pickedId && t.id === pickedId) V.clearWatchBoot();
+      }
+      showEmbed(next);
+      return;
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 14000);
     try {
@@ -1686,7 +1741,11 @@ function lordSearchUrl(title, year) {
 
 function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lmFrame')) {
   if (!frame) return;
-  const list = preferEmbeds([...(embedUrls || []), embedUrl]).map(prepareEmbedUrl);
+  const list = preferEmbeds([...(embedUrls || []), embedUrl]).filter((u) => u && !isLordSite(u)).map(prepareEmbedUrl);
+  if (!list.length && (isLordSite(pageUrl) || isLordSite(embedUrl))) {
+    mountLordSearchPanel(pageUrl || embedUrl, title, frame);
+    return;
+  }
   if (list.length > 1) {
     frame.classList.remove('lord-browse');
     const pick = list.map((u, i) => `<button type="button" class="${i ? '' : 'active'}" data-lsrc="${esc(u)}" role="tab">Плеер ${i + 1}</button>`).join('');
@@ -1714,50 +1773,65 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lm
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay *; encrypted-media *; picture-in-picture *; fullscreen *" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 }
 
+async function postResolver(url, body, parent, ms) {
+  if (parent?.aborted) throw parent.reason || new DOMException('Aborted', 'AbortError');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  const stop = () => ctl.abort();
+  parent?.addEventListener('abort', stop);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctl.signal,
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    if (parent?.aborted) throw error;
+    return null;
+  } finally {
+    clearTimeout(timer);
+    parent?.removeEventListener('abort', stop);
+  }
+}
+
 async function resolveWatchPayload(payload, signal) {
   const chain = [
-    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi' },
-    ...(payload.kinopoiskId ? [{ url: KP_MIRROR_RESOLVER, pageRe: /^https:\/\//, source: 'kp-mirror' }] : []),
-    { url: LORD_RESOLVER, pageRe: lordPageRe, source: 'lordfilm' },
+    ...(payload.kinopoiskId ? [{ url: KP_MIRROR_RESOLVER, pageRe: /^https:\/\//, source: 'kp-mirror', ms: 8000 }] : []),
+    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi', ms: 6000 },
+    { url: LORD_RESOLVER, pageRe: lordPageRe, source: 'lordfilm', ms: 6000 },
   ];
   let last = null;
   for (const item of chain) {
-    try {
-      const body = item.source === 'kp-mirror'
-        ? {
-          kinopoiskId: payload.kinopoiskId,
-          type: payload.type,
-          title: payload.title,
-          originalTitle: payload.originalTitle,
-          year: payload.year,
-          imdbId: payload.imdbId,
-          season: payload.season,
-          episode: payload.episode,
-          stream: true,
-        }
-        : payload;
-      const response = await fetch(item.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal,
-      });
-      if (!response.ok) continue;
-      const data = await response.json();
-      last = data;
-      const pageUrl = data.url && (item.pageRe.test(data.url) || item.source === 'kp-mirror') ? data.url : '';
-      const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
-        ? data.embedUrls
-        : (data.embedUrl ? [data.embedUrl] : []);
-      const streams = (Array.isArray(data.streams) ? data.streams : [])
-        .filter((item) => /^https:\/\//i.test(item?.url || ''))
-        .slice(0, 6);
-      const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : (streams[0]?.url || '');
-      if (data.matched === true && (embedUrls.length || pageUrl || streamUrl)) {
-        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), streamUrl, streams, source: data.source || item.source };
+    const body = item.source === 'kp-mirror'
+      ? {
+        kinopoiskId: payload.kinopoiskId,
+        type: payload.type,
+        title: payload.title,
+        originalTitle: payload.originalTitle,
+        year: payload.year,
+        imdbId: payload.imdbId,
+        season: payload.season,
+        episode: payload.episode,
+        stream: true,
       }
-    } catch (error) {
-      if (error?.name === 'AbortError') throw error;
+      : payload;
+    const data = await postResolver(item.url, body, signal, item.ms);
+    if (!data) continue;
+    last = data;
+    const pageUrl = data.url && (item.pageRe.test(data.url) || item.source === 'kp-mirror') ? data.url : '';
+    const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
+      ? data.embedUrls
+      : (data.embedUrl ? [data.embedUrl] : []);
+    const streams = (Array.isArray(data.streams) ? data.streams : [])
+      .filter((row) => /^https:\/\//i.test(row?.url || ''))
+      .slice(0, 6);
+    const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : (streams[0]?.url || '');
+    const embeds = preferEmbeds(embedUrls).filter((u) => !isLordSite(u));
+    if (data.matched === true && (embeds.length || streamUrl || (pageUrl && !isLordSite(pageUrl)))) {
+      return { data, pageUrl, embedUrls: embeds, streamUrl, streams, source: data.source || item.source };
     }
   }
   return last ? { data: last, pageUrl: '', embedUrls: [], source: null } : null;
@@ -1797,7 +1871,15 @@ async function openLordWatch(t, btn) {
   stopWatchProgress(false);
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
-  const kpId = kpCached(t.id);
+  const kpId = await kpIdFor(t);
+  if (kpId) {
+    $('#lmTitle').textContent = title;
+    mountLordFrame(kpEmbed(kpId), '', title, [kpEmbed(kpId)]);
+    startWatchProgress(t);
+    clearTimeout(timer);
+    btn.disabled = false; btn.textContent = originalLabel;
+    return;
+  }
   const payload = {
     title,
     originalTitle: t.t || '',
