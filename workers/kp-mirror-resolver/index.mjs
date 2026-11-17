@@ -139,16 +139,24 @@ export async function resolveKinopoiskMirror(body, fetcher = fetch) {
 async function proxyMedia(request, url) {
   const target = allowedMediaUrl(url.searchParams.get('u') || '');
   if (!target) return json({ error: 'not-found' }, 404, request);
-  const headers = { Accept: '*/*', Referer: 'https://iframe.cloud/' };
   const range = request.headers.get('Range');
-  if (range) headers.Range = range;
+  const profiles = [
+    { Accept: '*/*', Referer: 'https://iframe.cloud/' },
+    { Accept: '*/*', Referer: 'https://gogo.iframe.cloud/', Origin: 'https://gogo.iframe.cloud' },
+  ];
   let response;
-  try {
-    response = await fetch(target, { headers, redirect: 'follow' });
-  } catch {
-    return json({ error: 'upstream' }, 502, request);
+  let status = 0;
+  for (const headers of profiles) {
+    if (range) headers.Range = range;
+    try {
+      response = await fetch(target, { headers, redirect: 'follow' });
+      status = response.status;
+      if (response.ok || response.status === 206) break;
+    } catch {
+      response = null;
+    }
   }
-  if (!response.ok && response.status !== 206) return json({ error: 'upstream' }, 502, request);
+  if (!response || (!response.ok && response.status !== 206)) return json({ error: 'upstream', status }, 502, request);
   const type = response.headers.get('content-type') || '';
   const playlist = /mpegurl|m3u8/i.test(type) || target.includes('.m3u8');
   const body = playlist
