@@ -631,7 +631,7 @@ function drawAvatar() {
     const b = box.querySelector('.ava'), m = box.querySelector('.amenu');
     const fxLbl = () => { const on = $('#fxBtn').getAttribute('aria-checked') === 'true'; const x = m.querySelector('[data-x="fx"]'); x.textContent = on ? 'Эффекты: вкл' : 'Эффекты: выкл'; x.setAttribute('aria-checked', String(on)); };
     const betaLbl = () => { const on = document.documentElement.dataset.beta === '1'; const x = m.querySelector('[data-x="beta"]'); x.textContent = on ? 'Бета-оформление: вкл' : 'Бета-оформление: выкл'; x.setAttribute('aria-checked', String(on)); };
-  const syncMenu = () => { fxLbl(); betaLbl(); };
+    const syncMenu = () => { fxLbl(); betaLbl(); };
     b.onclick = (e) => { e.stopPropagation(); syncMenu(); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); };
     m.onclick = async (e) => { const x = e.target.closest('[data-x]'); if (!x) { m.hidden = true; return; } if (x.dataset.x === 'fx') { $('#fxBtn').click(); fxLbl(); } else if (x.dataset.x === 'beta') { $('#beta').click(); betaLbl(); } else if (x.dataset.x === 'acct') { m.hidden = true; openAccount(); } else { m.hidden = true; await S.logout(); toast('Вышли из аккаунта'); } };
     if (avaDoc) document.removeEventListener('click', avaDoc);
