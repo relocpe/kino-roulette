@@ -502,18 +502,30 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
   .wroom .wp-rail { height: auto; min-height: 420px; border-left: 0; border-top: 1px solid var(--line); padding: 12px 0 0; }
   .wp-syncbtn { margin-left: 0; }
 }
-.wroom:fullscreen { background: #000; padding: 0; gap: 0; max-width: none; width: 100%; height: 100%; grid-template-columns: 1fr; }
-.wroom:fullscreen .wroom-bar { position: absolute; z-index: 4; left: 0; right: 48px; top: 0; padding: 12px 16px; background: linear-gradient(#000, transparent); opacity: 0; transition: opacity .2s; }
+.wroom:fullscreen, .wroom.is-full { background: #000; padding: 0; gap: 0; max-width: none; width: 100%; height: 100%; grid-template-columns: 1fr; }
+.wroom:fullscreen .wroom-bar, .wroom.is-full .wroom-bar { position: absolute; z-index: 4; left: 0; right: 48px; top: 0; padding: 12px 16px; background: linear-gradient(#000, transparent); opacity: 0; transition: opacity .2s; }
 .wroom:fullscreen:hover .wroom-bar,
-.wroom:fullscreen:focus-within .wroom-bar { opacity: 1; }
-.wroom:fullscreen .wroom-frame { min-height: 0; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
-.wroom:fullscreen .wp-sync { position: absolute; z-index: 4; left: 0; right: 48px; bottom: 0; padding: 20px 16px 12px; background: linear-gradient(transparent, #000); opacity: 0; }
-.wroom:fullscreen:hover .wp-sync, .wroom:fullscreen:focus-within .wp-sync { opacity: 1; }
-.wroom:fullscreen .wroom-side { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(340px, 100%); height: 100%; max-height: none; min-height: 0; border-left: 0; padding: 16px 44px 16px 16px; background: rgb(12 11 10 / .96); transform: translateX(100%); transition: transform .2s ease; }
+.wroom:fullscreen:focus-within .wroom-bar,
+.wroom.is-full:hover .wroom-bar,
+.wroom.is-full:focus-within .wroom-bar { opacity: 1; }
+.wroom:fullscreen .wroom-frame, .wroom.is-full .wroom-frame { min-height: 0; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.wroom:fullscreen .wp-sync, .wroom.is-full .wp-sync { position: absolute; z-index: 4; left: 0; right: 48px; bottom: 0; padding: 20px 16px 12px; background: linear-gradient(transparent, #000); opacity: 0; }
+.wroom:fullscreen:hover .wp-sync, .wroom:fullscreen:focus-within .wp-sync,
+.wroom.is-full:hover .wp-sync, .wroom.is-full:focus-within .wp-sync { opacity: 1; }
+.wroom-hot { display: none; }
+.wroom:fullscreen .wroom-hot, .wroom.is-full .wroom-hot { display: block; position: absolute; z-index: 4; top: 0; right: 0; bottom: 84px; width: min(200px, 24vw); }
+.wroom:fullscreen .wroom-side, .wroom.is-full .wroom-side { display: flex; position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); height: 100%; max-height: none; min-height: 0; border-left: 0; padding: 16px 16px 16px 16px; background: rgb(12 11 10 / .96); transform: translateX(100%); transition: transform .22s ease; }
+.wroom:fullscreen:has(.wp-peek:hover) .wroom-side,
+.wroom.is-full:has(.wp-peek:hover) .wroom-side,
+.wroom:fullscreen:has(.wroom-hot:hover) .wroom-side,
 .wroom:fullscreen .wroom-side:hover,
 .wroom:fullscreen .wroom-side:focus-within,
-.wroom:fullscreen.chat-open .wroom-side { transform: none; }
-.wroom:fullscreen .wp-peek { display: flex; align-items: center; justify-content: center; position: fixed; right: 0; top: 0; bottom: 0; left: auto; width: 36px; z-index: 6; border: 0; background: rgb(12 11 10 / .72); color: var(--ink-2); writing-mode: vertical-rl; font-size: 13px; letter-spacing: .08em; }
+.wroom:fullscreen.chat-open .wroom-side,
+.wroom.is-full:has(.wroom-hot:hover) .wroom-side,
+.wroom.is-full .wroom-side:hover,
+.wroom.is-full .wroom-side:focus-within,
+.wroom.is-full.chat-open .wroom-side { transform: none; }
+.wroom:fullscreen .wp-peek, .wroom.is-full .wp-peek { display: flex; align-items: center; justify-content: center; position: absolute; right: 0; top: 0; bottom: 84px; left: auto; width: 36px; z-index: 4; border: 0; background: rgb(12 11 10 / .72); color: var(--ink-2); writing-mode: vertical-rl; font-size: 13px; letter-spacing: .08em; }
 
 /* телефоны и встроенный браузер Telegram: без SVG-фильтров на карточках, меньше размытия */
 @media (pointer: coarse) {

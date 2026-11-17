@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=34';
+import * as V from './views.js?v=35';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
 import { bindLocalVideo, kpFromFilm, mountRoomVideo } from './room-player.js?v=1';
@@ -1262,11 +1262,22 @@ function watchRoom(id, panel, frame, titleEl) {
   };
 
   const roomEl = frame.closest('.wroom');
+  const fullTarget = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  const syncFull = () => {
+    const el = fullTarget();
+    if (el && roomEl && el !== roomEl && roomEl.contains(el)) {
+      roomEl.requestFullscreen?.().catch(() => {});
+      return;
+    }
+    roomEl?.classList.toggle('is-full', !!roomEl && el === roomEl);
+  };
+  document.addEventListener('fullscreenchange', syncFull);
+  document.addEventListener('webkitfullscreenchange', syncFull);
   document.querySelector('#wjFull')?.addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen();
+    if (fullTarget()) document.exitFullscreen?.();
     else roomEl?.requestFullscreen?.().catch(() => {});
   });
-  panel.querySelector('#wjPeek')?.addEventListener('click', (e) => {
+  roomEl?.querySelector('#wjPeek')?.addEventListener('click', (e) => {
     e.stopPropagation();
     roomEl?.classList.toggle('chat-open');
   });
@@ -1313,7 +1324,17 @@ function watchRoom(id, panel, frame, titleEl) {
     if (cmd.playing) armGuest(cmd.at);
     else bridge.command(false, cmd.at);
   }, 2000);
-  return () => { alive = false; gen += 1; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
+  return () => {
+    alive = false;
+    gen += 1;
+    clearInterval(beat);
+    clearInterval(follow);
+    clearTimeout(readyTimer);
+    document.removeEventListener('fullscreenchange', syncFull);
+    document.removeEventListener('webkitfullscreenchange', syncFull);
+    bridge?.destroy();
+    ctl.leave();
+  };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------

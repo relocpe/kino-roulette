@@ -595,7 +595,6 @@ export function clearWatchBoot() {
 }
 function partyPanel(id) {
     return `<aside class="wp-rail wroom-side" id="wjPanel" aria-label="Чат комнаты">
-      <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       <header class="wp-head">
         <input class="wp-nick" id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Ваше имя" aria-label="Ваше имя">
         <span class="wp-code" id="wpCode">${esc(id)}</span>
@@ -626,6 +625,8 @@ function renderWatch(id) {
         <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
         <section class="wp-sync" id="wpSync" hidden></section>
       </div>
+      <div class="wroom-hot" aria-hidden="true"></div>
+      <button type="button" class="wp-peek" id="wjPeek">Чат</button>
       ${partyPanel(id)}
     </div>`;
   const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
