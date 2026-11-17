@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?v=12';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=14';
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
@@ -94,8 +94,21 @@ const SORTS = { rating: ['SORT_BY_USER_RATING', 'DESC'], pop: ['SORT_BY_POPULARI
 async function fetchPage(f, tok) {
   if (f.q) {
     if (tok) return { list: [], next: null };
-    const d = await getJSON(`${B}/search/titles?query=${encodeURIComponent(f.q)}&limit=50`);
-    let list = (d.titles || []).filter((x) => /movie|tvSeries|tvMiniSeries/.test(x.type)).map(norm);
+    const q = f.q.trim();
+    const mode = f.mode || 'all';
+  const dedup = new Map();
+  const add = (arr) => { for (const t of arr || []) if (t?.id && t.i && !dedup.has(t.id)) dedup.set(t.id, t); };
+    const jobs = [
+      getJSON(`${B}/search/titles?query=${encodeURIComponent(q)}&limit=50`).then((d) => add(
+        (d.titles || []).filter((x) => /movie|tvSeries|tvMiniSeries/.test(x.type)).map(norm).filter((t) => !isIndianTitle(t)),
+      )).catch(() => {}),
+      searchSnapTitles(q, mode).then((rows) => add(rows)),
+    ];
+    if (mode === 'anime' || mode === 'all') {
+      jobs.push(alq(`query($q:String){Page(page:1,perPage:40){media(search:$q,type:ANIME,isAdult:false){${ALF}}}}`, { q }).then((d) => add((d?.Page?.media || []).map(normAnime))).catch(() => {}));
+    }
+    await Promise.all(jobs);
+    const list = [...dedup.values()].sort((a, b) => (b.v || 0) - (a.v || 0));
     return { list, total: list.length, next: null };
   }
   if (f.genres?.includes('anime')) f = { ...f, mode: 'anime', genres: f.genres.filter((x) => x !== 'anime') }; // старые ссылки и комнаты
@@ -103,10 +116,10 @@ async function fetchPage(f, tok) {
   await animeReady;
   const gq = [...new Set((f.genres || []).flatMap((id) => [].concat(GENRES.find((g) => g.id === id)?.q?.genres || []).slice(0, 1)))];
   const [sortBy, sortOrder] = SORTS[f.sort || 'rating'];
-  const p = { types: TYPES[f.mode || 'all'], genres: gq, startYear: f.from, endYear: f.to, minAggregateRating: f.rating || undefined, minVoteCount: f.votes || (f.sort === 'year' ? 2000 : 15000), sortBy, sortOrder };
+  const p = { types: TYPES[f.mode || 'all'], genres: gq, startYear: f.from, endYear: f.to, minAggregateRating: f.rating || undefined, minVoteCount: f.votes || (f.sort === 'year' ? 2000 : 15000), sortBy, sortOrder, excludeCountryCodes: 'IN', excludePrimaryLanguageCodes: 'hi,ta,te,ml,kn,bn,mr,pa,gu' };
   const d = await getJSON(`${B}/titles?${qs(p)}${tok ? '&pageToken=' + encodeURIComponent(tok) : ''}`);
   // аниме с IMDb в «Фильмах» и «Сериалах» не показываем — для него есть режим «Аниме»
-  return { list: (d.titles || []).map(norm).filter((t) => !isAnime(t)), total: d.totalCount, next: d.nextPageToken || null };
+  return { list: (d.titles || []).map(norm).filter((t) => !isAnime(t) && !isIndianTitle(t)), total: d.totalCount, next: d.nextPageToken || null };
 }
 export async function getTitle(id) {
   if (/^al\d+$/.test(id)) { const d = await alq(`query($id:Int){Media(id:$id,type:ANIME){${ALF}}}`, { id: +id.slice(2) }); return normAnime(d.Media); }

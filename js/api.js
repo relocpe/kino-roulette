@@ -22,7 +22,7 @@ const qs = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== n
 // офлайн-каталог грузится лениво — только если API не ответил
 let snapshot = null;
 async function snap() {
-  if (!snapshot) snapshot = fetch('data/catalog.json?v=9').then((r) => r.json()).then((d) => {
+  if (!snapshot) snapshot = fetch('data/catalog.json?v=10').then((r) => r.json()).then((d) => {
     const T = {};
     for (const row of d.titles) {
       const [id, t, o, k, y, e, r10, v, g, i, sec, tg, ep] = row;
@@ -35,7 +35,7 @@ async function snap() {
 }
 let seeds = null;
 export async function seedPosters() {
-  if (!seeds) seeds = fetch('data/seed.json?v=9').then((r) => r.json());
+  if (!seeds) seeds = fetch('data/seed.json?v=10').then((r) => r.json());
   return seeds;
 }
 
@@ -108,10 +108,7 @@ export function matchLocal(t, g, s, f) {
 export function matchFull(d, g, s, f) {
   if (!matchLocal(d, g, s, f)) return false;
   if (f.mode !== 'anime' && isAnime(d)) return false;
-  if (f.skipMassIN !== false) {
-    const cc = d.countries || [];
-    if (cc.length && cc.every((c) => c === 'IN')) return false;
-  }
+  if (f.skipMassIN !== false && isIndianTitle(d, d)) return false;
   if (!s || !d.interests) return true;
   const ids = d.interests;
   if (s.noI && s.noI.some((x) => ids.includes(x))) return false;
@@ -129,6 +126,23 @@ const SORTS = [
   ['SORT_BY_USER_RATING_COUNT', 'ASC', 1], ['SORT_BY_USER_RATING', 'ASC', 1],
 ];
 const LANG_EXCLUDE = 'hi,ta,te,ml,kn,bn,mr,pa,gu';
+const IN_LANG = new Set(LANG_EXCLUDE.split(','));
+const INDIC_SCRIPT = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/;
+/** Индийский масс-маркет: не для рулетки и офлайн-каталога */
+export function isIndianTitle(t, d) {
+  const title = `${t?.t || ''} ${t?.o || ''}`;
+  if (INDIC_SCRIPT.test(title)) return true;
+  const lang = d?.lang || t?.lang;
+  if (lang && IN_LANG.has(lang)) return true;
+  const cc = d?.countries || t?.countries || [];
+  if (cc.length && cc.every((c) => c === 'IN')) return true;
+  if (cc.includes('IN') && cc.length <= 2 && !cc.some((c) => ['US', 'GB', 'FR', 'DE', 'CA', 'AU'].includes(c))) return true;
+  return false;
+}
+function applyNoIndia(p, allow = false) {
+  if (allow) return p;
+  return { ...p, excludeCountryCodes: p.excludeCountryCodes || 'IN', excludePrimaryLanguageCodes: p.excludePrimaryLanguageCodes || LANG_EXCLUDE };
+}
 const wpick = (a) => { let n = Math.random() * a.reduce((s, x) => s + x[2], 0); for (const x of a) if ((n -= x[2]) < 0) return x; return a[0]; };
 function yearWindow(from, to) {
   const lo = from || 1920, hi = to || new Date().getFullYear();
@@ -153,10 +167,7 @@ async function queryPair(g, s, f) {
   const [from, to] = yearWindow(f.from, f.to);
   const [sortBy, sortOrder] = wpick(SORTS);
   const floor = f.mode === 'movie' ? f.vm : Math.min(f.vm, f.vs);
-  const p = merge(merge({ types: TYPES[f.mode], minVoteCount: floor, minAggregateRating: f.minRating || undefined, sortBy, sortOrder }, gv), sv);
-  // без явной страны (дорамы KR и т.п.) — убираем массовый индийский прокат из случайной выдачи
-  const langQ = [].concat(p.countryCodes || [], p.primaryLanguageCodes || []).filter(Boolean).length;
-  if (!langQ) p.excludePrimaryLanguageCodes = p.excludePrimaryLanguageCodes || LANG_EXCLUDE;
+  const p = applyNoIndia(merge(merge({ types: TYPES[f.mode], minVoteCount: floor, minAggregateRating: f.minRating || undefined, sortBy, sortOrder }, gv), sv));
   // полоса голосов: реже «мало голосов» — там много регионального шума
   const band = Math.random();
   if (!f.known && band < 0.18) p.maxVoteCount = pick([12000, 25000, 45000]);
@@ -171,7 +182,7 @@ async function queryPair(g, s, f) {
     const q2 = { ...p, startYear: f.from, endYear: end(f.to) }; delete q2.maxVoteCount;
     const d2 = await getJSON(`${B}/titles?${qs(q2)}`); d = { titles: [...(d.titles || []), ...(d2.titles || [])], nextPageToken: d2.nextPageToken };
   }
-  let list = (d.titles || []).map(norm);
+  let list = (d.titles || []).map(norm).filter((t) => !isIndianTitle(t));
   // глубже в выдачу: 0–3 страницы
   const depth = d.nextPageToken ? wpick([[0, 0, 2], [1, 0, 3], [2, 0, 3], [3, 0, 2], [4, 0, 1]])[0] : 0;
   for (let k = 0, tok = d.nextPageToken; k < depth && tok; k++) {
@@ -261,7 +272,32 @@ async function queryAnime(s, f) {
 async function fallbackPair(g, s) {
   const sn = await snap();
   const ids = s && sn.chips[s.id] ? sn.chips[s.id] : s?.list ? LISTS[s.list] : Object.keys(sn.titles);
-  return ids.map((id) => sn.titles[id]).filter(Boolean);
+  return ids.map((id) => sn.titles[id]).filter(Boolean).filter((t) => !isIndianTitle(t));
+}
+
+/** Поиск по встроенному каталогу (~15k постеров) — дополняет live IMDb search */
+export async function searchSnapTitles(q, mode = 'all') {
+  const needle = String(q || '').trim().toLowerCase();
+  if (needle.length < 2) return [];
+  const sn = await snap();
+  const kindOk = (t) => {
+    if (mode === 'anime') return String(t.id).startsWith('al');
+    if (isAnime(t)) return false;
+    if (mode === 'movie') return KIND.movie.includes(t.k);
+    if (mode === 'series') return KIND.series.includes(t.k);
+    return KIND.all.includes(t.k);
+  };
+  const score = (t) => {
+    const hay = `${t.t || ''} ${t.o || ''}`.toLowerCase();
+    if (hay === needle) return 100;
+    if (hay.startsWith(needle)) return 80;
+    if (hay.includes(needle)) return 50;
+    return 0;
+  };
+  return Object.values(sn.titles)
+    .filter((t) => t.i && kindOk(t) && !isIndianTitle(t) && score(t) > 0)
+    .sort((a, b) => score(b) - score(a) || (b.v || 0) - (a.v || 0))
+    .slice(0, 80);
 }
 
 // Банк: всё, что пришло по этой комбинации за сессию, копится — пул растёт с каждым спином.
@@ -305,7 +341,7 @@ export async function getPool(P, f) {
       const bk = `${g?.id}|${s?.id}|${fk}`;
       if (!banks.has(bk)) banks.set(bk, new Map());
       const bank = banks.get(bk);
-      const fresh = list.filter((t) => matchLocal(t, g, s, f)).map((t) => ({ t, g: g?.id || null, s: s?.id || null, snap: snapF }));
+      const fresh = list.filter((t) => matchLocal(t, g, s, f) && !isIndianTitle(t)).map((t) => ({ t, g: g?.id || null, s: s?.id || null, snap: snapF }));
       for (const x of fresh) if (!bank.has(x.t.id)) bank.set(x.t.id, x);
       // свежая выдача + накопленный банк
       return [...fresh, ...bank.values()];
@@ -324,6 +360,7 @@ export async function core(id) {
   return Object.assign(norm(full), {
     interests: (full.interests || []).map((x) => x.id),
     countries: (full.originCountries || []).map((x) => x.code),
+    lang: full.primaryLanguage?.code,
     directors: (full.directors || []).map((d) => d.displayName),
     stars: (full.stars || []).map((d) => d.displayName),
     // id людей IMDb (nm…) — по ним Wikidata даёт русское написание имени

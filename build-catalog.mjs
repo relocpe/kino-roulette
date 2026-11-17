@@ -14,7 +14,7 @@ try { const c = JSON.parse(readFileSync('data/catalog.json')); old.chips = c.chi
 for (const t of Object.values(old.titles)) if (t.i) T.set(t.id, t);
 const SER = ['tvSeries', 'tvMiniSeries'];
 const okVotes = (t) => (t.v || 0) >= (SER.includes(t.k) ? 500 : 1000);
-const addI = (arr) => { let n = 0; for (const t of arr || []) { if (!t.primaryImage) continue; const c = { id: t.id, t: t.primaryTitle, o: t.originalTitle !== t.primaryTitle ? t.originalTitle : undefined, k: t.type, y: t.startYear, e: t.endYear, r: t.rating?.aggregateRating, v: t.rating?.voteCount, g: t.genres, i: img(t.primaryImage.url), s: t.runtimeSeconds }; if (!okVotes(c)) continue; if (!T.has(c.id)) n++; T.set(c.id, c); } return n; };
+const addI = (arr) => { let n = 0; for (const t of arr || []) { if (!t.primaryImage) continue; const c = { id: t.id, t: t.primaryTitle, o: t.originalTitle !== t.primaryTitle ? t.originalTitle : undefined, k: t.type, y: t.startYear, e: t.endYear, r: t.rating?.aggregateRating, v: t.rating?.voteCount, g: t.genres, i: img(t.primaryImage.url), s: t.runtimeSeconds }; if (!okVotes(c) || !rejectIndian(c)) continue; if (!T.has(c.id)) n++; T.set(c.id, c); } return n; };
 async function walk(p, pages) {
   let tok = null, n = 0;
   for (let k = 0; k < pages; k++) {
@@ -24,18 +24,33 @@ async function walk(p, pages) {
   return n;
 }
 const types = ['MOVIE', 'TV_SERIES', 'TV_MINI_SERIES'];
+const NO_INDIA = { excludeCountryCodes: 'IN', excludePrimaryLanguageCodes: 'hi,ta,te,ml,kn,bn,mr,pa,gu' };
+const INDIC = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]/;
+const rejectIndian = (c) => {
+  const title = `${c.t || ''} ${c.o || ''}`;
+  return !INDIC.test(title);
+};
 const tasks = [];
+// широкие срезы без жанра — больше «мирового» каталога
+for (const [sortBy, sortOrder, pages, extra] of [
+  ['SORT_BY_USER_RATING_COUNT', 'DESC', 10, { minVoteCount: 2000 }],
+  ['SORT_BY_USER_RATING', 'DESC', 8, { minVoteCount: 5000, minAggregateRating: 6 }],
+  ['SORT_BY_POPULARITY', 'DESC', 6, { minVoteCount: 15000 }],
+  ['SORT_BY_RELEASE_DATE', 'DESC', 6, { minVoteCount: 800 }],
+]) {
+  tasks.push([{ types, ...NO_INDIA, sortBy, sortOrder, ...extra }, pages]);
+}
 for (const g of GENRES) {
   if (g.src) continue;
   const gv = g.alt ? g.alt : [g.q];
   for (const v of gv) {
-    const base = { types, minVoteCount: 500, ...v };
-    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC' }, 6]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC' }, 2]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING', sortOrder: 'DESC', minVoteCount: 3000 }, 2]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', maxVoteCount: 30000 }, 3]);
+    const base = { types, minVoteCount: 500, ...NO_INDIA, ...v };
+    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC' }, 5]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING', sortOrder: 'DESC', minVoteCount: 2500 }, 4]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'DESC' }, 3]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', maxVoteCount: 40000 }, 2]);
     for (const [a, b] of [[1930, 1959], [1960, 1979], [1980, 1989], [1990, 1999], [2000, 2009], [2010, 2016], [2017, 2021], [2022, 2026]])
-      tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', startYear: a, endYear: b }, 2]);
+      tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC', startYear: a, endYear: b }, 2]);
   }
 }
 console.log('imdb tasks', tasks.length);

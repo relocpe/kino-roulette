@@ -1,8 +1,8 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=13';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=14';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=19';
+import * as V from './views.js?v=20';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=11';
@@ -879,7 +879,7 @@ function setLordProgressHint(t) {
   const series = /tvSeries|tvMiniSeries/.test(t?.k || '');
   const extra = series && hint ? ' · для сериала считаем ~45 мин за серию' : '';
   if (hint) {
-    el.textContent = `${hint}${extra}. Просмотрено — после ~90% длительности. Перемотку в плеере сайт не запоминает.`;
+    el.textContent = `${hint}${extra}`;
     el.hidden = false;
   } else {
     el.textContent = '';
