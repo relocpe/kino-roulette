@@ -56,7 +56,7 @@ function fmtClock(sec) {
   return `${m}:${String(x).padStart(2, '0')}`;
 }
 
-export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap, onSeek } = {}) {
+export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap, onSeek, onChat } = {}) {
   if (!root) return () => {};
   const id = (sel) => root.querySelector(sel);
 
@@ -106,7 +106,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     el.replaceChildren();
   };
 
-  const pushChat = (entry) => {
+  const pushChat = (entry, quiet) => {
     const box = id('#wpMsgs');
     if (!box) return;
     const row = document.createElement('p');
@@ -115,6 +115,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     box.appendChild(row);
     box.scrollTop = box.scrollHeight;
     while (box.children.length > 100) box.firstChild.remove();
+    if (!quiet) onChat?.(entry);
   };
 
   const paintMembers = (members) => {
@@ -149,7 +150,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         film = m.room?.film || film;
         const box = id('#wpMsgs');
         if (box) box.innerHTML = '';
-        (m.room?.chat || []).forEach(pushChat);
+        (m.room?.chat || []).forEach((entry) => pushChat(entry, true));
         paintMembers(m.room?.members);
         watchForHost(m.room?.members);
         paintSync();

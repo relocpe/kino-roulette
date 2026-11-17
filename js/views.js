@@ -599,6 +599,7 @@ function partyPanel(id) {
         <input class="wp-nick" id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Ваше имя" aria-label="Ваше имя">
         <span class="wp-code" id="wpCode">${esc(id)}</span>
         <button type="button" class="wp-invite" id="wpCopy">Ссылка</button>
+        <label class="wp-vol">Звук <input id="wpVol" type="range" min="0" max="100" step="5" value="40" aria-label="Громкость сообщений"></label>
       </header>
       <div class="wp-people" id="wpMembers" aria-live="polite"><p class="wp-wait">Подключаемся…</p></div>
       <section class="wp-chat" id="wpChat" aria-label="Чат">

@@ -196,7 +196,7 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 @keyframes popin { from { transform: translateY(8px); opacity: 0; } }
 .panel.pop .panel-in { padding: 16px 8px 8px; max-height: inherit; overflow: auto; overscroll-behavior: contain; }
 .panel.pop .sec { display: none; padding: 0 12px; }
-.panel.pop[data-sec="type"] .sec[data-sec="type"], .panel.pop[data-sec="genre"] .sec[data-sec="genre"], .panel.pop[data-sec="years"] .sec[data-sec="years"], .panel.pop[data-sec="rate"] .sec[data-sec="rate"] { display: block; }
+.panel.pop[data-sec="type"] .sec[data-sec="type"], .panel.pop[data-sec="genre"] .sec[data-sec="genre"], .panel.pop[data-sec="years"] .sec[data-sec="years"], .panel.pop[data-sec="rate"] .sec[data-sec="rate"], .panel.pop[data-sec="sound"] .sec[data-sec="sound"] { display: block; }
 /* компактный пульт в результате: кнопка фильтров открывает все разделы сразу */
 .panel.pop[data-sec="all"] .sec { display: block; }
 .panel.pop[data-sec="all"] .sec + .sec { margin-top: 18px; }
@@ -444,6 +444,8 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .wp-count { font-size: 13px; color: var(--ink-3); }
 .wp-code { font-size: 12px; letter-spacing: .08em; color: var(--ink-3); }
 .wp-invite { margin-left: auto; height: auto; min-height: 0; padding: 0; border: 0; background: none; color: var(--ink-2); font-size: 13px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.wp-vol { display: flex; align-items: center; gap: 6px; flex: none; color: var(--ink-3); font-size: 12px; }
+.wp-vol input { width: 72px; height: 22px; margin: 0; accent-color: var(--ink-2); }
 .wp-invite:hover { color: var(--ink); }
 .wp-people { min-height: 0; }
 .wp-wait { margin: 0; font-size: 13px; color: var(--ink-3); }
@@ -514,7 +516,18 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
 .wroom.is-full:hover .wp-sync, .wroom.is-full:focus-within .wp-sync { opacity: 1; }
 .wroom-hot { display: none; }
 .wroom:fullscreen .wroom-hot, .wroom.is-full .wroom-hot { display: block; position: absolute; z-index: 4; top: 0; right: 0; bottom: 84px; width: min(200px, 24vw); }
-.wroom:fullscreen .wroom-side, .wroom.is-full .wroom-side { display: flex; position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); height: 100%; max-height: none; min-height: 0; border-left: 0; padding: 16px 16px 16px 16px; background: rgb(12 11 10 / .96); transform: translateX(100%); transition: transform .22s ease; }
+.wroom:fullscreen .wroom-side, .wroom.is-full .wroom-side { display: flex; position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); height: 100%; max-height: none; min-height: 0; border-left: 1px solid rgb(241 235 226 / .16); padding: 16px; background: rgb(12 11 10 / .42); backdrop-filter: blur(28px) saturate(1.45); -webkit-backdrop-filter: blur(28px) saturate(1.45); box-shadow: inset 1px 0 0 rgb(255 255 255 / .05); transform: translateX(100%); transition: transform .22s ease; }
+@keyframes chat-nudge {
+  0% { transform: translateX(100%); }
+  32% { transform: translateX(calc(100% - 76px)); }
+  48% { transform: translateX(calc(100% - 44px)); }
+  100% { transform: translateX(100%); }
+}
+.wroom:fullscreen.chat-nudge:not(.chat-open):not(:has(.wroom-side:hover)):not(:has(.wroom-side:focus-within)):not(:has(.wroom-hot:hover)):not(:has(.wp-peek:hover)) .wroom-side,
+.wroom.is-full.chat-nudge:not(.chat-open):not(:has(.wroom-side:hover)):not(:has(.wroom-side:focus-within)):not(:has(.wroom-hot:hover)):not(:has(.wp-peek:hover)) .wroom-side { animation: chat-nudge .95s cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .wroom.chat-nudge .wroom-side { animation: none; }
+}
 .wroom:fullscreen:has(.wp-peek:hover) .wroom-side,
 .wroom.is-full:has(.wp-peek:hover) .wroom-side,
 .wroom:fullscreen:has(.wroom-hot:hover) .wroom-side,
@@ -525,7 +538,9 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
 .wroom.is-full .wroom-side:hover,
 .wroom.is-full .wroom-side:focus-within,
 .wroom.is-full.chat-open .wroom-side { transform: none; }
-.wroom:fullscreen .wp-peek, .wroom.is-full .wp-peek { display: flex; align-items: center; justify-content: center; position: absolute; right: 0; top: 0; bottom: 84px; left: auto; width: 36px; z-index: 4; border: 0; background: rgb(12 11 10 / .72); color: var(--ink-2); writing-mode: vertical-rl; font-size: 13px; letter-spacing: .08em; }
+.wroom:fullscreen .wp-peek, .wroom.is-full .wp-peek { display: flex; align-items: center; justify-content: center; position: absolute; right: 0; top: 0; bottom: 84px; left: auto; width: 36px; z-index: 4; border: 0; border-left: 1px solid rgb(241 235 226 / .14); background: rgb(12 11 10 / .34); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: var(--ink-2); writing-mode: vertical-rl; font-size: 13px; letter-spacing: .08em; }
+.wroom:fullscreen .wp-msg, .wroom.is-full .wp-msg { text-shadow: 0 1px 2px rgb(0 0 0 / .45); }
+.wroom:fullscreen .wp-form, .wroom.is-full .wp-form { background: rgb(12 11 10 / .28); border-radius: 12px; padding: 4px 8px 4px 12px; border-top: 0; }
 
 /* телефоны и встроенный браузер Telegram: без SVG-фильтров на карточках, меньше размытия */
 @media (pointer: coarse) {

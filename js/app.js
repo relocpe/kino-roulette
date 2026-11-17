@@ -2,8 +2,8 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=35';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
+import * as V from './views.js?v=36';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=15';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=2';
 import { decideWatchOpen } from './watch-open.js?v=1';
@@ -170,6 +170,60 @@ function showRating() {
   $('#ratingOut').style.setProperty('--k', k);
 }
 rating.addEventListener('input', () => { prefs.rating = Number(rating.value); showRating(); savePrefs(); syncFields(); });
+
+function chatVolume() {
+  const n = Number(prefs.chatVol);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 40;
+}
+function paintChatVolume() {
+  const v = chatVolume();
+  const k = v / 100;
+  const input = $('#chatVol');
+  const out = $('#chatVolOut');
+  if (input) { input.value = String(v); input.style.setProperty('--k', String(k)); }
+  if (out) { out.textContent = v ? `${v}%` : 'выкл'; out.style.setProperty('--k', String(k)); }
+  document.querySelectorAll('#wpVol').forEach((el) => { el.value = String(v); });
+}
+function setChatVolume(value) {
+  prefs.chatVol = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  savePrefs();
+  paintChatVolume();
+}
+let chimeCtx;
+function playChatSound(percent = chatVolume()) {
+  const level = Math.max(0, Math.min(100, Number(percent) || 0)) / 100;
+  if (!level) return;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  if (!chimeCtx) chimeCtx = new Ctx();
+  chimeCtx.resume?.();
+  const now = chimeCtx.currentTime;
+  const filter = chimeCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 2200;
+  const master = chimeCtx.createGain();
+  master.gain.value = 0.2 * level;
+  filter.connect(master);
+  master.connect(chimeCtx.destination);
+  [523.25, 659.25].forEach((freq, i) => {
+    const osc = chimeCtx.createOscillator();
+    const gain = chimeCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const t = now + i * 0.08;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.85, t + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+    osc.connect(gain);
+    gain.connect(filter);
+    osc.start(t);
+    osc.stop(t + 0.28);
+  });
+}
+const chatVol = $('#chatVol');
+paintChatVolume();
+chatVol?.addEventListener('input', () => setChatVolume(chatVol.value));
+chatVol?.addEventListener('change', () => playChatSound(chatVolume()));
 
 // не повторять
 const nr = $('#noRepeat');
@@ -1138,6 +1192,18 @@ function watchRoom(id, panel, frame, titleEl) {
   const roomRoot = frame.closest('.wroom') || panel;
   const ctl = openWatchPanel(roomRoot, {
     onToast: (text, _a, ms) => V.toast(text, null, ms),
+    onChat(entry) {
+      if (entry?.uid && entry.uid === watchIdentity().uid) return;
+      playChatSound(chatVolume());
+      const room = frame.closest('.wroom');
+      if (!room?.classList.contains('is-full') && document.fullscreenElement !== room) return;
+      if (room.classList.contains('chat-open') || room.querySelector('.wroom-side')?.matches(':hover, :focus-within')) return;
+      room.classList.remove('chat-nudge');
+      void room.offsetWidth;
+      room.classList.add('chat-nudge');
+      clearTimeout(room._nudgeT);
+      room._nudgeT = setTimeout(() => room.classList.remove('chat-nudge'), 1000);
+    },
     onHello(info) {
       const decision = decideWatchOpen({
         host: !!info.host,
@@ -1300,6 +1366,12 @@ function watchRoom(id, panel, frame, titleEl) {
   };
   document.addEventListener('fullscreenchange', syncFull);
   document.addEventListener('webkitfullscreenchange', syncFull);
+  const roomVol = roomEl?.querySelector('#wpVol');
+  if (roomVol) {
+    roomVol.value = String(chatVolume());
+    roomVol.addEventListener('input', () => setChatVolume(roomVol.value));
+    roomVol.addEventListener('change', () => playChatSound(chatVolume()));
+  }
   document.querySelector('#wjFull')?.addEventListener('click', () => {
     if (fullTarget()) document.exitFullscreen?.();
     else roomEl?.requestFullscreen?.().catch(() => {});

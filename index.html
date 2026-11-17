@@ -35,7 +35,7 @@
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
 <script src="js/dlg.js?v=1"></script>
-<link rel="stylesheet" href="css/app.css?v=41">
+<link rel="stylesheet" href="css/app.css?v=42">
 <link rel="stylesheet" href="css/views.css?v=18">
 </head>
 <body data-fx="none" data-route="roulette">
@@ -113,6 +113,11 @@
       <button class="switch" id="noRepeat" type="button" role="switch" aria-checked="true"><span class="knob" aria-hidden="true"></span>Не повторять уже выпавшее</button>
         <button class="switch" id="noWatched" type="button" role="switch" aria-checked="false"><span class="knob" aria-hidden="true"></span>Не показывать просмотренное</button>
     </section>
+    <section class="sec" data-sec="sound">
+      <h2 class="slabel" id="sndLbl">Звук</h2>
+      <label class="rlbl" for="chatVol">Сообщения в чате</label>
+      <div class="range"><input id="chatVol" type="range" min="0" max="100" step="5" value="40" aria-describedby="sndLbl"><output id="chatVolOut" for="chatVol"></output></div>
+    </section>
     <div class="pfoot"><button class="ghost" id="pReset" type="button">Сбросить</button><button class="ok" id="pDone" type="button">Готово</button></div>
   </div>
 </dialog>
@@ -171,6 +176,6 @@
 </dialog>
 
 
-<script type="module" src="js/app.js?v=62"></script>
+<script type="module" src="js/app.js?v=63"></script>
 </body>
 </html>
