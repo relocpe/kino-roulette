@@ -1,0 +1,40 @@
+html[data-beta="1"] .pf,
+html[data-beta="1"] .tile,
+html[data-beta="1"] .tabbar a {
+  transition: background 0.28s ease, box-shadow 0.28s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-beta="1"] .pf:hover,
+  html[data-beta="1"] .tile:hover {
+    transform: translateY(-1px);
+  }
+}
+
+html[data-beta="1"] .pf {
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(241, 235, 226, 0.06) inset;
+}
+
+html[data-beta="1"] .spin {
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(232, 176, 74, 0.22);
+}
+
+html[data-beta="1"] .tabbar {
+  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+html[data-beta="1"] .tile {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+html[data-beta="1"] .panel.picker .panel-in {
+  border-radius: 18px;
+}
+
+html[data-beta="1"] .wroom-stage {
+  border-radius: 14px;
+}

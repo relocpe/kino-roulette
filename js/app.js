@@ -3,8 +3,8 @@ import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, gen
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=41';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=18';
-import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=19';
+import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=12';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, guestNudge, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=7';
@@ -13,10 +13,10 @@ import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
 import { watchButtonText, progressNote, touchProgress, clearProgress, markProgress, formatClock, getProgress } from './watch-progress.js?v=2';
 import { mountYearRange } from './year-range.js?v=2';
+import { isBeta, betaFromQuery, betaAttr } from './beta.js?v=1';
+import { apiConfig } from './api-config.js?v=1';
 
 const $ = (s) => document.querySelector(s);
-const ZOMBI_RESOLVER = 'https://kino-roulette-zombi-resolver.samevamp.workers.dev/resolve';
-const KP_MIRROR_RESOLVER = 'https://kino-roulette-kp-mirror-resolver.samevamp.workers.dev/resolve';
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)').matches;
 const mobile = () => matchMedia('(max-width: 760px)').matches;
@@ -28,7 +28,7 @@ const MAX = 3;
 let spinning = false;
 const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime'];
 
-const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null }, load(LS.prefs, {}));
+const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null, beta: false }, load(LS.prefs, {}));
 // v6: весь каталог по умолчанию — рейтинг «любой», «Всё подряд»
 if (!prefs.v6) { prefs.rating = 0; prefs.known = false; prefs.v6 = true; }
 // v7: «Аниме» — режим «Что», а не жанр: старый выбор жанра «Аниме» и его уточнений переносим в режим
@@ -36,6 +36,8 @@ if ((prefs.sel || []).includes('anime')) { prefs.mode = 'anime'; prefs.sel = [..
 if (!['all', 'movie', 'series', 'anime'].includes(prefs.mode)) prefs.mode = 'all';
 prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id) && genreOk(byId[id], prefs.mode)).slice(0, MAX);
 prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
+prefs.beta = isBeta(prefs.beta);
+{ const q = betaFromQuery(location.search); if (q !== null) prefs.beta = q; }
 save(LS.prefs, prefs);
 delete prefs.multi;
 let hist = load(LS.hist, []);
@@ -63,6 +65,15 @@ function motion(on, user) {
 motion(prefs.fx != null ? prefs.fx : false);
 fxBtn.addEventListener('click', () => motion(fxBtn.getAttribute('aria-checked') !== 'true', true));
 addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
+
+// ---------- бета-оформление ----------
+const betaSw = $('#beta');
+function applyBeta() {
+  document.documentElement.dataset.beta = betaAttr(prefs.beta);
+  betaSw?.setAttribute('aria-checked', String(!!prefs.beta));
+}
+applyBeta();
+betaSw?.addEventListener('click', () => { prefs.beta = !prefs.beta; savePrefs(); applyBeta(); });
 
 // ---------- фильтры ----------
 const picker = $('#picker');
@@ -1258,66 +1269,18 @@ function watchRoom(id, panel, frame, titleEl) {
     };
     const knownKp = payload.kinopoiskId || await kpIdFor(t);
     if (my !== gen) return;
-    if (knownKp) {
-      payload.kinopoiskId = knownKp;
-      const next = {
-        id: t.id,
-        title,
-        originalTitle: payload.originalTitle,
-        imdbId: payload.imdbId || undefined,
-        year: t.y,
-        embedUrl: kpEmbed(knownKp),
-        kinopoiskId: knownKp,
-        type: payload.type,
-        season: payload.season,
-        episode: payload.episode,
-        mode: 'stream',
-      };
-      const changed = !lastFilm || lastFilm.id !== next.id || lastFilm.season !== next.season || lastFilm.episode !== next.episode;
-      lastFilm = next;
-      if (ctl.isHost()) {
-        ctl.publishFilm(lastFilm);
-        if (changed) {
-          resumeAt = spot ? spot.seconds : 0;
-          ctl.pushSync(resumeAt, false, true);
-          hostState = { tick: null, stallSince: 0, sentAt: resumeAt, sentPlaying: false, sentWall: Date.now() };
-        }
-        if (pickedId && t.id === pickedId) V.clearWatchBoot();
-      }
-      showEmbed(next);
-      return;
-    }
+    if (knownKp) payload.kinopoiskId = knownKp;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 14000);
     try {
       const hit = await resolveWatchPayload(payload, controller.signal);
       if (my !== gen) return;
-      if (!hit) throw new Error('no resolver');
-      const { data, pageUrl, embedUrls, streamUrl = '' } = hit;
-      const embed = embedUrls[0] || '';
-      const lead = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
-      const ok = (data.matched === true && (embedUrls.length || pageUrl || streamUrl)) || (data.lead && lead);
-      if (!ok) {
-        mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
-        return;
-      }
-      const page = data.matched ? (pageUrl || lead) : lead;
-      const next = {
-        id: t.id,
-        title,
-        originalTitle: payload.originalTitle,
-        imdbId: payload.imdbId || undefined,
-        year: t.y,
-        embedUrl: embed || undefined,
-        pageUrl: page || undefined,
-        streamUrl: streamUrl || undefined,
-        voice: hit.streams?.find((item) => item.url === streamUrl)?.label || hit.streams?.[0]?.label || undefined,
-        kinopoiskId: payload.kinopoiskId || undefined,
-        type: payload.type,
-        season: payload.season,
-        episode: payload.episode,
-        mode: 'stream',
-      };
+      const okHit = hit && hit.data && (
+        (hit.data.matched === true && (hit.embedUrls.length || hit.streamUrl))
+        || (hit.data.lead && (hit.pageUrl || zombiPageRe.test(hit.data.url || '')))
+      );
+      if (okHit) {
+        const next = roomFilmFromHit(t, payload, hit, spot);
       const changed = !lastFilm || lastFilm.id !== next.id || lastFilm.season !== next.season || lastFilm.episode !== next.episode;
       lastFilm = next;
       if (ctl.isHost()) {
@@ -1329,7 +1292,38 @@ function watchRoom(id, panel, frame, titleEl) {
         }
         if (pickedId && t.id === pickedId) V.clearWatchBoot();
       }
-      showEmbed(next);
+        showEmbed(next);
+        return;
+      }
+      if (knownKp) {
+        const next = {
+          id: t.id,
+          title,
+          originalTitle: payload.originalTitle,
+          imdbId: payload.imdbId || undefined,
+          year: t.y,
+          embedUrl: kpEmbed(knownKp),
+          kinopoiskId: knownKp,
+          type: payload.type,
+          season: payload.season,
+          episode: payload.episode,
+          mode: 'stream',
+        };
+        const changed = !lastFilm || lastFilm.id !== next.id || lastFilm.season !== next.season || lastFilm.episode !== next.episode;
+        lastFilm = next;
+        if (ctl.isHost()) {
+          ctl.publishFilm(lastFilm);
+          if (changed) {
+            resumeAt = spot ? spot.seconds : 0;
+            ctl.pushSync(resumeAt, false, true);
+            hostState = { tick: null, stallSince: 0, sentAt: resumeAt, sentPlaying: false, sentWall: Date.now() };
+          }
+          if (pickedId && t.id === pickedId) V.clearWatchBoot();
+        }
+        showEmbed(next);
+        return;
+      }
+      mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
     } catch {
       if (my !== gen) return;
       mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
@@ -1830,10 +1824,42 @@ async function postResolver(url, body, parent, ms) {
   }
 }
 
+function resolverEmbeds(embedUrls) {
+  const embeds = preferEmbeds(embedUrls).filter((u) => !isLordSite(u));
+  const sync = embeds.filter((u) => canSyncEmbed(u));
+  return sync.length ? sync : embeds;
+}
+
+function roomFilmFromHit(t, payload, hit, spot) {
+  const { data, pageUrl, embedUrls, streamUrl = '', streams = [] } = hit;
+  const embed = embedUrls[0] || '';
+  const lead = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
+  const page = data.matched ? (pageUrl || lead) : lead;
+  const title = t.ru || ruCached(t.id) || t.t || 'Фильм';
+  return {
+    id: t.id,
+    title,
+    originalTitle: payload.originalTitle,
+    imdbId: payload.imdbId || undefined,
+    year: t.y,
+    embedUrl: embed || undefined,
+    pageUrl: page || undefined,
+    streamUrl: streamUrl || undefined,
+    voice: streams.find((item) => item.url === streamUrl)?.label || streams[0]?.label || undefined,
+    kinopoiskId: payload.kinopoiskId || undefined,
+    type: payload.type,
+    season: payload.season,
+    episode: payload.episode,
+    mode: 'stream',
+  };
+}
+
 async function resolveWatchPayload(payload, signal) {
+  const { embedResolver, kpMirror, zombi } = apiConfig();
   const chain = [
-    ...(payload.kinopoiskId ? [{ url: KP_MIRROR_RESOLVER, pageRe: /^https:\/\//, source: 'kp-mirror', ms: 8000 }] : []),
-    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi', ms: 6000 },
+    ...(payload.kinopoiskId ? [{ url: embedResolver, pageRe: /^https:\/\//, source: 'embed', ms: 6000 }] : []),
+    ...(payload.kinopoiskId ? [{ url: kpMirror, pageRe: /^https:\/\//, source: 'kp-mirror', ms: 8000 }] : []),
+    { url: zombi, pageRe: zombiPageRe, source: 'zombi', ms: 6000 },
   ];
   let last = null;
   for (const item of chain) {
@@ -1849,7 +1875,15 @@ async function resolveWatchPayload(payload, signal) {
         episode: payload.episode,
         stream: true,
       }
-      : payload;
+      : item.source === 'embed'
+        ? {
+          kinopoiskId: payload.kinopoiskId,
+          type: payload.type,
+          title: payload.title,
+          season: payload.season,
+          episode: payload.episode,
+        }
+        : payload;
     const data = await postResolver(item.url, body, signal, item.ms);
     if (!data) continue;
     last = data;
@@ -1861,7 +1895,10 @@ async function resolveWatchPayload(payload, signal) {
       .filter((row) => /^https:\/\//i.test(row?.url || ''))
       .slice(0, 6);
     const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : (streams[0]?.url || '');
-    const embeds = preferEmbeds(embedUrls).filter((u) => !isLordSite(u));
+  const embeds = resolverEmbeds(embedUrls);
+  if (item.source === 'embed' && data.matched === true && embeds.length) {
+    return { data, pageUrl: '', embedUrls: embeds, streamUrl: '', streams: [], source: data.source || 'embed' };
+  }
     if (data.matched === true && (embeds.length || streamUrl || (pageUrl && !isLordSite(pageUrl)))) {
       return { data, pageUrl, embedUrls: embeds, streamUrl, streams, source: data.source || item.source };
     }
@@ -1904,14 +1941,6 @@ async function openLordWatch(t, btn) {
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
   const kpId = await kpIdFor(t);
-  if (kpId) {
-    $('#lmTitle').textContent = title;
-    mountLordFrame(kpEmbed(kpId), '', title, [kpEmbed(kpId)]);
-    startWatchProgress(t);
-    clearTimeout(timer);
-    btn.disabled = false; btn.textContent = originalLabel;
-    return;
-  }
   const payload = {
     title,
     originalTitle: t.t || '',
@@ -1934,6 +1963,11 @@ async function openLordWatch(t, btn) {
     const leadUrl = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
     if (data.lead && leadUrl) {
       mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
+      startWatchProgress(t);
+      return;
+    }
+    if (kpId) {
+      mountLordFrame(kpEmbed(kpId), '', title, [kpEmbed(kpId)]);
       startWatchProgress(t);
       return;
     }

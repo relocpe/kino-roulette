@@ -34,9 +34,11 @@
 
 <link rel="preconnect" href="https://api.tiffara.com" crossorigin>
 <link rel="preconnect" href="https://m.media-amazon.com">
+<script>try{if(JSON.parse(localStorage.getItem("kr:prefs")).beta===true)document.documentElement.dataset.beta="1"}catch(e){}</script>
 <script src="/kino-roulette/js/dlg.js?v=1"></script>
 <link rel="stylesheet" href="/kino-roulette/css/app.css?v=45">
 <link rel="stylesheet" href="/kino-roulette/css/views.css?v=20">
+<link rel="stylesheet" href="/kino-roulette/css/beta.css?v=1">
 </head>
 <body data-fx="none" data-route="roulette">
 <div class="fxwrap" aria-hidden="true"><canvas id="gl"></canvas></div>
@@ -118,6 +120,10 @@
       <label class="rlbl" for="chatVol">Сообщения в чате</label>
       <div class="range"><input id="chatVol" type="range" min="0" max="100" step="5" value="40" aria-describedby="sndLbl"><output id="chatVolOut" for="chatVol"></output></div>
     </section>
+    <section class="sec" data-sec="beta">
+      <h2 class="slabel" id="betaLbl">Бета</h2>
+      <button class="switch swb" id="beta" type="button" role="switch" aria-checked="false" aria-describedby="betaHint"><span class="knob" aria-hidden="true"></span><span class="swt">Новое оформление<small id="betaHint">Плавные анимации, обновлённые карточки</small></span></button>
+    </section>
     <div class="pfoot"><button class="ghost" id="pReset" type="button">Сбросить</button><button class="ok" id="pDone" type="button">Готово</button></div>
   </div>
 </dialog>
@@ -176,6 +182,6 @@
 </dialog>
 
 
-<script type="module" src="/kino-roulette/js/app.js?v=72"></script>
+<script type="module" src="/kino-roulette/js/app.js?v=73"></script>
 </body>
 </html>

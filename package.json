@@ -1,0 +1,10 @@
+{
+  "name": "kino-roulette",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test lib/*.test.mjs js/*.test.mjs workers/**/*.test.mjs",
+    "dev:site": "python3 -m http.server 4173 --bind 127.0.0.1",
+    "dev:embed": "npx wrangler dev workers/embed-resolver/index.mjs --config workers/embed-resolver/wrangler.toml --port 8788"
+  }
+}

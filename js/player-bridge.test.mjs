@@ -33,7 +33,7 @@ describe('player bridge', () => {
   it('reads the kodik events a live room actually receives', () => {
     assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_pause' }), { playing: false, at: null, explicit: true });
     assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_time_update', value: 42 }), { at: 42, duration: null, playing: undefined });
-    assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_seek', value: { time: 90 } }), { at: 90, explicit: true });
+    assert.deepEqual(parsePlayerMessage({ key: 'kodik_player_seek', value: { time: 90 } }), { at: 90, explicit: true, seek: true });
     assert.equal(parsePlayerMessage({ key: 'kodik_player_ad_started' }), null);
   });
   it('builds an autostart address so the guest player begins without a click', () => {

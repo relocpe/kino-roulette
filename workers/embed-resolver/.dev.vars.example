@@ -1,0 +1,4 @@
+KODIK_TOKEN=
+ALLOHA_TOKEN=
+# EMBED_PROVIDER=kodik,alloha
+# CORS_ORIGINS=http://127.0.0.1:4173,https://your-app.vercel.app

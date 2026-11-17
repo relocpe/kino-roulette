@@ -1,0 +1,38 @@
+name: Deploy embed resolver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/embed-resolver/**'
+      - 'lib/embed-resolve.mjs'
+      - 'api/resolve.js'
+      - '.github/workflows/deploy-embed-resolver.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Deploy Cloudflare Worker
+        working-directory: workers/embed-resolver
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]' | sed 's/^Value://i')"
+          if ! [[ "$ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID must be 32 hex chars."
+            exit 1
+          fi
+          TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]' | sed 's/^Bearer[[:space:]]*//i')"
+          export CLOUDFLARE_API_TOKEN="$TOKEN"
+          export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
+          npx --yes wrangler@4.163.0 deploy

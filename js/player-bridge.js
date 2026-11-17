@@ -75,7 +75,7 @@ function parseKodikEvent(d) {
   const duration = v && typeof v === 'object' ? num(v.duration) : null;
   if (d.key === 'kodik_player_play' || d.key === 'kodik_player_video_started') return { playing: true, at: time, explicit: true };
   if (d.key === 'kodik_player_pause' || d.key === 'kodik_player_video_ended') return { playing: false, at: time, explicit: true };
-  if (d.key === 'kodik_player_seek') return time == null ? null : { at: time, explicit: true };
+  if (d.key === 'kodik_player_seek') return time == null ? null : { at: time, explicit: true, seek: true };
   if (d.key === 'kodik_player_time_update') return time == null ? null : { at: time, duration, playing: undefined };
   return null;
 }

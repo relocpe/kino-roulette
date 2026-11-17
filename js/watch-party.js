@@ -2,7 +2,9 @@
 import { me, loggedIn } from './store.js?v=14';
 import { BASE } from './views.js?v=41';
 
-export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
+import { apiConfig } from './api-config.js?v=1';
+
+export const WATCH_PARTY_API = apiConfig().watchParty;
 
 const UID_KEY = 'kr:watchUid';
 const KEY_KEY = 'kr:watchKey';
