@@ -1,4 +1,10 @@
-const ALLOWED_ORIGINS = new Set(['https://relocpe.github.io']);
+import { resolveVeoStream } from './stream.mjs';
+
+const ALLOWED_ORIGINS = new Set([
+  'https://relocpe.github.io',
+  'http://127.0.0.1:4173',
+  'http://localhost:4173',
+]);
 const FETCH_HEADERS = {
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -67,7 +73,20 @@ export function mirrorPageUrls(kinopoiskId, type) {
   ];
 }
 
-export async function resolveKinopoiskMirror({ kinopoiskId, type }, fetcher = fetch) {
+async function attachStream(result, body, fetcher) {
+  if (!body?.stream || !result?.matched) return result;
+  try {
+    const stream = await resolveVeoStream(body, fetcher);
+    if (stream?.url) result.stream = { url: stream.url, label: stream.label || '', source: stream.source || '' };
+  } catch {
+    /* страница плеера всё равно остаётся */
+  }
+  return result;
+}
+
+export async function resolveKinopoiskMirror(body, fetcher = fetch) {
+  const kinopoiskId = body?.kinopoiskId;
+  const type = body?.type;
   const id = String(kinopoiskId || '').replace(/\D/g, '');
   if (!id) {
     return { matched: false, reason: 'no-kinopoisk-id', source: 'kp-mirror' };
@@ -85,14 +104,14 @@ export async function resolveKinopoiskMirror({ kinopoiskId, type }, fetcher = fe
       const embedUrls = extractMirrorEmbeds(html);
       const pageUrl = response.url || startUrl;
       if (embedUrls.length) {
-        return {
+        return attachStream({
           matched: true,
           source: 'kp-mirror',
           url: pageUrl,
           embedUrl: embedUrls[0],
           embedUrls,
           mirror: startUrl,
-        };
+        }, body, fetcher);
       }
     } catch {
       /* try next mirror */
@@ -100,14 +119,14 @@ export async function resolveKinopoiskMirror({ kinopoiskId, type }, fetcher = fe
   }
 
   if (fallback) {
-    return {
+    return attachStream({
       matched: true,
       source: 'kp-mirror',
       url: lastUrl || mirrors[0],
       embedUrl: fallback,
       embedUrls: [fallback],
       mirror: 'direct',
-    };
+    }, body, fetcher);
   }
   return { matched: false, reason: 'mirror-unavailable', source: 'kp-mirror', url: lastUrl };
 }

@@ -5,6 +5,7 @@ import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=34';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
+import { bindLocalVideo, kpFromFilm, mountRoomVideo } from './room-player.js?v=1';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=4';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -901,6 +902,32 @@ async function startWatchTogether(t) {
   V.navigate(`watch/${id}`);
 }
 
+async function resolveOwnStream(film) {
+  const kp = kpFromFilm(film);
+  const fallback = /^https:\/\//i.test(film?.streamUrl || '') ? film.streamUrl : '';
+  if (!kp) return fallback;
+  try {
+    const response = await fetch(KP_MIRROR_RESOLVER, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kinopoiskId: kp,
+        type: film?.type === 'tv' ? 'tv' : 'movie',
+        title: film?.title || '',
+        originalTitle: film?.originalTitle || '',
+        year: film?.year || '',
+        imdbId: film?.imdbId || (/^tt\d+$/.test(film?.id || '') ? film.id : ''),
+        stream: true,
+      }),
+    });
+    if (!response.ok) return fallback;
+    const data = await response.json();
+    return /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function watchRoom(id, panel, frame, titleEl) {
   if (!panel || !frame) return () => {};
   const boot = V.peekWatchBoot(id);
@@ -985,15 +1012,37 @@ function watchRoom(id, panel, frame, titleEl) {
     const title = film.title || 'Фильм';
     const https = (u) => (/^https:\/\//i.test(u || '') ? u : '');
     const embedUrl = https(film.embedUrl), pageUrl = https(film.pageUrl);
-    const src = embedUrl || pageUrl;
-    if (!src) return false;
+    const hinted = https(film.streamUrl);
+    if (!hinted && !embedUrl && !pageUrl && !kpFromFilm(film)) return false;
     setTitle(title);
     titleRu(film.id);
-    if (frame.dataset.watchSrc === src && frame.querySelector('iframe')) { attachBridge(); return true; }
-    gen += 1;
-    frame.dataset.watchSrc = src;
-    mountLordFrame(embedUrl, pageUrl, title, embedUrl ? [embedUrl] : [], frame);
-    attachBridge();
+    const my = ++gen;
+    frame.classList.remove('lord-browse');
+    frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю фильм…</div>';
+    const run = async () => {
+      let stream = hinted;
+      if (kpFromFilm(film)) {
+        const own = await resolveOwnStream(film);
+        if (my !== gen) return;
+        if (own) stream = own;
+      }
+      if (my !== gen) return;
+      if (stream) {
+        frame.dataset.watchSrc = stream;
+        try {
+          await mountRoomVideo(frame, stream, title);
+          if (my !== gen) return;
+          attachBridge();
+          return;
+        } catch { /* чужой плеер ниже, если поток не открылся */ }
+      }
+      const src = embedUrl || pageUrl;
+      if (!src || my !== gen) return;
+      frame.dataset.watchSrc = src;
+      mountLordFrame(embedUrl, pageUrl, title, embedUrl ? [embedUrl] : [], frame);
+      attachBridge();
+    };
+    run();
     return true;
   };
 
@@ -1018,20 +1067,35 @@ function watchRoom(id, panel, frame, titleEl) {
       const hit = await resolveWatchPayload(payload, controller.signal);
       if (my !== gen) return;
       if (!hit) throw new Error('no resolver');
-      const { data, pageUrl, embedUrls } = hit;
+      const { data, pageUrl, embedUrls, streamUrl = '' } = hit;
       const embed = embedUrls[0] || '';
       const lead = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
-      const ok = (data.matched === true && (embedUrls.length || pageUrl)) || (data.lead && lead);
+      const ok = (data.matched === true && (embedUrls.length || pageUrl || streamUrl)) || (data.lead && lead);
       if (!ok) {
         mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
         return;
       }
       const page = data.matched ? (pageUrl || lead) : lead;
-      frame.dataset.watchSrc = embed || page || '';
-      mountLordFrame(embed, page, title, embedUrls, frame);
+      frame.dataset.watchSrc = streamUrl || embed || page || '';
+      if (streamUrl) {
+        try { await mountRoomVideo(frame, streamUrl, title); }
+        catch { mountLordFrame(embed, page, title, embedUrls, frame); }
+      } else {
+        mountLordFrame(embed, page, title, embedUrls, frame);
+      }
       attachBridge();
       if (ctl.isHost()) {
-        const next = { id: t.id, title, year: t.y, embedUrl: embed || undefined, pageUrl: page || undefined, mode: 'stream' };
+        const next = {
+          id: t.id,
+          title,
+          year: t.y,
+          embedUrl: embed || undefined,
+          pageUrl: page || undefined,
+          streamUrl: streamUrl || undefined,
+          kinopoiskId: payload.kinopoiskId || undefined,
+          type: payload.type,
+          mode: 'stream',
+        };
         const changed = !lastFilm || lastFilm.id !== next.id;
         lastFilm = next;
         ctl.publishFilm(lastFilm);
@@ -1084,6 +1148,7 @@ function watchRoom(id, panel, frame, titleEl) {
       showWait(info.host);
     },
     onOpenPlayer(film) {
+      if (ctl.isHost() && frame.querySelector('video, iframe')) return;
       if (pickedId && film?.id && film.id !== pickedId) return;
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
@@ -1107,6 +1172,10 @@ function watchRoom(id, panel, frame, titleEl) {
   const sharedNow = (s) => (s?.playing && s.wall ? s.at + (Date.now() - s.wall) / 1000 : (s?.at || 0));
 
   const armGuest = (at) => {
+    if (frame.querySelector('video') && bridge) {
+      bridge.command(true, at);
+      return;
+    }
     const iframe = frame.querySelector('iframe');
     if (!iframe || !bridge) return;
     const base = iframe.dataset.baseSrc || iframe.src;
@@ -1151,17 +1220,19 @@ function watchRoom(id, panel, frame, titleEl) {
   };
 
   attachBridge = () => {
+    const video = frame.querySelector('video');
     const iframe = frame.querySelector('iframe');
-    if (!iframe || iframe === bridgeIframe) return;
+    const node = video || iframe;
+    if (!node || node === bridgeIframe) return;
     bridge?.destroy();
-    bridgeIframe = iframe;
+    bridgeIframe = node;
     appliedOnce = false;
     guestAnchor = null;
     guestPlaying = null;
     localTick = null;
     hostState = { ...hostState, tick: null, stallSince: 0 };
     setReady(false);
-    bridge = bindEmbed(iframe, {
+    bridge = (video ? bindLocalVideo : bindEmbed)(node, {
       onReady() {
         if (playerReady) return;
         setReady(true);
@@ -1365,7 +1436,15 @@ async function resolveWatchPayload(payload, signal) {
   for (const item of chain) {
     try {
       const body = item.source === 'kp-mirror'
-        ? { kinopoiskId: payload.kinopoiskId, type: payload.type }
+        ? {
+          kinopoiskId: payload.kinopoiskId,
+          type: payload.type,
+          title: payload.title,
+          originalTitle: payload.originalTitle,
+          year: payload.year,
+          imdbId: payload.imdbId,
+          stream: true,
+        }
         : payload;
       const response = await fetch(item.url, {
         method: 'POST',
@@ -1380,8 +1459,9 @@ async function resolveWatchPayload(payload, signal) {
       const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
         ? data.embedUrls
         : (data.embedUrl ? [data.embedUrl] : []);
-      if (data.matched === true && (embedUrls.length || pageUrl)) {
-        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), source: data.source || item.source };
+      const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : '';
+      if (data.matched === true && (embedUrls.length || pageUrl || streamUrl)) {
+        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), streamUrl, source: data.source || item.source };
       }
     } catch (error) {
       if (error?.name === 'AbortError') throw error;

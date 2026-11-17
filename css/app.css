@@ -429,7 +429,7 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .lm-pick { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; }
 .lm-pick button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); background: rgb(0 0 0 / .65); color: inherit; cursor: pointer; }
 .lm-pick button.active { border-color: var(--accent); background: rgb(0 0 0 / .85); }
-.tm-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.tm-frame iframe, .tm-frame video.room-video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; object-fit: contain; }
 .tm-load { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: 15px; text-align: center; padding: 20px; }
 .tm-load a { color: var(--ink); }
 
