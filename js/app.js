@@ -630,7 +630,7 @@ function render(t, full) {
   curT = t;
   const my = token;
   const title = t.ru || ruCached(t.id) || t.t;
-  const lordSearchUrl = `https://1.2026-lord.pics/search?q=${encodeURIComponent(`${title}${t.y ? ` (${t.y})` : ''}`)}`;
+  const lordSearchHref = lordSearchUrl(title, t.y);
   // оригинал под русским — только если отличается не одним регистром
   const diff = (a, b) => !!a && !!b && a.trim().toLowerCase() !== b.trim().toLowerCase();
   const orig = [diff(t.t, title) ? t.t : null, diff(t.o, title) ? t.o : null].filter(Boolean)[0];
@@ -671,7 +671,7 @@ function render(t, full) {
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
         <button class="btn" type="button" data-act="lord" aria-label="Смотреть на LordFilm в плеере сайта">Смотреть</button>
-        <a class="btn" href="${lordSearchUrl}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm (внешний сайт) ${ico.ext}</a>
+        <a class="btn" href="${lordSearchHref}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm (внешний сайт) ${ico.ext}</a>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
@@ -865,16 +865,12 @@ function lordSearchUrl(title, year) {
   return `https://www.2026-lord.pics/search?q=${encodeURIComponent(q)}`;
 }
 
-function lordFilmPageUrl(id) {
-  return `https://www.2026-lord.pics/${id}`;
-}
-
 function mountLordFrame(embedUrl, pageUrl, title) {
   const frame = $('#lmFrame');
   if (!frame) return;
   const src = embedUrl || pageUrl;
   if (src && !embedUrl && lordSearchRe.test(src)) {
-    mountLordSearchPanel(src, title, true);
+    mountLordSearchPanel(src, title);
     return;
   }
   frame.classList.toggle('lord-browse', Boolean(!embedUrl && pageUrl));
@@ -886,14 +882,12 @@ function mountLordFrame(embedUrl, pageUrl, title) {
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
 }
 
-function mountLordSearchPanel(url, title, openTab = false) {
+function mountLordSearchPanel(url, title) {
   const frame = $('#lmFrame');
   if (!frame) return;
   frame.classList.remove('lord-browse');
-  frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Поиск LordFilm нельзя встроить в рулетку — открой выдачу на сайте LordFilm и выбери «${esc(title)}».</p><button class="btn primary" type="button" data-lord-tab>Искать на LordFilm</button></div>`;
-  const open = () => openLordInNewTab(url);
-  frame.querySelector('[data-lord-tab]')?.addEventListener('click', open, { once: true });
-  if (openTab) open();
+  frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Точную страницу не нашли. Открой поиск на LordFilm и выбери «${esc(title)}» — или нажми LordFilm ↗ справа сверху.</p><button class="btn primary" type="button" data-lord-tab>Открыть поиск LordFilm</button></div>`;
+  frame.querySelector('[data-lord-tab]')?.addEventListener('click', () => openLordInNewTab(url), { once: true });
 }
 
 function openLordInNewTab(url) {
@@ -942,23 +936,21 @@ async function openLordWatch(t, btn) {
     const openFilm = pageUrl && (data.matched === true || data.lead === true);
     if (openFilm) {
       $('#lmExt').href = pageUrl;
-      openLordInNewTab(pageUrl);
       mountLordFrame(data.embedUrl, pageUrl, title);
-      V.toast(data.matched ? 'Открыл страницу LordFilm' : 'Похоже на этот фильм — проверь вкладку LordFilm', null, 2800);
       return;
     }
     $('#lmExt').href = searchUrl;
-    mountLordSearchPanel(searchUrl, title, true);
+    mountLordSearchPanel(searchUrl, title);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
-      V.toast('Поиск LordFilm открыт в новой вкладке', null, 3200);
+      V.toast('LordFilm с сервера не ответил — открой поиск кнопкой внизу', null, 3000);
       return;
     }
-    V.toast('Выбери фильм в выдаче LordFilm', null, 2800);
+    V.toast('Выбери фильм в поиске LordFilm', null, 2400);
   } catch (error) {
     console.warn('LordFilm lookup failed.', error);
     $('#lmExt').href = searchUrl;
-    mountLordSearchPanel(searchUrl, title, true);
-    V.toast('Поиск LordFilm в новой вкладке', null, 2800);
+    mountLordSearchPanel(searchUrl, title);
+    V.toast('Не вышло найти автоматически — кнопка поиска в модалке', null, 2800);
   } finally {
     clearTimeout(timer);
     btn.disabled = false; btn.textContent = originalLabel;
