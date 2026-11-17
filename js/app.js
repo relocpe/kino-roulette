@@ -4,7 +4,7 @@ import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, 
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=28';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=8';
-import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=3';
+import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=4';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -1032,15 +1032,12 @@ function watchRoom(id, panel, frame, titleEl) {
     if (!s || ctl.isHost() || !bridge) return;
     const now = sharedNow(s);
     const playing = !!s.playing;
-    if (!bridge) return;
-    const predicted = guestAnchor?.playing ? guestAnchor.at + (Date.now() - guestAnchor.wall) / 1000 : guestAnchor?.at;
-    const jump = predicted != null && Math.abs(now - predicted) > 8;
     const playEdge = guestPlaying !== null && guestPlaying !== playing;
     const first = !appliedOnce;
     guestPlaying = playing;
     appliedOnce = true;
-    if (!shouldSnapGuest({ snap, force, playEdge, jump, first, playing })) return;
-    bridge.command(playing, now, { burst: true });
+    if (!shouldSnapGuest({ snap, force, playEdge, first, playing })) return;
+    bridge.command(playing, now);
     guestAnchor = { at: now, wall: Date.now(), playing };
   };
 
@@ -1054,7 +1051,7 @@ function watchRoom(id, panel, frame, titleEl) {
       pendingCmd = { playing, at };
       return;
     }
-    bridge.command(playing, at, { burst: true });
+    bridge.command(playing, at);
   };
 
   const markSynced = () => {
@@ -1079,7 +1076,7 @@ function watchRoom(id, panel, frame, titleEl) {
     }
     const at = ctl.clock();
     const playing = ctl.playing();
-    bridge.command(playing, at, { burst: true });
+    bridge.command(playing, at);
     if (ctl.isHost()) ctl.pushSync(at, playing, true);
     markSynced();
   };
@@ -1095,32 +1092,19 @@ function watchRoom(id, panel, frame, titleEl) {
     setReady(false);
     bridge = bindEmbed(iframe, {
       onReady() {
+        if (playerReady) return;
         setReady(true);
-        clearTimeout(readyTimer);
-        readyTimer = setTimeout(() => {
-          if (!bridge) return;
-          if (pendingCmd && ctl.isHost()) {
-            bridge.command(pendingCmd.playing, pendingCmd.at);
-            pendingCmd = null;
-          }
-          if (!ctl.isHost() && pendingSync) {
-            appliedOnce = false;
-            guestPlaying = null;
-            guestAnchor = null;
-            applyGuest(pendingSync, { snap: pendingSnap || !!pendingSync.playing });
-          }
-        }, 350);
+        if (pendingCmd && ctl.isHost()) {
+          bridge.command(pendingCmd.playing, pendingCmd.at);
+          pendingCmd = null;
+        } else if (!ctl.isHost() && pendingSync?.playing && !appliedOnce) {
+          applyGuest(pendingSync, { snap: true });
+        }
       },
       onTick(t) {
         window.__wpLocalAt = t.at;
         if (t.playing != null) window.__wpLocalPlaying = t.playing;
         if (t.duration) ctl.setDuration(t.duration);
-        if (!ctl.isHost() || !playerReady) return;
-        const jumped = lastHostAt > 0 && Math.abs(t.at - lastHostAt) > 8;
-        if (jumped && Date.now() - lastHostSent > 1500) {
-          ctl.pushSync(t.at, !!t.playing, true);
-          lastHostSent = Date.now();
-        }
         lastHostAt = t.at;
       },
     });
@@ -1142,8 +1126,10 @@ function watchRoom(id, panel, frame, titleEl) {
 
   ctl.join(id);
   const beat = setInterval(() => {
-    if (!ctl.isHost() || !ctl.playing() || !playerReady) return;
-    ctl.pushSync(hostAt(), true, false);
+    if (!ctl.isHost() || !ctl.playing()) return;
+    const heardAt = bridge?.heard() ? (window.__wpLocalAt || 0) : null;
+    if (heardAt != null && lastHostAt > 30 && heardAt < lastHostAt - 8) return;
+    ctl.pushSync(heardAt != null ? heardAt : ctl.clock(), true, false);
   }, 5000);
   return () => { clearInterval(beat); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }

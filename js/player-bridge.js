@@ -66,10 +66,9 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     post({ key: 'kodik_player_api', value: { method: 'get_time' } });
   };
 
-  const DIRECT = /kodik|alloha|thealloha|iframe\.cloud|collaps|videocdn|bazon|hdvb|voidboost|kinotochka/i;
   const sendCommand = (nextPlaying, seconds) => {
     const t = Math.max(0, Number(seconds) || 0);
-    ignoreUntil = Date.now() + 900;
+    ignoreUntil = Date.now() + 1200;
     at = t;
     playing = !!nextPlaying;
     post({ api: 'seek', set: t });
@@ -97,25 +96,8 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     }
   };
 
-  const command = (nextPlaying, seconds, opts = {}) => {
-    const t = Math.max(0, Number(seconds) || 0);
-    sendCommand(nextPlaying, t);
-    if (!opts.burst) return;
-    [450, 1100].forEach((ms) => setTimeout(() => sendCommand(nextPlaying, t), ms));
-    const srcNow = iframe.src || '';
-    if (!DIRECT.test(srcNow) || t < 1) return;
-    setTimeout(() => {
-      if (reported != null && Math.abs(reported - t) < 4) return;
-      if (iframe.dataset.krTried === String(Math.floor(t))) return;
-      iframe.dataset.krTried = String(Math.floor(t));
-      try {
-        const u = new URL(srcNow);
-        u.searchParams.set('start', String(Math.floor(t)));
-        u.searchParams.set('t', String(Math.floor(t)));
-        const next = u.toString();
-        if (next !== iframe.src) iframe.src = next;
-      } catch { /* не url */ }
-    }, 1500);
+  const command = (nextPlaying, seconds) => {
+    sendCommand(nextPlaying, seconds);
   };
 
   const fromThisPlayer = (source) => {
@@ -154,7 +136,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     onReady?.();
   };
   window.addEventListener('message', onMessage);
-  iframe.addEventListener('load', () => { readySent = false; kick(); });
+  iframe.addEventListener('load', kick);
   subscribe();
   setTimeout(kick, 700);
   const poll = setInterval(() => {
