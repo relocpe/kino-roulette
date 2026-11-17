@@ -109,6 +109,12 @@ describe('collectStreams', () => {
       { source: 'collaps', data: [{ method: 'play', url: 'https://cdn.example/dub.m3u8', translate: 'Movie Dubbing' }] },
     ]);
     assert.equal(items[0].url, 'https://cdn.example/dub.m3u8');
+    const mixed = collectStreams([
+      { source: 'collaps', data: [{ method: 'play', url: 'https://gogo.iframe.cloud/proxy/dub.m3u8', translate: 'Дубляж' }] },
+      { source: 'veoveo', data: [{ method: 'play', url: 'https://cdn.example/orig.m3u8', translate: 'Оригинал' }, { method: 'play', url: 'https://cdn.example/a.m4s', translate: 'кусок' }] },
+    ]);
+    assert.equal(mixed[0].url, 'https://cdn.example/orig.m3u8');
+    assert.equal(mixed.some((item) => item.url.endsWith('.m4s')), false);
     assert.equal(items[1].label, 'Оригинал');
     assert.equal(items.length, 2);
   });

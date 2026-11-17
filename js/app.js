@@ -5,7 +5,7 @@ import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=36';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=15';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
-import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=3';
+import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=4';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=4';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -1096,7 +1096,8 @@ function watchRoom(id, panel, frame, titleEl) {
           ctl.publishFilm(lastFilm);
         }
         const hop = () => {
-          const next = choices.find((other) => other.url !== item.url);
+          const files = choices.filter((other) => other.url !== item.url && !isSitePlayer(other.url));
+          const next = files[0] || choices.find((other) => other.url !== item.url);
           if (hops > 0 && next) play(next, hops - 1, ctl.isHost());
         };
         if (isSitePlayer(item.url)) {
@@ -1117,7 +1118,7 @@ function watchRoom(id, panel, frame, titleEl) {
       };
       const initial = choices.find((item) => item.url === stream) || choices[0];
       if (initial) {
-        await play(initial, 1, false);
+        await play(initial, Math.max(choices.length - 1, 0), false);
         return;
       }
       const src = embedUrl || pageUrl;
@@ -1176,7 +1177,10 @@ function watchRoom(id, panel, frame, titleEl) {
       lastFilm = next;
       if (ctl.isHost()) {
         ctl.publishFilm(lastFilm);
-        if (changed) ctl.pushSync(0, false, false);
+        if (changed) {
+          ctl.pushSync(0, false, false);
+          hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: Date.now() };
+        }
         if (pickedId && t.id === pickedId) V.clearWatchBoot();
       }
       showEmbed(next);
@@ -1395,6 +1399,8 @@ function watchRoom(id, panel, frame, titleEl) {
     if (!ctl.isHost() || !ctl.playing()) return;
     if (bridge?.heard() && localTick) {
       if (localTick.playing && Date.now() - localTick.wall > 2500) {
+        const video = frame.querySelector('video');
+        if (video && !video.paused && !video.ended) return;
         const at = localTick.at;
         localTick = { at, wall: Date.now(), playing: false };
         hostPush(at, false, true);

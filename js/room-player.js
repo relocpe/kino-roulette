@@ -35,7 +35,9 @@ export function playbackStreamUrl(url) {
 }
 
 export function isSitePlayer(url) {
-  return /iframe\.cloud|kodik|alloha|youtube|youtu\.be/i.test(String(url || ''));
+  const value = String(url || '');
+  if (/gogo\.iframe\.cloud/i.test(value)) return false;
+  return /iframe\.cloud\/(?:iframe|see)\/|kodik|alloha|youtube|youtu\.be/i.test(value);
 }
 
 export function chooseStream(streams, voice) {
@@ -69,10 +71,10 @@ export function watchPicture(video, hls, onFail) {
   const stop = () => { done = true; clearTimeout(timer); };
   const fail = () => { if (done) return; stop(); onFail?.(); };
   const timer = setTimeout(() => {
-    if (video.videoWidth > 0 && video.readyState >= 2) { stop(); return; }
+    const alive = video.videoWidth > 0 && video.readyState >= 2 && (video.currentTime > 0.2 || video.paused);
+    if (alive) { stop(); return; }
     fail();
   }, 8000);
-  video.addEventListener('loadeddata', () => { if (video.videoWidth > 0) stop(); });
   hls?.on?.('hlsError', (_, data) => { if (data?.fatal) fail(); });
   return stop;
 }

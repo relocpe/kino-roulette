@@ -42,6 +42,7 @@ export function httpsPlayUrl(value) {
   try {
     const u = new URL(value);
     if (u.username || u.password) return '';
+    if (/\.m4s$/i.test(u.pathname)) return '';
     return u.href;
   } catch {
     return '';
@@ -72,7 +73,8 @@ export function collectStreams(groups) {
       items.push({ url, label: labelOf(item) || group.source || 'Плеер', source: group.source || '' });
     }
   }
-  items.sort((a, b) => rank(a) - rank(b));
+  const onGogo = (url) => { try { return new URL(url).hostname === 'gogo.iframe.cloud' ? 1 : 0; } catch { return 1; } };
+  items.sort((a, b) => (onGogo(a.url) - onGogo(b.url)) || (rank(a) - rank(b)));
   return items.slice(0, 6);
 }
 

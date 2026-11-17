@@ -1,12 +1,21 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseStream, kpFromFilm, playbackStreamUrl } from './room-player.js';
+import { chooseStream, isSitePlayer, kpFromFilm, playbackStreamUrl } from './room-player.js';
 
 describe('kpFromFilm', () => {
   it('reads a kinopoisk id from the film or from the iframe.cloud address', () => {
     assert.equal(kpFromFilm({ kinopoiskId: '326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://iframe.cloud/iframe/326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://kodik.info/video/1' }), '');
+  });
+});
+
+describe('isSitePlayer', () => {
+  it('keeps a catalog file in our player and leaves the site page outside', () => {
+    assert.equal(isSitePlayer('https://gogo.iframe.cloud/proxy/file.m3u8'), false);
+    assert.equal(isSitePlayer('https://api.rstprgapipt.com/content/a.m3u8'), false);
+    assert.equal(isSitePlayer('https://iframe.cloud/iframe/326'), true);
+    assert.equal(isSitePlayer('https://iframe.cloud/see/326'), true);
   });
 });
 
