@@ -1,18 +1,9 @@
 const LORD_FILM_ORIGIN = 'https://1.2026-lord.pics';
 const LORD_HOSTS = ['1.2026-lord.pics', 'www.2026-lord.pics'];
 const ALLOWED_HOSTS = new Set(LORD_HOSTS);
-const LORD_FETCH_HEADERS = {
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-  'Cache-Control': 'no-cache',
-  'Sec-Fetch-Dest': 'document',
-  'Sec-Fetch-Mode': 'navigate',
-  'Sec-Fetch-Site': 'same-origin',
-  'Sec-Fetch-User': '?1',
-  'Upgrade-Insecure-Requests': '1',
-  Referer: `${LORD_FILM_ORIGIN}/`,
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-};
+const LORD_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const LORD_ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7';
+const LORD_ACCEPT_LANGUAGE = 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7';
 const ALLOWED_ORIGINS = new Set(['https://relocpe.github.io']);
 const MAX_CANDIDATES = 20;
 const NEGATIVE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -74,41 +65,84 @@ function cookieHeaderFromResponse(response) {
   return single ? single.split(';')[0].trim() : '';
 }
 
+function mergeCookies(...parts) {
+  const jar = new Map();
+  for (const part of parts) {
+    for (const piece of String(part || '').split(';')) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      jar.set(trimmed.slice(0, eq), trimmed.slice(eq + 1));
+    }
+  }
+  return [...jar.entries()].map(([name, value]) => `${name}=${value}`).join('; ');
+}
+
+function lordFilmRequestHeaders(url, cookie = '', swReferer = '') {
+  const origin = url.origin;
+  const base = {
+    Accept: LORD_ACCEPT,
+    'Accept-Language': LORD_ACCEPT_LANGUAGE,
+    'Cache-Control': 'max-age=0',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': LORD_USER_AGENT,
+    ...(cookie ? { Cookie: cookie } : {}),
+  };
+  const viaServiceWorker = Boolean(swReferer)
+    || url.pathname === '/search'
+    || /^\/\d+\/?$/.test(url.pathname);
+  if (viaServiceWorker) {
+    return {
+      ...base,
+      Referer: `${origin}/pr.sw.js`,
+      'X-SW-Referer': swReferer || url.href,
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'same-origin',
+      'Sec-Fetch-Site': 'same-origin',
+    };
+  }
+  return {
+    ...base,
+    Referer: `${origin}/`,
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+  };
+}
+
 function searchRequestUrls(host, query) {
   const origin = `https://${host}`;
-  const dle = new URLSearchParams({
-    do: 'search',
-    subaction: 'search',
-    search_start: '0',
-    full_search: '0',
-    story: query,
-  });
-  return [
-    new URL(`/search?${new URLSearchParams({ q: query })}`, origin),
-    new URL(`/index.php?${dle}`, origin),
-    new URL(`/?${dle}`, origin),
-  ];
+  return [new URL(`/search?${new URLSearchParams({ q: query })}`, origin)];
 }
 
-async function warmLordFilmHost(host, fetcher, cookies = '') {
+async function warmLordFilmHost(host, fetcher) {
   const origin = `https://${host}`;
-  const { response } = await fetchLordFilm(`${origin}/`, fetcher, cookies);
-  return cookieHeaderFromResponse(response) || cookies;
+  let jar = mergeCookies('__sw=1');
+  const { response: homeRes } = await fetchLordFilm(`${origin}/`, fetcher, jar);
+  jar = mergeCookies(jar, cookieHeaderFromResponse(homeRes));
+  try {
+    const swUrl = `${origin}/pr.sw.js`;
+    const swResponse = await fetcher(swUrl, {
+      headers: lordFilmRequestHeaders(new URL(swUrl), jar, `${origin}/`),
+      redirect: 'manual',
+    });
+    jar = mergeCookies(jar, cookieHeaderFromResponse(swResponse));
+  } catch {
+    /* optional */
+  }
+  return jar;
 }
 
-async function fetchLordFilm(input, fetcher, cookie = '') {
+async function fetchLordFilm(input, fetcher, cookie = '', swReferer = '') {
   let url = new URL(input);
   for (let hop = 0; hop < 4; hop += 1) {
     if (!isAllowedUrl(url)) throw new Error('Unapproved LordFilm host');
     let response;
     try {
       response = await fetcher(url.href, {
-        headers: {
-          ...LORD_FETCH_HEADERS,
-          Referer: `${url.origin}/`,
-          'Sec-Fetch-Site': url.pathname === '/' ? 'none' : 'same-origin',
-          ...(cookie ? { Cookie: cookie } : {}),
-        },
+        headers: lordFilmRequestHeaders(url, cookie, swReferer || (hop === 0 ? swReferer : url.href)),
         redirect: 'manual',
       });
     } catch {
@@ -147,10 +181,11 @@ function decodeHtml(text) {
 function resultItems(html) {
   const marker = html.match(/\bid\s*=\s*(["'])Teasers-search\1/i);
   if (!marker) return [];
-  const listStart = html.indexOf('<ul', marker.index);
-  const listEnd = html.indexOf('</ul>', listStart);
+  const block = html.slice(marker.index, marker.index + 600_000);
+  const listStart = block.indexOf('<ul');
+  const listEnd = block.indexOf('</ul>', listStart);
   if (listStart < 0 || listEnd < 0) return [];
-  const list = html.slice(listStart, listEnd);
+  const list = block.slice(listStart, listEnd);
   const items = [];
   for (const [, item] of list.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)) {
     for (const [anchor] of item.matchAll(/<a\b[^>]*>/gi)) {
@@ -170,7 +205,7 @@ function resultItems(html) {
   const deduped = [...new Map(items.map((item) => [item.id, item])).values()];
   if (deduped.length) return deduped;
   const fallback = [];
-  for (const [anchor] of html.matchAll(/<a\b[^>]*>/gi)) {
+  for (const [anchor] of block.matchAll(/<a\b[^>]*>/gi)) {
     const href = attributes(anchor).href;
     if (!href) continue;
     let url;
@@ -205,6 +240,12 @@ export function extractEmbedUrl(html, pageUrl) {
   for (const chunk of [...playerChunk, html]) {
     for (const m of chunk.matchAll(/<iframe\b[^>]*\bsrc\s*=\s*(["'])([\s\S]*?)\1/gi)) note(m[2]);
     for (const m of chunk.matchAll(/\bdata-url\s*=\s*(["'])([\s\S]*?)\1/gi)) note(m[2]);
+    for (const m of chunk.matchAll(/\bdata-src\s*=\s*(["'])([A-Za-z0-9+/=]+)\1/gi)) {
+      try {
+        const decoded = atob(m[2]);
+        if (/^https:\/\//i.test(decoded)) note(decoded);
+      } catch { /* ignore */ }
+    }
   }
   for (const m of html.matchAll(/["']file["']\s*:\s*["']([^"']+)["']/gi)) {
     if (/\.(?:m3u8|mp4)(?:\?|$)/i.test(m[1])) note(m[1]);
@@ -331,6 +372,7 @@ export async function resolveLordFilm(input, fetcher = fetch) {
     const searchStatuses = [];
     let hadSuccessfulSearch = false;
     const hostCookies = new Map();
+    let lastSearchReferer = '';
 
     outer: for (const queryTitle of queryTitles) {
       for (const query of [`${queryTitle} (${year})`, queryTitle]) {
@@ -340,7 +382,8 @@ export async function resolveLordFilm(input, fetcher = fetch) {
           }
           const cookie = hostCookies.get(host) || '';
           for (const queryUrl of searchRequestUrls(host, query)) {
-          const { response, url } = await fetchLordFilm(queryUrl, fetcher, cookie);
+          const swReferer = queryUrl.href;
+          const { response, url } = await fetchLordFilm(queryUrl, fetcher, cookie, swReferer);
           if (!response.ok) {
             console.warn('LordFilm search returned a non-success status.', JSON.stringify({
               status: response.status,
@@ -355,11 +398,12 @@ export async function resolveLordFilm(input, fetcher = fetch) {
           }
           hadSuccessfulSearch = true;
           const refreshed = cookieHeaderFromResponse(response);
-          if (refreshed) hostCookies.set(host, refreshed);
+          if (refreshed) hostCookies.set(host, mergeCookies(cookie, refreshed));
           const html = (await response.text()).slice(0, 1_500_000);
           const rawItems = resultItems(html);
           if (!rawItems.length) continue;
           pageBase = url;
+          lastSearchReferer = swReferer;
           for (const item of rawItems) cardsById.set(item.id, item);
           break outer;
           }
@@ -383,7 +427,9 @@ export async function resolveLordFilm(input, fetcher = fetch) {
       if (!hostCookies.has(detailHost)) {
         hostCookies.set(detailHost, await warmLordFilmHost(detailHost, fetcher));
       }
-      const { response } = await fetchLordFilm(detailUrl, fetcher, hostCookies.get(detailHost) || '');
+      const detailCookie = hostCookies.get(detailHost) || '';
+      const detailReferer = lastSearchReferer || detailUrl.href;
+      const { response } = await fetchLordFilm(detailUrl, fetcher, detailCookie, detailReferer);
       if (!response.ok) continue;
       const html = (await response.text()).slice(0, 1_500_000);
       const details = pageDetails(html);

@@ -160,6 +160,16 @@ test('extracts an iframe embed URL from a film page', async () => {
   );
 });
 
+test('decodes LordFilm player data-src payloads', async () => {
+  const { extractEmbedUrl } = await import('./index.mjs');
+  const encoded = Buffer.from('https://player.example/embed/42', 'utf8').toString('base64');
+  const html = `<motion id="Player"><ul><li class="active" data-src="${encoded}"></li></ul><iframe id="Iframe" src="https://player.example/embed/42"></iframe></div>`;
+  assert.equal(
+    extractEmbedUrl(html, 'https://1.2026-lord.pics/71852'),
+    'https://player.example/embed/42',
+  );
+});
+
 test('does not cache ordinary no-result responses', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
