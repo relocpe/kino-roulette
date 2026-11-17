@@ -752,8 +752,8 @@ function render(t, full) {
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
   // выбранные жанры — первыми (в «Аниме» — их соответствия на AniList)
   const wantG = [].concat(byId[curG]?.q?.genres || [], t.src === 'al' ? prefs.sel.flatMap((id) => byId[id]?.al?.g || []) : []);
-  const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ');
-  const kick = [kindOf(t), years, genres ? genres[0].toUpperCase() + genres.slice(1) : ''].filter(Boolean);
+  const genres = [...(t.g || [])].sort((a, b) => wantG.includes(b) - wantG.includes(a)).slice(0, 3).map((g) => GENRE_RU[g] || g).join(', ').toLowerCase();
+  const metaLine = [kindOf(t), years, country, genres].filter(Boolean).join(' · ');
   // имена людей — по-русски из Wikidata (по nm-id), если там есть; иначе оригинальное написание
   const ruN = (names, ids) => names.map((n, i) => ruCached(ids?.[i]) || n);
   const dirs = t.src === 'al' ? [] : ruN((t.directors || []).slice(0, 2), t.dirIds), cast = t.src === 'al' ? [] : ruN((t.stars || []).slice(0, 3), t.starIds);
@@ -768,8 +768,6 @@ function render(t, full) {
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
   const facts = [
     t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
-    years ? fact(isSeries ? 'Годы' : 'Год', esc(years)) : '',
-    country ? fact('Страна', esc(country)) : '',
     dur ? fact(isSeries ? (t.seasons ? 'Сезоны' : 'Серии') : 'Длительность', esc(dur)) : '',
     dirs.length ? fact(dirs.length > 1 ? 'Режиссёры' : 'Режиссёр', esc(dirs.join(', ')), ' dir') : '',
     cast.length ? fact('В ролях', esc(cast.join(', ')), ' cast') : '',
@@ -778,9 +776,9 @@ function render(t, full) {
   const watchLbl = watchButtonText(t).label;
   const infoHTML = `
     <div class="info">
-      <p class="kick">${kick.map((x) => `<span>${esc(x)}</span>`).join('')}</p>
       <h2 class="${title.length > 34 ? 'xl' : title.length > 18 ? 'l' : ''}">${esc(title)}</h2>
       ${orig ? `<p class="orig" lang="en">${esc(orig)}</p>` : ''}
+      ${metaLine ? `<p class="rmeta">${esc(metaLine)}</p>` : ''}
       ${facts ? `<div class="facts">${facts}</div>` : ''}
       ${desc}
       <div class="actions">

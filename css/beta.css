@@ -202,6 +202,7 @@ html[data-beta="1"] .opts button {
 }
 
 /* ---------- карточка фильма ---------- */
+html[data-beta="1"] .rmeta { color: var(--ink-3); letter-spacing: .01em; }
 html[data-beta="1"] .facts { border-top: 1px solid rgb(241 235 226 / .16); }
 html[data-beta="1"] .fact:not(.score) b { font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -.01em; }
 html[data-beta="1"] .tile small,
