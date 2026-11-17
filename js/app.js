@@ -632,7 +632,6 @@ function render(t, full) {
   curT = t;
   const my = token;
   const title = t.ru || ruCached(t.id) || t.t;
-  const lordSearchHref = lordSearchUrl(title, t.y);
   // оригинал под русским — только если отличается не одним регистром
   const diff = (a, b) => !!a && !!b && a.trim().toLowerCase() !== b.trim().toLowerCase();
   const orig = [diff(t.t, title) ? t.t : null, diff(t.o, title) ? t.o : null].filter(Boolean)[0];
@@ -672,8 +671,7 @@ function render(t, full) {
       <div class="actions">
         <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть на LordFilm в плеере сайта">Смотреть</button>
-        <a class="btn" href="${lordSearchHref}" target="_blank" rel="noopener noreferrer">Открыть поиск на LordFilm (внешний сайт) ${ico.ext}</a>
+        <button class="btn" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">Смотреть</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
@@ -899,10 +897,6 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = []) {
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
 }
 
-const watchSourceLabel = (source) => (
-  source === 'zombi' ? 'Zombi ↗' : source === 'kp-mirror' ? 'Зеркало КП ↗' : 'LordFilm ↗'
-);
-
 async function resolveWatchPayload(payload, signal) {
   const chain = [
     { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi' },
@@ -942,7 +936,7 @@ function mountLordSearchPanel(url, title) {
   const frame = $('#lmFrame');
   if (!frame) return;
   frame.classList.remove('lord-browse');
-  frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Точную страницу не нашли. Открой поиск на LordFilm и выбери «${esc(title)}» — или нажми LordFilm ↗ справа сверху.</p><button class="btn primary" type="button" data-lord-tab>Открыть поиск LordFilm</button></div>`;
+  frame.innerHTML = `<div class="tm-load" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:min(40vh,360px);padding:1.5rem;text-align:center"><p>Точную страницу не нашли. Открой поиск и выбери «${esc(title)}».</p><button class="btn primary" type="button" data-lord-tab>Открыть поиск LordFilm</button></div>`;
   frame.querySelector('[data-lord-tab]')?.addEventListener('click', () => openLordInNewTab(url), { once: true });
 }
 
@@ -968,7 +962,6 @@ async function openLordWatch(t, btn) {
     return;
   }
   $('#lmTitle').textContent = title;
-  $('#lmExt').href = searchUrl;
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
@@ -986,21 +979,15 @@ async function openLordWatch(t, btn) {
     if (!hit) throw new Error('No resolver response');
     const { data, pageUrl, embedUrls, source } = hit;
     if (data.matched === true && (embedUrls.length || pageUrl)) {
-      const extUrl = pageUrl || (source === 'zombi' ? data.url : searchUrl);
-      $('#lmExt').href = extUrl;
-      $('#lmExt').textContent = watchSourceLabel(source);
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
       if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
       return;
     }
     const leadUrl = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
     if (data.lead && leadUrl) {
-      $('#lmExt').href = leadUrl;
       mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
       return;
     }
-    $('#lmExt').href = searchUrl;
-    $('#lmExt').textContent = 'LordFilm ↗';
     mountLordSearchPanel(searchUrl, title);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
       V.toast('Источники не ответили — открой поиск кнопкой внизу', null, 3000);
@@ -1009,7 +996,6 @@ async function openLordWatch(t, btn) {
     V.toast('Точного плеера нет — поиск LordFilm в модалке', null, 2400);
   } catch (error) {
     console.warn('Watch resolver failed.', error);
-    $('#lmExt').href = searchUrl;
     mountLordSearchPanel(searchUrl, title);
     V.toast('Не вышло найти автоматически — кнопка поиска в модалке', null, 2800);
   } finally {
