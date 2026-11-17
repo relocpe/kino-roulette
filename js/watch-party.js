@@ -1,6 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=14';
-import { BASE } from './views.js?v=42';
+import { BASE } from './views.js?v=43';
 
 import { apiConfig } from './api-config.js?v=2';
 
