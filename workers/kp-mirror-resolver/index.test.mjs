@@ -121,6 +121,22 @@ describe('collectStreams', () => {
 });
 
 describe('pickPlayable', () => {
+  it('reads a play file that the call puts on the response itself', () => {
+    const picked = pickPlayable({ method: 'play', url: 'https://gogo.iframe.cloud/proxy/hdvb.m3u8', translate: 'многоголосый закадровый' });
+    assert.equal(picked.url, 'https://gogo.iframe.cloud/proxy/hdvb.m3u8');
+  });
+  it('keeps looking after the first balancer has no file', async () => {
+    const fetcher = async (url) => {
+      const u = String(url);
+      if (u.includes('/lite/events')) return { ok: true, json: async () => [{ balanser: 'pizdatoehd', show: true }] };
+      if (u.includes('/lite/pizdatoehd')) return { ok: false, status: 403 };
+      if (u.includes('/lite/veoveo')) return { ok: true, json: async () => ({ data: [{ method: 'play', url: 'https://cdn.example/veo.m3u8', translate: 'Дубляж' }] }) };
+      return { ok: false, status: 404 };
+    };
+    const stream = await resolveVeoStream({ kinopoiskId: '326', type: 'movie' }, fetcher);
+    assert.equal(stream.url, 'https://cdn.example/veo.m3u8');
+    assert.equal(stream.source, 'veoveo');
+  });
   it('prefers a Russian dub and ignores non-play rows', () => {
     const picked = pickPlayable({
       data: [

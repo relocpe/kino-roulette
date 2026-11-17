@@ -45,6 +45,12 @@ export function isSitePlayer(url) {
   return /iframe\.cloud\/(?:iframe|see)\/|kodik|alloha|youtube|youtu\.be/i.test(value);
 }
 
+// iframe.cloud родителю время не отдаёт. Мост синхронизации вешаем только на плеер, который отвечает.
+export function canSyncEmbed(url) {
+  const value = String(url || '');
+  return isSitePlayer(value) && !/iframe\.cloud\/(?:iframe|see)\//i.test(value);
+}
+
 export function chooseStream(streams, voice) {
   const list = Array.isArray(streams) ? streams.filter((item) => item?.url) : [];
   if (voice) {
@@ -110,7 +116,7 @@ export function bindLocalVideo(video, { onReady, onTick } = {}) {
   let heard = false;
   let queued = null;
 
-  const emit = (explicit, playing) => {
+  const emit = (explicit, playing, seek = false) => {
     heard = true;
     const duration = Number.isFinite(video.duration) ? video.duration : null;
     onTick?.({
@@ -118,6 +124,7 @@ export function bindLocalVideo(video, { onReady, onTick } = {}) {
       duration,
       playing,
       explicit,
+      seek,
       heard: true,
     });
   };
@@ -128,8 +135,9 @@ export function bindLocalVideo(video, { onReady, onTick } = {}) {
     queued = null;
     const target = Math.max(0, Number(at) || 0);
     if (Number.isFinite(video.currentTime) && Math.abs(video.currentTime - target) > 1.2) {
-      try { video.currentTime = target; } catch { /* метаданные ещё едут */ }
+      try { video.pause(); video.currentTime = target; } catch { /* метаданные ещё едут */ }
     }
+    video.playbackRate = 1;
     if (playing) {
       const attempt = video.play();
       if (attempt?.catch) {
@@ -145,7 +153,7 @@ export function bindLocalVideo(video, { onReady, onTick } = {}) {
 
   const onPlay = () => emit(true, true);
   const onPause = () => { if (!video.ended) emit(true, false); };
-  const onSeeked = () => emit(true, !video.paused);
+  const onSeeked = () => emit(true, !video.paused, true);
   const onTime = () => emit(false, !video.paused);
   const onMeta = () => applyQueued();
 
@@ -161,6 +169,10 @@ export function bindLocalVideo(video, { onReady, onTick } = {}) {
     command(playing, at) {
       queued = { playing: !!playing, at };
       applyQueued();
+    },
+    nudge(rate) {
+      const next = Number(rate) || 1;
+      if (video.playbackRate !== next) video.playbackRate = next;
     },
     heard: () => heard,
     destroy() {

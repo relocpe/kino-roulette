@@ -78,8 +78,14 @@ export function collectStreams(groups) {
   return items.slice(0, 6);
 }
 
+function playRows(json) {
+  const list = Array.isArray(json?.data) ? json.data.slice() : [];
+  if (json && json.method === 'play' && json.url) list.unshift(json);
+  return list;
+}
+
 export function pickPlayable(json) {
-  const list = Array.isArray(json?.data) ? json.data : [];
+  const list = playRows(json);
   const plays = list.filter((item) => item && item.method === 'play' && httpsPlayUrl(item.url));
   plays.sort((a, b) => rank(a) - rank(b));
   if (!plays.length) return null;
@@ -228,15 +234,18 @@ async function sourceNames(q, fetcher) {
   const names = rows
     .filter((item) => item?.show && !item.rch && item.balanser && !SKIP_SOURCES.has(item.balanser))
     .map((item) => item.balanser);
-  return names.length ? names.slice(0, 4) : SOURCES;
+  const listed = names.filter((name) => !SKIP_SOURCES.has(name));
+  const rest = SOURCES.filter((name) => !listed.includes(name));
+  const all = [...listed, ...rest];
+  return all.length ? all.slice(0, 8) : SOURCES;
 }
 
 async function pullCalls(source, json, fetcher) {
   const groups = [];
-  if (pickPlayable(json)) groups.push({ source, data: json.data });
+  if (pickPlayable(json)) groups.push({ source, data: playRows(json) });
   for (const call of callUrls(json)) {
     const next = await readJson(call, fetcher);
-    if (pickPlayable(next?.json)) groups.push({ source, data: next.json.data });
+    if (pickPlayable(next?.json)) groups.push({ source, data: playRows(next.json) });
   }
   return groups;
 }

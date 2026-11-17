@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hostChange, guestNeedsSeek, guestCommand, localPosition, noteHostTick } from './sync-policy.js';
+import { hostChange, guestNeedsSeek, guestCommand, guestNudge, localPosition, noteHostTick } from './sync-policy.js';
 
 describe('host change', () => {
   it('sends a seek made inside the player (2:14 while the room is at 1:00)', () => {
@@ -80,6 +80,14 @@ describe('host play actually reaches the room', () => {
     const fresh = noteHostTick({ tick: { at: 80, wall: 0, playing: true }, stallSince: 0, sentAt: 80, sentPlaying: true, sentWall: 0 }, { at: 80, playing: false, explicit: true }, 5000);
     assert.deepEqual(fresh.emit, { at: 80, playing: false });
   });
+  it('sends a two-second seek at once, even inside the quiet window', () => {
+    const step = noteHostTick(
+      { tick: { at: 60, wall: 0, playing: true }, stallSince: 0, sentAt: 60, sentPlaying: true, sentWall: 4500 },
+      { at: 62.4, playing: true, explicit: true, seek: true },
+      5000,
+    );
+    assert.deepEqual(step.emit, { at: 62.4, playing: true });
+  });
   it('sends a seek while the host stays paused', () => {
     const step = noteHostTick(
       { tick: { at: 80, wall: 0, playing: false }, stallSince: 0, sentAt: 80, sentPlaying: false, sentWall: 0 },
@@ -96,6 +104,15 @@ describe('guest starts when the host is playing', () => {
   });
   it('does not poke a cold player while the room is paused', () => {
     assert.equal(guestCommand({ roomPlaying: false, roomAt: 0, localPlaying: null, snap: true }), null);
+  });
+  it('puts a cold guest on a pause that is not at the start', () => {
+    assert.deepEqual(guestCommand({ roomPlaying: false, roomAt: 134, localPlaying: null }), { playing: false, at: 134 });
+  });
+  it('nudges a small drift and leaves a large one to a seek', () => {
+    assert.equal(guestNudge(1.2), 1.04);
+    assert.equal(guestNudge(-1.2), 0.96);
+    assert.equal(guestNudge(0.1), 1);
+    assert.equal(guestNudge(6), 1);
   });
   it('pauses a guest who is still going', () => {
     assert.deepEqual(guestCommand({ roomPlaying: false, roomAt: 80, localPlaying: true }), { playing: false, at: 80 });

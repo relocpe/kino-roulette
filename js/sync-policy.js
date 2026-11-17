@@ -9,11 +9,14 @@ export const GUEST_COOLDOWN_MS = 8000;
 
 // Ведущий двигает плеер сам (клик по полосе, пауза, play) — комната должна это увидеть.
 // expected — где ведущий должен быть по последней отправленной синхронизации.
-export function hostChange({ at, playing, explicit = false, expected = 0, sentPlaying = false, sinceSentMs = Infinity } = {}) {
+export function hostChange({ at, playing, explicit = false, seek = false, expected = 0, sentPlaying = false, sinceSentMs = Infinity } = {}) {
   if (!Number.isFinite(at)) return null;
   const now = playing == null ? sentPlaying : !!playing;
   const limit = now ? HOST_SEEK_PLAYING : HOST_SEEK_PAUSED;
   const jumped = Math.abs(at - expected) > limit;
+  const moved = Math.abs(at - expected) > 0.35;
+  // явная перемотка ведущего уходит сразу, даже на пару секунд и сразу после своей команды
+  if (seek && moved) return { at, playing: now };
   // пауза и play ведущего уходят сразу, даже сразу после своей команды
   if (explicit && now !== sentPlaying) return { at, playing: now };
   // тишина после своей команды глушит эхо плеера, но не новую перемотку
@@ -66,6 +69,7 @@ export function noteHostTick(state = freshHost(), tick = {}, nowMs = Date.now())
     at,
     playing: playing == null ? undefined : playing,
     explicit: explicit && playing != null,
+    seek: !!tick.seek,
     expected: state.sentAt ?? 0,
     sentPlaying: !!state.sentPlaying,
     sinceSentMs: nowMs - (state.sentWall || 0),
@@ -83,7 +87,8 @@ export function guestCommand({ roomPlaying = false, roomAt = 0, localPlaying = n
   if (!Number.isFinite(roomAt)) return null;
   const room = !!roomPlaying;
   const local = localPlaying == null ? null : !!localPlaying;
-  if (local === null && !room) return null;
+  // холодный плеер на паузе у нуля не трогаем; пауза далеко от нуля — это место, куда гость должен встать
+  if (local === null && !room) return roomAt > 1.2 ? { playing: false, at: roomAt } : null;
   // перемотка и пауза ведущего приходят с snap и не ждут паузу после прошлой подстройки
   if (snap) return { playing: room, at: roomAt };
   if (local !== room) {
@@ -94,4 +99,12 @@ export function guestCommand({ roomPlaying = false, roomAt = 0, localPlaying = n
     return { playing: room, at: roomAt };
   }
   return null;
+}
+
+// Мелкий уход гостя снимается скоростью. Большой уход остаётся жёсткой перемоткой.
+export function guestNudge(driftSeconds) {
+  if (!Number.isFinite(driftSeconds)) return 1;
+  const abs = Math.abs(driftSeconds);
+  if (abs < 0.35 || abs >= GUEST_DRIFT) return 1;
+  return driftSeconds > 0 ? 1.04 : 0.96;
 }

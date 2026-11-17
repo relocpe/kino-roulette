@@ -5,9 +5,9 @@ import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=41';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=18';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
-import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
+import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=6';
+import { guestCommand, guestNudge, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=7';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
@@ -17,7 +17,6 @@ import { mountYearRange } from './year-range.js?v=2';
 const $ = (s) => document.querySelector(s);
 const ZOMBI_RESOLVER = 'https://kino-roulette-zombi-resolver.samevamp.workers.dev/resolve';
 const KP_MIRROR_RESOLVER = 'https://kino-roulette-kp-mirror-resolver.samevamp.workers.dev/resolve';
-const LORD_RESOLVER = 'https://kino-roulette-lordfilm-resolver.samevamp.workers.dev/resolve';
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)').matches;
 const mobile = () => matchMedia('(max-width: 760px)').matches;
@@ -1490,7 +1489,7 @@ function watchRoom(id, panel, frame, titleEl) {
   attachBridge = () => {
     const video = frame.querySelector('video');
     const iframe = frame.querySelector('iframe');
-    const node = video || iframe;
+    const node = video || (iframe && canSyncEmbed(iframe.src) ? iframe : null);
     if (!node || node === bridgeIframe) return;
     bridge?.destroy();
     bridgeIframe = node;
@@ -1666,7 +1665,14 @@ function watchRoom(id, panel, frame, titleEl) {
       localAt: localTick ? localPosition(localTick) : null,
       sinceSeekMs: Date.now() - lastGuestSeek,
     });
-    if (!cmd) return;
+    const video = frame.querySelector('video');
+    if (!cmd) {
+      if (video && s?.playing && localTick?.playing) {
+        bridge.nudge?.(guestNudge(sharedNow(s) - localPosition(localTick)));
+      }
+      return;
+    }
+    if (video) video.playbackRate = 1;
     lastGuestSeek = Date.now();
     if (cmd.playing) armGuest(cmd.at);
     else bridge.command(false, cmd.at);
@@ -1690,7 +1696,6 @@ function watchRoom(id, panel, frame, titleEl) {
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
 const lm = $('#lmodal');
 const zombiPageRe = /^https:\/\/filmy-pro-zombi\.com\/\d+-.*\.html$/i;
-const lordPageRe = /^https:\/\/(?:www\.)?2026-lord\.pics\/\d+\/?$/;
 const lordSearchRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/search\b/;
 let watchTick = 0;
 let watchTitle = null;
@@ -1829,7 +1834,6 @@ async function resolveWatchPayload(payload, signal) {
   const chain = [
     ...(payload.kinopoiskId ? [{ url: KP_MIRROR_RESOLVER, pageRe: /^https:\/\//, source: 'kp-mirror', ms: 8000 }] : []),
     { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi', ms: 6000 },
-    { url: LORD_RESOLVER, pageRe: lordPageRe, source: 'lordfilm', ms: 6000 },
   ];
   let last = null;
   for (const item of chain) {
