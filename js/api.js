@@ -280,6 +280,19 @@ async function fallbackPair(g, s) {
   return ids.map((id) => sn.titles[id]).filter(Boolean).filter((t) => !isIndianTitle(t));
 }
 
+/** Короткая страница для ленты на старте: один запрос, без файла каталога на 3 МБ. */
+export async function reelPage(f = {}) {
+  if ((f.mode || 'all') === 'anime') return [];
+  const p = applyNoIndia({
+    types: TYPES[f.mode] || TYPES.all,
+    sortBy: 'SORT_BY_POPULARITY',
+    sortOrder: 'DESC',
+    minVoteCount: 8000,
+  });
+  const d = await getJSON(`${B}/titles?${qs(p)}`, 6000);
+  return (d.titles || []).map(norm).filter((t) => t.i && !isIndianTitle(t) && !isAnime(t)).slice(0, 40);
+}
+
 /** Постеры для ленты барабана: из встроенного каталога по тем же правилам, что и подбор (без жанров — любые фильмы и сериалы режима). */
 export async function genreTape(P, f) {
   await animeReady;

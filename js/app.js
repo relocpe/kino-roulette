@@ -1,13 +1,13 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=20';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=21';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=39';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=17';
+import * as V from './views.js?v=40';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=18';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=11';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=5';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=5';
+import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=6';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
@@ -434,16 +434,27 @@ async function buildTape(list, n = TAPE_N, regrow = false) {
       for (const [k, e] of decoded) if (!keep.has(k) && !e.im.isConnected) decoded.delete(k);
     }
   };
-  // первый раз (медленная сеть) лента растёт по мере декодирования; в ленту попадают только готовые постеры
-  const grow = !tape.length || regrow, got = []; // regrow: смена режима «Что» — лента меняется, как только готовы первые постеры
+  // сначала только ближний край ленты: сотня постеров сразу забивает сеть и откладывает первый кадр
+  const grow = !tape.length || regrow, got = [];
   let shown = 0; const show = () => { if (got.length > shown) { shown = got.length; commit([...got]); } };
-  // лента появляется, когда готов десяток постеров (иначе на старте видны повторы), либо через 2.5 с с тем, что успело загрузиться
-  const early = grow ? setTimeout(() => { if (!shown && got.length >= 4) show(); }, 2500) : 0;
-  await Promise.all(pool.map((t) => warm(reelSrc(t), 15000).then((ok) => { if (!ok) return; got.push(t); if (grow && !shown && got.length >= Math.min(12, pool.length)) show(); })));
+  const take = async (rows, ms) => {
+    await Promise.all(rows.map((t) => warm(reelSrc(t), ms).then((ok) => { if (ok && gen === tapeGen) got.push(t); })));
+  };
+  const early = grow ? setTimeout(() => { if (got.length >= 4) show(); }, 700) : 0;
+  await take(pool.slice(0, 16), 8000);
   clearTimeout(early);
   if (grow && got.length >= 4) show();
   else if (!grow && got.length >= Math.min(6, pool.length)) commit(got);
-  else if (!tape.length) commit(pool); // ничего не загрузилось: покажем заглушки с названиями
+  else if (!tape.length) commit(pool);
+  const rest = pool.slice(16);
+  if (!rest.length) return;
+  const pump = async () => {
+    for (let i = 0; i < rest.length && gen === tapeGen; i += 8) {
+      await take(rest.slice(i, i + 8), 8000);
+      if (gen === tapeGen && got.length > shown) show();
+    }
+  };
+  pump();
 }
 function itemAt(v) { return items.has(v) ? items.get(v) : tape.length ? tape[mod(v, tape.length)] : null; }
 function paint(force) {
@@ -487,7 +498,13 @@ function scheduleRetape() { if (tapeKeyNow() === tapeKey) return; clearTimeout(r
 let tapeReady = (tapeKey = tapeKeyNow(), seedsFor()).then((s) => { display = s; return buildTape(s, TAPE_N); }).catch(() => {}).finally(() => { measure(); kickDrift(); });
 measure();
 // без жанров лента стартует со встроенной подборки, затем подменяется случайными фильмами и сериалами из всего каталога
-tapeReady.then(() => new Promise((r) => setTimeout(r, 2500))).then(() => { if (!spinning) { catalogWanted = true; retape(); } });
+tapeReady.then(() => new Promise((r) => setTimeout(r, 1600))).then(async () => {
+  if (spinning || prefs.sel.length) return;
+  const extra = await reelPage(filters()).catch(() => []);
+  if (extra.length < 8 || spinning || prefs.sel.length) return;
+  display = extra;
+  return buildTape(extra, Math.min(40, extra.length), true);
+});
 
 // покой: лента шагает — карточка стоит ровно в рамке 2.6 с, затем переезд ровно на одну карточку за 0.9 с.
 // Только transform; пауза в фоне, при reduced-motion и во время крутки/результата.
@@ -1145,26 +1162,15 @@ function watchRoom(id, panel, frame, titleEl) {
     titleRu(film.id);
     const my = ++gen;
     frame.classList.remove('lord-browse');
-    const siteNow = embedUrl && isSitePlayer(embedUrl) && !(hinted && !isSitePlayer(hinted)) ? embedUrl : '';
-    if (siteNow) {
+    const direct = hinted && !isSitePlayer(hinted) ? hinted : '';
+    const siteNow = embedUrl && isSitePlayer(embedUrl) && !direct ? embedUrl : '';
+    if (siteNow && !kpFromFilm(film)) {
       frame.dataset.watchSrc = siteNow;
       mountLordFrame(siteNow, '', title, [siteNow], frame);
       attachBridge();
     } else frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю фильм…</div>';
     const run = async () => {
-      const own = kpFromFilm(film) ? await resolveOwnStream(film) : { url: hinted, voice: film.voice || '', streams: [] };
-      if (my !== gen) return;
-      if (own.series && ctl.isHost() && lastFilm?.id === film.id) {
-        lastFilm = { ...lastFilm, type: 'tv', season: own.series.season, episode: own.series.episode };
-        frame.dataset.season = String(own.series.season || '');
-        frame.dataset.episode = String(own.series.episode || '');
-        setTitle(filmLine(lastFilm));
-      }
-      paintSeries(ctl.isHost() ? own.series : null);
-      const streams = own.streams?.length ? own.streams : [];
-      const site = embedUrl ? { url: embedUrl, label: 'Сайт' } : null;
-      const choices = site && !streams.some((item) => item.url === site.url) ? [...streams, site] : streams;
-      const stream = own.url || hinted;
+      let choices = direct ? [{ url: direct, label: film.voice || '' }] : [];
       const play = async (item, hops, announce) => {
         if (!item?.url || my !== gen) return;
         frame.__stopWatch?.();
@@ -1195,9 +1201,27 @@ function watchRoom(id, panel, frame, titleEl) {
           hop();
         }
       };
+      if (direct) await play({ url: direct, label: film.voice || '' }, 0, ctl.isHost());
+      const own = kpFromFilm(film) ? await resolveOwnStream(film) : { url: hinted, voice: film.voice || '', streams: [] };
+      if (my !== gen) return;
+      if (own.series && ctl.isHost() && lastFilm?.id === film.id) {
+        lastFilm = { ...lastFilm, type: 'tv', season: own.series.season, episode: own.series.episode };
+        frame.dataset.season = String(own.series.season || '');
+        frame.dataset.episode = String(own.series.episode || '');
+        setTitle(filmLine(lastFilm));
+      }
+      paintSeries(ctl.isHost() ? own.series : null);
+      const streams = own.streams?.length ? own.streams : [];
+      const site = embedUrl ? { url: embedUrl, label: 'Сайт' } : null;
+      choices = site && !streams.some((item) => item.url === site.url) ? [...streams, site] : streams;
+      if (direct && frame.dataset.watchSrc === direct && frame.querySelector('video')) {
+        renderPicks(frame, choices.length ? choices : [{ url: direct, label: film.voice || '' }], direct, (next) => play(next, 0, true));
+        return;
+      }
+      const stream = own.url || hinted;
       const initial = choices.find((item) => item.url === stream) || choices[0];
       if (initial && !(initial.url === siteNow && frame.querySelector('iframe'))) {
-        await play(initial, Math.max(choices.length - 1, 0), false);
+        await play(initial, Math.max(choices.length - 1, 0), ctl.isHost() && !isSitePlayer(initial.url));
         return;
       }
       if (siteNow) {

@@ -84,13 +84,14 @@ export function guestCommand({ roomPlaying = false, roomAt = 0, localPlaying = n
   const room = !!roomPlaying;
   const local = localPlaying == null ? null : !!localPlaying;
   if (local === null && !room) return null;
+  // перемотка и пауза ведущего приходят с snap и не ждут паузу после прошлой подстройки
+  if (snap) return { playing: room, at: roomAt };
   if (local !== room) {
-    if (local === null || snap || sinceSeekMs >= 1500) return { playing: room, at: roomAt };
+    if (local === null || sinceSeekMs >= 1500) return { playing: room, at: roomAt };
     return null;
   }
   if (Number.isFinite(localAt) && Math.abs(localAt - roomAt) > GUEST_DRIFT && sinceSeekMs >= GUEST_COOLDOWN_MS) {
     return { playing: room, at: roomAt };
   }
-  if (snap && sinceSeekMs >= 1500) return { playing: room, at: roomAt };
   return null;
 }

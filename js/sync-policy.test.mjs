@@ -107,6 +107,12 @@ describe('guest starts when the host is playing', () => {
     assert.deepEqual(guestCommand({ roomPlaying: false, roomAt: 134, localPlaying: false, localAt: 60, sinceSeekMs: 9000 }), { playing: false, at: 134 });
     assert.equal(guestCommand({ roomPlaying: false, roomAt: 134, localPlaying: false, localAt: 60, sinceSeekMs: 2000 }), null);
   });
+  it('follows a host seek at once, even right after the last correction', () => {
+    assert.deepEqual(
+      guestCommand({ roomPlaying: true, roomAt: 134, localPlaying: true, localAt: 60, snap: true, sinceSeekMs: 400 }),
+      { playing: true, at: 134 },
+    );
+  });
   it('retries play after a missed command, not on every tick', () => {
     assert.equal(guestCommand({ roomPlaying: true, roomAt: 8, localPlaying: false, sinceSeekMs: 200 }), null);
     assert.deepEqual(guestCommand({ roomPlaying: true, roomAt: 9, localPlaying: false, sinceSeekMs: 1600 }), { playing: true, at: 9 });
