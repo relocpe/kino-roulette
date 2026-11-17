@@ -96,6 +96,20 @@ body[data-route="catalog"] .shelf .srow {
   cursor: grab;
 }
 body[data-route="catalog"] .shelf .srow:active { cursor: grabbing; }
+body[data-route="catalog"] .shelf .stile {
+  flex: 0 0 clamp(156px, 18vw, 188px);
+}
+body[data-route="catalog"] .shelf .stile b {
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+body[data-route="catalog"] .shelf .stile small {
+  font-size: 13px;
+  line-height: 18px;
+}
+body[data-route="catalog"] .shelf .tp { border-radius: 16px; }
 body[data-route="catalog"] .moods {
   display: flex;
   gap: 12px;

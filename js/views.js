@@ -208,7 +208,7 @@ function loadCurated() {
   if (!curatedTitles) curatedTitles = fetch('data/curated.json?v=1').then((r) => { if (!r.ok) throw new Error('curated'); return r.json(); }).then((d) => d.titles || []);
   return curatedTitles;
 }
-const SHELF_PREVIEW = 14;
+const SHELF_PREVIEW = 12;
 function shelfCard(t) {
   remember(t);
   const title = t.ru || ruCached(t.id) || t.t || '';
