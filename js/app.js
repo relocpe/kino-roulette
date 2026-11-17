@@ -1,6 +1,6 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=18';
-import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
+import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=29';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=10';
@@ -415,7 +415,6 @@ function paint(force) {
     el.style.opacity = (1 - d * 0.5).toFixed(3);
     const c = Math.abs(x - CX) < P / 2; if (el.classList.contains('c') !== c) el.classList.toggle('c', c);
   }
-  reel.style.setProperty('--sprocket', `${(-pos % 22).toFixed(1)}px`);
 }
 addEventListener('resize', () => measure(), { passive: true });
 // лента-заполнитель — только из тайтлов текущего режима «Что» (аниме не мелькает в «Фильмах», и наоборот)

@@ -99,22 +99,21 @@ void main(){
   vec2 px = vUv*uRes; float asp = uRes.x/uRes.y;
   vec2 rc = (uRect.xy + uRect.zw)*0.5*uRes; vec2 rb = (uRect.zw - uRect.xy)*0.5*uRes;
   float sd = sdBox(px - rc, rb);
-  float inP = 1.0 - smoothstep(-2.0, 2.0, sd);                 // 1 внутри постера
   float tq = floor(uTime*24.0)/24.0;                           // зерно 24 к/с
-  float g = (h(floor(px/uGrainSize) + fract(tq*0.618)*731.0) - 0.5) * mix(1.0, 0.5, inP);
-  vec2 q = (vUv - 0.5)*vec2(asp, 1.0);
-  float v = smoothstep(uVigR - 0.45, uVigR, length(q)) * uVig * (1.0 - inP);
-  float halo = exp(-max(sd, 0.0)/uHaloR) * uHalo * (1.0 - 0.5*inP);
+  float band = smoothstep(0.0, 24.0, abs(px.y - rc.y) - rb.y); // 0 на ряду постеров, 1 над и под ним
+  float g = (h(floor(px/uGrainSize) + fract(tq*0.618)*731.0) - 0.5) * band;
+  float v = band * uVig;
+  float halo = exp(-max(sd, 0.0)/uHaloR) * uHalo * band;
   vec2 d = vec2(cos(uBeam.y), sin(uBeam.y));
   float bx = dot(vec2(vUv.x*asp, vUv.y), d) - uBeam.x;
-  float beam = exp(-bx*bx/(uBeam.z*uBeam.z)) * uBeam.w;
+  float beam = exp(-bx*bx/(uBeam.z*uBeam.z)) * uBeam.w * band;
   vec3 col = vec3(0.5)
-           + (uTint - 0.5)*uTintAmt*(1.0 - 0.5*inP)
+           + (uTint - 0.5)*uTintAmt*band
            - v*0.5
            + g*uGrain
            + halo*(uHaloCol - 0.5)
            + beam*(uBeamCol - 0.5)
-           + uExpo;
+           + uExpo*band;
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 const VS = 'attribute vec2 p; varying vec2 vUv; void main(){ vUv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }';
@@ -248,36 +247,32 @@ function posterPt(fracY = 0.5, L = 2) {
 }
 const along = (pt, ang) => pt[0] * Math.cos(ang) + pt[1] * Math.sin(ang);
 const WOWS = {
-  eclipse: (t) => ({ dimA: t < 120 ? eFall(t / 120) : seg(t, 380, 880, 1, 0.6, eOut), expo: t < 120 ? 0 : seg(t, 380, 880, -0.3, 0, eOut), vig: 0.6 }),
-  rackFocus: () => ({}), // соседей размывает CSS-класс .rack, центр — WAAPI (см. cardFx)
-  hazeBreak: (t) => ({ clear: seg(t, 0, 750, 0, 1, eOut), halo: t < 400 ? seg(t, 0, 400, 0.05, 0.35, eOut) : seg(t, 400, 750, 0.35, 0.2, eOut) }),
-  punch: (t) => ({ scale: t < 90 ? lerp(1, 1.06, ePunch(t / 90)) : seg(t, 90, 490, 1.06, 1.02, eSettle), expo: seg(t, 0, 60, 0.18, 0),
-    shakeX: 8 * Math.exp(-t / 90) * Math.sin(t / 14), shakeY: 5 * Math.exp(-t / 90) * Math.cos(t / 17), dens: t < 200 ? seg(t, 0, 200, 0.22, 0.35) : seg(t, 200, 600, 0.35, 0.12) }),
-  goldenHour: (t) => { const k = eInOut(clamp(t / 900)); return { beam0: lerp(-0.6, 0.6, k), beamRel: true, beam: [lerp(-0.6, 0.6, k), P.atmo.angle, 0.18, 0.12], beamRel2: true, beamCol: hex('#E9B97A'), halo: t < 450 ? seg(t, 0, 450, 0.12, 0.3, eInOut) : seg(t, 450, 900, 0.3, 0.18, eInOut) }; },
+  eclipse: (t) => ({ expo: t < 120 ? 0 : seg(t, 380, 880, -0.08, 0, eOut) }),
+  rackFocus: () => ({}),
+  hazeBreak: (t) => ({ clear: seg(t, 0, 750, 0, 0.35, eOut) }),
+  punch: (t) => ({ scale: t < 90 ? lerp(1, 1.06, ePunch(t / 90)) : seg(t, 90, 490, 1.06, 1.02, eSettle) }),
+  goldenHour: (t) => ({ scale: seg(t, 0, 900, 1, 1.01, eInOut) }),
   snapZoom: (t) => ({ scale: t < 100 ? 1 : t < 220 ? lerp(1, 1.06, ease('cubic-bezier(.2,.8,.2,1)')((t - 100) / 120)) : t < 620 ? 1.06 : seg(t, 620, 820, 1.06, 1.03, eEaseOut) }),
-  headlights: (t) => ({ beam: [seg(t, 0, 450, -0.4, 1.4, eInOut), 0, 0.3, t < 450 ? 0.3 * Math.sin(Math.PI * t / 450) : 0], beamRelX: true, beamCol: hex('#FFD9A0'), halo: t < 450 ? seg(t, 0, 450, 0.06, 0.25, eInOut) : seg(t, 450, 700, 0.25, 0.18, eInOut) }),
-  stepPrint: (t) => ({ halo: t < 300 ? seg(t, 0, 300, 0.1, 0.35, eOut) : seg(t, 300, 800, 0.35, 0.22, eOut) }),
-  shafts: (t) => ({ shaftK: eOut(clamp(t / 900)), dens: seg(t, 0, 900, 0.14, 0.35, ease('cubic-bezier(.33,1,.68,1)')), halo: seg(t, 0, 900, 0.08, 0.25, ease('cubic-bezier(.33,1,.68,1)')) }),
-  dollyIn: (t) => { const e = ease('cubic-bezier(.33,0,.15,1)'); return { scale: seg(t, 0, 900, 1.02, 1.05, e), ty: -6, dens: seg(t, 0, 900, 0.1, 0.3, e), halo: seg(t, 0, 900, 0.06, 0.2, e) }; },
-  leone: (t) => ({ bars: seg(t, 0, 350, 0, 1, eInOut), scale: seg(t, 350, 850, 1, 1.08, eInOut), origin: '50% 35%' }),
-  concussion: (t) => ({ expo: t < 70 ? seg(t, 0, 70, 0, -0.25) : seg(t, 70, 500, -0.25, 0, eSettle), shakeX: 6 * Math.exp(-t / 150) * Math.sin(t / 11), shakeY: 6 * Math.exp(-t / 150) * Math.cos(t / 13),
-    dens: seg(t, 0, 800, 0.28, 0.4), tintK: t < 300 ? seg(t, 0, 300, 1, 0) : seg(t, 300, 800, 0, 1, eSettle), grainK: t < 300 ? seg(t, 0, 300, 1, 0) : seg(t, 300, 800, 0, 1, eSettle) }),
-  kubrickZoomOut: (t) => { const e = ease('cubic-bezier(.25,.1,.25,1)'); return { scale: seg(t, 0, 1000, 1.1, 1, e), halo: seg(t, 0, 1000, 0.15, 0.3, e), candle: seg(t, 0, 1000, 0.03, 0.05) }; },
-  freeze: (t) => ({ expo: seg(t, 0, 40, 0.08, 0) * (t < 40 ? 1 : 0) + (t < 40 ? 0 : seg(t, 40, 300, 0.04, 0)), freeze: t < 300 }),
-  squash: () => ({}),   // деформация постера — WAAPI на карточке
-  backlight: (t) => { const e = ease('cubic-bezier(.5,1,.89,1)'), k = e(clamp(t / 800)); return { halo: lerp(0.05, 0.4, k), haloCol: mixV(hex('#9FC4FF'), hex('#FFD08A'), k), haloR: 70 }; },
-  spotlight: (t) => ({ dimA: t < 150 ? seg(t, 0, 150, 0, 0.85) : t < 470 ? 0.85 : seg(t, 470, 870, 0.85, 0.4, eOut), spot0: 1, halo: 0.2 }),
-  blinds: (t) => ({ beam: [0, P.atmo.angle, 0.06, seg(t, 0, 700, 0, 0.25, ease('cubic-bezier(.65,0,.35,1)'))], blindsBeam: true, beamCol: hex('#FFFFFF') }),
-  lampOn: (t) => ({ expo: t < 150 ? seg(t, 0, 150, 0, 0.1) : seg(t, 150, 750, 0.1, 0.03, eSettle), halo: t < 300 ? seg(t, 0, 300, 0.12, 0.3, eSettle) : seg(t, 300, 750, 0.3, 0.18, eSettle) }),
+  headlights: (t) => ({ scale: seg(t, 0, 700, 1, 1.01, eInOut) }),
+  stepPrint: (t) => ({ scale: seg(t, 0, 800, 1, 1.02, eOut) }),
+  shafts: (t) => ({ dens: seg(t, 0, 900, 0.14, 0.2, ease('cubic-bezier(.33,1,.68,1)')) }),
+  dollyIn: (t) => { const e = ease('cubic-bezier(.33,0,.15,1)'); return { scale: seg(t, 0, 900, 1.02, 1.05, e), ty: -6 }; },
+  leone: (t) => ({ scale: seg(t, 350, 850, 1, 1.04, eInOut) }),
+  concussion: (t) => ({ expo: t < 70 ? seg(t, 0, 70, 0, -0.08) : seg(t, 70, 500, -0.08, 0, eSettle) }),
+  kubrickZoomOut: (t) => { const e = ease('cubic-bezier(.25,.1,.25,1)'); return { scale: seg(t, 0, 1000, 1.04, 1, e) }; },
+  freeze: (t) => ({ freeze: t < 300 }),
+  squash: () => ({}),
+  backlight: () => ({}),
+  spotlight: (t) => ({ scale: seg(t, 0, 870, 1, 1.01, eOut) }),
+  blinds: (t) => ({ scale: seg(t, 0, 700, 1, 1.01, ease('cubic-bezier(.65,0,.35,1)')) }),
+  lampOn: (t) => ({ scale: t < 300 ? seg(t, 0, 300, 1, 1.02, eSettle) : seg(t, 300, 750, 1.02, 1.01, eSettle) }),
 };
 // эффекты на самой карточке (не на слоях): WAAPI по отдельным свойствам scale/translate, чтобы не спорить с transform барабана
 function cardFx(id, card, k) {
   if (!card) return;
   const ms = k ? 0 : 1;
   if (id === 'rackFocus') {
-    reel.classList.add('rack');
-    if (ms && !LITE) card.animate([{ filter: 'blur(4px)', scale: '1.012' }, { filter: 'blur(0px)', scale: '1' }], { duration: 380, easing: 'cubic-bezier(.25,1,.5,1)' });
-    else if (ms && LITE) card.animate([{ scale: '1.012' }, { scale: '1' }], { duration: 320, easing: 'cubic-bezier(.25,1,.5,1)' });
+    if (ms) card.animate([{ scale: '1.012' }, { scale: '1' }], { duration: 380, easing: 'cubic-bezier(.25,1,.5,1)' });
   } else if (id === 'squash' && ms) {
     const f = []; for (let i = 0; i <= 12; i++) { const t = i / 12 * 0.5, x = spring(t); f.push({ offset: 0.14 + 0.86 * (i / 12), scale: `${(1 + 0.04 * x).toFixed(4)} ${(1 - 0.06 * x).toFixed(4)}` }); }
     card.animate([{ scale: '1 1', offset: 0 }, ...f], { duration: 580, easing: 'linear' });
@@ -327,22 +322,15 @@ function frame(now) {
   const g = gid;
   if (live) {
     if (g === 'horror') {
-      if (ph === 'idle') vig += 0.05 * Math.sin(t * Math.PI * 2 / 6);
       if (inSpin) { // мерцание практического света: 2–3 провала −.12 по 80 мс, не ритмично
         if (now > flickerAt) { flickerAt = now + 500 + Math.random() * 1400; flickerEnd = now + 80; }
         if (now < flickerEnd) expo -= 0.12;
       }
     } else if (g === 'thriller' && ph === 'idle') scale = 1 + 0.015 * clamp((now - ph0) / 20000);
     else if (g === 'scifi' && ph !== 'spin') expo += 0.015 * Math.sin(t * Math.PI);           // гул 0.5 Гц ±3%
-    else if (g === 'action' && inSpin) { const a = 3 * vn, f = 3 * Math.PI * 2; tx += a * Math.sin(t * f); ty += a * 0.6 * Math.sin(t * f * 1.3 + 1); }
-    else if (g === 'crime' && inSpin) { // «фары» каждые 600 мс за 250 мс
-      const u = ((now - ph0) % 600) / 250;
-      if (u < 1) { beam = [lerp(-0.3, geo.R.width / geo.R.height + 0.3, u), 0, 0.12, 0.15 * Math.sin(Math.PI * u)]; beamCol = hex('#FFD9A0'); }
-    } else if (g === 'fantasy' && inSpin) dens += 0.04 * Math.sin(t * 7.1) * Math.sin(t * 2.3);   // ветер в листве
+    else if (g === 'fantasy' && inSpin) dens += 0.04 * Math.sin(t * 7.1) * Math.sin(t * 2.3);   // ветер в листве
     else if (g === 'adventure' && inSpin) { const k = clamp((now - ph0) / 1500); ty = -6 * eInOut(k); scale = 1 + 0.02 * eInOut(k); }
-    else if (g === 'war' && inSpin) { tx += 1.5 * Math.sin(t * 6 * Math.PI * 2); ty += 1.5 * Math.cos(t * 6 * Math.PI * 2 * 0.9); }
     else if (g === 'history') { candleA = 0.03; if (inSpin && velMax > 1 && vel < velMax * 0.45) scale = lerp(1.1, 1, clamp(vel / (velMax * 0.45))); }
-    else if (g === 'documentary') { tx += 0.8 * Math.sin(t * 0.7 * Math.PI * 2); ty += 0.5 * Math.sin(t * 0.7 * Math.PI * 2 * 1.3 + 2); }
     else if (g === 'musical') beam0 = (inSpin ? 0.25 : 0.06) * (geo.R.width ? innerWidth / innerHeight : 1) * Math.sin(t * Math.PI * 2 / (inSpin ? 1.2 : 9));
     else if (g === 'noir' && inSpin) blinds += 0.3 * dt;
     if (g === 'noir') beam0 = blinds;
@@ -403,7 +391,7 @@ function frame(now) {
     const { gl, U } = G2; gl.viewport(0, 0, cv2.width, cv2.height);
     gl.uniform2f(U.uRes, cv2.width, cv2.height); gl.uniform1f(U.uTime, live ? t : 0.5);
     gl.uniform3fv(U.uTint, B.tint);     gl.uniform1f(U.uTintAmt, B.tintAmt * tintK); gl.uniform1f(U.uGrain, B.grain * grainK * grainMul); gl.uniform1f(U.uGrainSize, Math.max(1, B.gs * RS2 * (LITE ? 1.2 : 1)));
-    gl.uniform1f(U.uVig, clamp(vig * vigMul)); gl.uniform1f(U.uVigR, B.vigR); gl.uniform1f(U.uExpo, expo); gl.uniform4fv(U.uRect, geo.r2);
+    gl.uniform1f(U.uVig, clamp(vig * vigMul * 0.3)); gl.uniform1f(U.uVigR, B.vigR); gl.uniform1f(U.uExpo, expo); gl.uniform4fv(U.uRect, geo.r2);
     gl.uniform3fv(U.uHaloCol, haloCol); gl.uniform1f(U.uHalo, Math.max(0, halo)); gl.uniform1f(U.uHaloR, Math.max(4, haloR * RS2));
     gl.uniform4f(U.uBeam, beam[0], beam[1], Math.max(0.01, beam[2]), beam[3]); gl.uniform3fv(U.uBeamCol, beamCol);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -453,14 +441,14 @@ export function setGenre(ids) {
   gradeStr = fstr(canon(np.filter)); applyStripFilter();
   // постер результата: грейд на 35%, чтобы афиша оставалась читаемой
   root.style.setProperty('--pF', np === NONE ? 'none' : fstr(canon(np.filter), 0.35));
-  root.style.setProperty('--vig', np === NONE ? '.3' : String(Math.min(0.38, (phaseVal(np.vig, np.spin?.vig ?? np.vig, 0.35) || 0) * (LITE ? 0.9 : 1))));
+  root.style.setProperty('--vig', '0');
   kick();
 }
 export function phase(p) {
   if (p === ph) return;
   const prev = ph; ph = p; ph0 = performance.now(); uIfrom = uI;
   if (p === 'spin' || p === 'idle') {
-    W = null; reel?.classList.remove('rack'); velMax = 1;
+    W = null; velMax = 1;
     reel?.querySelectorAll('.card').forEach((c) => c.getAnimations().forEach((a) => a.cancel()));
     lastBars = -1;
   }
