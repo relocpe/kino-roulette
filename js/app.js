@@ -669,9 +669,9 @@ function render(t, full) {
       ${facts ? `<div class="facts">${facts}</div>` : ''}
       ${desc}
       <div class="actions">
-        <button class="btn primary" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : ico.play + 'Трейлер'}</button>
+        <button class="btn primary watch-main" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">${ico.play}Смотреть</button>
+        <button class="btn" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">Смотреть</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>

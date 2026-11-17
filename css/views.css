@@ -303,7 +303,7 @@ body.inroom .view { min-height: 100dvh; }
 .mhead p { white-space: normal; }
 @media (max-width: 760px) {
   .actions { flex-wrap: wrap; }
-  .actions .btn:not(.sq) { flex: 1 1 calc(50% - 8px); height: 52px; }
+  .actions .btn:not(.sq):not(.watch-main) { flex: 1 1 calc(50% - 8px); height: 52px; }
 }
 @media (pointer: coarse) {
   .tb { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgb(12 11 10 / .78); }
