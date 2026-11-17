@@ -198,6 +198,7 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .panel.pop .sec { display: none; padding: 0 12px; }
 .panel.pop[data-sec="type"] .sec[data-sec="type"], .panel.pop[data-sec="genre"] .sec[data-sec="genre"], .panel.pop[data-sec="years"] .sec[data-sec="years"], .panel.pop[data-sec="rate"] .sec[data-sec="rate"], .panel.pop[data-sec="sound"] .sec[data-sec="sound"] { display: block; }
 .panel.pop[data-sec="rate"] .sec[data-sec="beta"] { display: block; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+body.authed .panel .sec[data-sec="beta"] { display: none !important; }
 /* компактный пульт в результате: кнопка фильтров открывает все разделы сразу */
 .panel.pop[data-sec="all"] .sec { display: block; }
 .panel.pop[data-sec="all"] .sec + .sec { margin-top: 18px; }
