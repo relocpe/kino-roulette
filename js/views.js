@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=19';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=20';
 import * as S from './store.js?v=14';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=2';
@@ -610,8 +610,10 @@ function partyPanel(id) {
 }
 function renderWatch(id) {
   document.title = `Смотрим вместе · ${id}`;
+  document.body.classList.add('inroom');
   setPendingWatchRoom(id);
   if (!id || id.length < 6) {
+    document.body.classList.remove('inroom');
     view.innerHTML = `<div class="wrap"><h1 class="vh">Комнаты нет</h1><p class="tsub">Ссылка битая. Попроси новую или открой фильм и нажми «Смотреть вместе».</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>`;
     return;
   }
@@ -623,7 +625,18 @@ function renderWatch(id) {
           <button type="button" class="wroom-text" id="wjHide">Скрыть чат</button>
           <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
         </header>
-        <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
+        <div class="wroom-tools" id="wjTools" hidden>
+          <label class="wroom-pick">Сезон <select id="wjSeason"></select></label>
+          <label class="wroom-pick">Серия <select id="wjEpisode"></select></label>
+          <button type="button" class="wroom-text" id="wjNext">Другой фильм</button>
+          <button type="button" class="wroom-text" id="wjRand">Случайный</button>
+          <button type="button" class="wroom-text" id="wjGo">Начинаем</button>
+        </div>
+        <div class="wroom-find" id="wjFind" hidden>
+          <input id="wjQ" type="search" placeholder="Название" autocomplete="off" enterkeyhint="search" aria-label="Название фильма">
+          <div class="wroom-hits" id="wjHits"></div>
+        </div>
+        <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div><div class="wroom-count" id="wjCount" hidden></div></div>
         <section class="wp-sync" id="wpSync" hidden></section>
       </div>
       <div class="wroom-hot" aria-hidden="true"></div>
@@ -631,7 +644,7 @@ function renderWatch(id) {
       ${partyPanel(id)}
     </div>`;
   const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
-  cleanup = () => stop?.();
+  cleanup = () => { document.body.classList.remove('inroom'); stop?.(); };
 }
 $('#cpop').addEventListener('click', (e) => { if (e.target.id === 'cpop') e.target.close(); });
 

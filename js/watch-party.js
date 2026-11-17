@@ -56,7 +56,7 @@ function fmtClock(sec) {
   return `${m}:${String(x).padStart(2, '0')}`;
 }
 
-export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap, onSeek, onChat } = {}) {
+export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onChat, onGo, onHost } = {}) {
   if (!root) return () => {};
   const id = (sel) => root.querySelector(sel);
 
@@ -174,11 +174,13 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         onToast?.(`Ведущий выбрал: ${film?.title || 'фильм'}`, null, 2600);
         return;
       }
+      if (m.type === 'go') { onGo?.(m.at | 0); return; }
       if (m.type === 'host') {
         hostId = m.hostId || hostId;
         host = !!hostId && hostId === watchIdentity().uid;
         clearTimeout(claimT);
         paintSync();
+        onHost?.({ host, nick: m.nick });
         onToast?.(`Ведущий: ${m.nick}`, null, 2000);
       }
     };
@@ -232,6 +234,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       root.closest('.tm-box')?.classList.remove('has-party');
     },
     publishFilm(meta) { if (!host) return; send({ type: 'film', film: meta }); film = meta; },
+    startTogether(at) { if (!host) return; send({ type: 'go', at: Math.max(0, Number(at) || 0) }); },
     pushSync(at, playing, snap = false) { broadcast(at, !!playing, !!snap); },
     setDuration(n) { if (n > dur + 1) dur = n; },
     isHost() { return host; },

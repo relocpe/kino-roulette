@@ -1,17 +1,17 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle } from './api.js?v=19';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, fitsMode, animeReady, isIndianTitle, searchTitles } from './api.js?v=20';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=36';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=15';
+import * as V from './views.js?v=37';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=16';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
 import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=4';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=4';
+import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=5';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
-import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
+import { watchButtonText, progressNote, touchProgress, clearProgress, markProgress, formatClock, getProgress } from './watch-progress.js?v=2';
 import { mountYearRange } from './year-range.js?v=2';
 
 const $ = (s) => document.querySelector(s);
@@ -972,6 +972,8 @@ async function resolveOwnStream(film) {
         originalTitle: film?.originalTitle || '',
         year: film?.year || '',
         imdbId: film?.imdbId || (/^tt\d+$/.test(film?.id || '') ? film.id : ''),
+        season: film?.season || undefined,
+        episode: film?.episode || undefined,
         stream: true,
       }),
     });
@@ -982,7 +984,7 @@ async function resolveOwnStream(film) {
       .slice(0, 6);
     const picked = chooseStream(streams, film?.voice) || (/^https:\/\//i.test(data.stream?.url || '') ? data.stream : null);
     const url = (film?.voice && picked?.url) || fallback || picked?.url || '';
-    return { url, voice: film?.voice || picked?.label || '', streams };
+    return { url, voice: film?.voice || picked?.label || '', streams, series: data.series || null };
   } catch {
     return empty;
   }
@@ -1044,6 +1046,9 @@ function watchRoom(id, panel, frame, titleEl) {
   let lastGuestSeek = 0;
   let localTick = null;
   let hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: 0 };
+  let resumeAt = 0;
+  let lastMark = 0;
+  let countTimer = 0;
   let readyTimer = 0;
   let attachBridge = () => {};
 
@@ -1068,12 +1073,46 @@ function watchRoom(id, panel, frame, titleEl) {
     });
   };
 
+  const filmLine = (film) => {
+    const base = film?.title || 'Фильм';
+    return film?.season && film?.episode ? `${base} · ${film.season} сезон, ${film.episode} серия` : base;
+  };
+  let painting = false;
+  const paintSeries = (series) => {
+    const box = frame.closest('.wroom') || panel;
+    const season = box.querySelector('#wjSeason');
+    const episode = box.querySelector('#wjEpisode');
+    const fill = (sel, rows, current) => {
+      if (!sel) return;
+      painting = true;
+      sel.replaceChildren();
+      for (const row of rows || []) {
+        const opt = document.createElement('option');
+        opt.value = String(row.n);
+        opt.textContent = row.name || String(row.n);
+        sel.append(opt);
+      }
+      if (current) sel.value = String(current);
+      painting = false;
+    };
+    const seasonLabel = season?.closest('.wroom-pick');
+    const episodeLabel = episode?.closest('.wroom-pick');
+    if (seasonLabel) seasonLabel.hidden = (series?.seasons?.length || 0) < 2;
+    if (episodeLabel) episodeLabel.hidden = (series?.episodes?.length || 0) < 2;
+    if (!series) return;
+    fill(season, series.seasons, series.season);
+    fill(episode, series.episodes, series.episode);
+  };
+
   const showEmbed = (film) => {
-    const title = film.title || 'Фильм';
+    const title = filmLine(film);
     const https = (u) => (/^https:\/\//i.test(u || '') ? u : '');
     const embedUrl = https(film.embedUrl), pageUrl = https(film.pageUrl);
     const hinted = https(film.streamUrl);
     if (!hinted && !embedUrl && !pageUrl && !kpFromFilm(film)) return false;
+    frame.dataset.filmId = film.id || '';
+    frame.dataset.season = film.season ? String(film.season) : '';
+    frame.dataset.episode = film.episode ? String(film.episode) : '';
     setTitle(title);
     titleRu(film.id);
     const my = ++gen;
@@ -1082,6 +1121,13 @@ function watchRoom(id, panel, frame, titleEl) {
     const run = async () => {
       const own = kpFromFilm(film) ? await resolveOwnStream(film) : { url: hinted, voice: film.voice || '', streams: [] };
       if (my !== gen) return;
+      if (own.series && ctl.isHost() && lastFilm?.id === film.id) {
+        lastFilm = { ...lastFilm, type: 'tv', season: own.series.season, episode: own.series.episode };
+        frame.dataset.season = String(own.series.season || '');
+        frame.dataset.episode = String(own.series.episode || '');
+        setTitle(filmLine(lastFilm));
+      }
+      paintSeries(ctl.isHost() ? own.series : null);
       const streams = own.streams?.length ? own.streams : [];
       const site = embedUrl ? { url: embedUrl, label: 'Сайт' } : null;
       const choices = site && !streams.some((item) => item.url === site.url) ? [...streams, site] : streams;
@@ -1138,6 +1184,8 @@ function watchRoom(id, panel, frame, titleEl) {
     titleRu(t.id);
     frame.classList.remove('lord-browse');
     frame.innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
+    const saved = getProgress(t.id);
+    const spot = saved && !saved.complete && saved.seconds >= 45 ? saved : null;
     const payload = {
       title,
       originalTitle: t.t || t.o || '',
@@ -1145,6 +1193,8 @@ function watchRoom(id, panel, frame, titleEl) {
       kinopoiskId: kpCached(t.id) || '',
       year: t.y,
       type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+      season: spot?.season || undefined,
+      episode: spot?.episode || undefined,
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 14000);
@@ -1164,6 +1214,8 @@ function watchRoom(id, panel, frame, titleEl) {
       const next = {
         id: t.id,
         title,
+        originalTitle: payload.originalTitle,
+        imdbId: payload.imdbId || undefined,
         year: t.y,
         embedUrl: embed || undefined,
         pageUrl: page || undefined,
@@ -1171,15 +1223,18 @@ function watchRoom(id, panel, frame, titleEl) {
         voice: hit.streams?.find((item) => item.url === streamUrl)?.label || hit.streams?.[0]?.label || undefined,
         kinopoiskId: payload.kinopoiskId || undefined,
         type: payload.type,
+        season: payload.season,
+        episode: payload.episode,
         mode: 'stream',
       };
-      const changed = !lastFilm || lastFilm.id !== next.id;
+      const changed = !lastFilm || lastFilm.id !== next.id || lastFilm.season !== next.season || lastFilm.episode !== next.episode;
       lastFilm = next;
       if (ctl.isHost()) {
         ctl.publishFilm(lastFilm);
         if (changed) {
-          ctl.pushSync(0, false, false);
-          hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: Date.now() };
+          resumeAt = spot ? spot.seconds : 0;
+          ctl.pushSync(resumeAt, false, true);
+          hostState = { tick: null, stallSince: 0, sentAt: resumeAt, sentPlaying: false, sentWall: Date.now() };
         }
         if (pickedId && t.id === pickedId) V.clearWatchBoot();
       }
@@ -1209,6 +1264,8 @@ function watchRoom(id, panel, frame, titleEl) {
       room._nudgeT = setTimeout(() => room.classList.remove('chat-nudge'), 1000);
     },
     onHello(info) {
+      const tools = (frame.closest('.wroom') || panel).querySelector('#wjTools');
+      if (tools) tools.hidden = !info.host;
       const decision = decideWatchOpen({
         host: !!info.host,
         createdHere: V.watchCreatedHere(id),
@@ -1242,15 +1299,39 @@ function watchRoom(id, panel, frame, titleEl) {
       showWait(info.host);
     },
     onOpenPlayer(film) {
-      if (ctl.isHost() && frame.querySelector('video, iframe')) {
-        const voice = film?.voice || '';
-        if (!voice || frame.dataset.voice === voice) return;
-      }
+      if (ctl.isHost()) return;
       if (pickedId && film?.id && film.id !== pickedId) return;
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
     },
     onSync(s, meta) { pendingSync = s; pendingSnap = !!meta?.snap; applyGuest(s, { snap: pendingSnap }); },
+    onHost(info) {
+      const tools = roomEl?.querySelector('#wjTools');
+      if (tools) tools.hidden = !info.host;
+      if (info.host) hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: 0 };
+    },
+    onGo(at) {
+      const el = roomEl?.querySelector('#wjCount');
+      if (!el) return;
+      clearTimeout(countTimer);
+      const spot = Math.max(0, Number(at) || 0);
+      let n = 3;
+      const step = () => {
+        if (!alive) return;
+        if (n <= 0) {
+          el.hidden = true;
+          el.textContent = '';
+          if (ctl.isHost()) hostPush(spot, true, true);
+          else applyGuest({ at: spot, playing: true, wall: Date.now() }, { snap: true, force: true });
+          return;
+        }
+        el.hidden = false;
+        el.textContent = String(n);
+        n -= 1;
+        countTimer = setTimeout(step, 1000);
+      };
+      step();
+    },
     onStatus(state) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
@@ -1336,11 +1417,22 @@ function watchRoom(id, panel, frame, titleEl) {
         if (pendingCmd && ctl.isHost()) {
           bridge.command(pendingCmd.playing, pendingCmd.at);
           pendingCmd = null;
+        } else if (ctl.isHost() && resumeAt > 8) {
+          const at = resumeAt;
+          resumeAt = 0;
+          bridge.command(false, at);
+          hostPush(at, false, true);
+          V.toast(`Продолжаем с ${formatClock(at)}`, null, 2600);
         } else if (!ctl.isHost() && pendingSync && !appliedOnce) {
           applyGuest(pendingSync, { snap: true });
         }
       },
       onTick(t) {
+        if (lastFilm?.id && t.at >= 8 && Date.now() - lastMark > 5000) {
+          lastMark = Date.now();
+          markProgress(lastFilm.id, t.at, t.duration, { season: lastFilm.season, episode: lastFilm.episode });
+          if (curT?.id === lastFilm.id) patchWatchBtn(curT);
+        }
         const step = noteHostTick(hostState, t, Date.now());
         localTick = step.state.tick;
         window.__wpLocalAt = localTick?.at;
@@ -1376,6 +1468,74 @@ function watchRoom(id, panel, frame, titleEl) {
     roomVol.addEventListener('input', () => setChatVolume(roomVol.value));
     roomVol.addEventListener('change', () => playChatSound(chatVolume()));
   }
+  const pickEpisode = (resetEpisode) => {
+    if (painting || !ctl.isHost() || !lastFilm) return;
+    const seasonSel = roomEl?.querySelector('#wjSeason');
+    const episodeSel = roomEl?.querySelector('#wjEpisode');
+    if (resetEpisode && episodeSel) episodeSel.value = '1';
+    const next = {
+      ...lastFilm,
+      type: 'tv',
+      season: Number(seasonSel?.value) || lastFilm.season || 1,
+      episode: Number(episodeSel?.value) || 1,
+    };
+    resumeAt = 0;
+    lastFilm = next;
+    ctl.publishFilm(next);
+    ctl.pushSync(0, false, true);
+    hostState = { tick: null, stallSince: 0, sentAt: 0, sentPlaying: false, sentWall: Date.now() };
+    showEmbed(next);
+  };
+  roomEl?.querySelector('#wjSeason')?.addEventListener('change', () => pickEpisode(true));
+  roomEl?.querySelector('#wjEpisode')?.addEventListener('change', () => pickEpisode(false));
+  const find = roomEl?.querySelector('#wjFind');
+  const findQ = roomEl?.querySelector('#wjQ');
+  const findHits = roomEl?.querySelector('#wjHits');
+  let findTimer = 0;
+  roomEl?.querySelector('#wjNext')?.addEventListener('click', () => {
+    if (!ctl.isHost() || !find) return;
+    find.hidden = !find.hidden;
+    if (!find.hidden) findQ?.focus();
+  });
+  roomEl?.querySelector('#wjRand')?.addEventListener('click', async () => {
+    if (!ctl.isHost()) return;
+    const list = await genreTape([], { mode: 'all' }).catch(() => []);
+    const t = list[Math.floor(Math.random() * list.length)];
+    if (!t) { V.toast('Случайный фильм не нашёлся', null, 2200); return; }
+    if (find) find.hidden = true;
+    playTitle(t, ctl);
+  });
+  findQ?.addEventListener('input', () => {
+    clearTimeout(findTimer);
+    const text = findQ.value.trim();
+    findTimer = setTimeout(async () => {
+      if (!findHits) return;
+      if (text.length < 2) { findHits.replaceChildren(); return; }
+      const rows = await searchTitles(text).catch(() => []);
+      await ruTitles(rows.map((item) => item.id));
+      findHits.replaceChildren();
+      if (!rows.length) { findHits.innerHTML = '<p class="wp-wait">Ничего не нашли</p>'; return; }
+      for (const t of rows) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const name = ruCached(t.id) || t.t;
+        btn.textContent = t.y ? `${name}, ${t.y}` : name;
+        btn.addEventListener('click', () => {
+          find.hidden = true;
+          findQ.value = '';
+          findHits.replaceChildren();
+          playTitle({ ...t, ru: ruCached(t.id) }, ctl);
+        });
+        findHits.append(btn);
+      }
+    }, 250);
+  });
+  roomEl?.querySelector('#wjGo')?.addEventListener('click', () => {
+    if (!ctl.isHost()) return;
+    const at = hostAt();
+    hostPush(at, false, true);
+    ctl.startTogether(at);
+  });
   document.querySelector('#wjFull')?.addEventListener('click', () => {
     if (fullTarget()) document.exitFullscreen?.();
     else roomEl?.requestFullscreen?.().catch(() => {});
@@ -1435,6 +1595,8 @@ function watchRoom(id, panel, frame, titleEl) {
     clearInterval(beat);
     clearInterval(follow);
     clearTimeout(readyTimer);
+    clearTimeout(countTimer);
+    clearTimeout(findTimer);
     document.removeEventListener('fullscreenchange', syncFull);
     document.removeEventListener('webkitfullscreenchange', syncFull);
     bridge?.destroy();
@@ -1569,6 +1731,8 @@ async function resolveWatchPayload(payload, signal) {
           originalTitle: payload.originalTitle,
           year: payload.year,
           imdbId: payload.imdbId,
+          season: payload.season,
+          episode: payload.episode,
           stream: true,
         }
         : payload;

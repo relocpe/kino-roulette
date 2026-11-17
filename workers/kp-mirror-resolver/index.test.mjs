@@ -153,4 +153,30 @@ describe('pickPlayable', () => {
     assert.equal(stream.url, 'https://cdn.example/e1.m3u8');
     assert.equal(stream.source, 'veoveo');
   });
+
+  it('lists seasons and plays the requested episode', async () => {
+    const fetcher = async (url) => {
+      const u = String(url);
+      if (u.includes('/lite/events')) return { ok: true, json: async () => [{ balanser: 'veoveo', show: true }] };
+      if (u.includes('e=2')) return { ok: true, json: async () => ({ data: [{ method: 'play', url: 'https://cdn.example/e2.m3u8', translate: 'Дубляж', name: '2 серия' }] }) };
+      if (u.includes('e=1')) return { ok: true, json: async () => ({ data: [{ method: 'play', url: 'https://cdn.example/e1.m3u8', translate: 'Дубляж', name: '1 серия' }] }) };
+      if (u.includes('s=1')) return { ok: true, json: async () => ({ data: [
+        { method: 'link', url: 'https://gogo.iframe.cloud/lite/veoveo?s=1&e=1', name: '1 серия' },
+        { method: 'link', url: 'https://gogo.iframe.cloud/lite/veoveo?s=1&e=2', name: '2 серия' },
+      ] }) };
+      return { ok: true, json: async () => ({ data: [
+        { method: 'link', url: 'https://gogo.iframe.cloud/lite/veoveo?s=1', name: '1 сезон' },
+        { method: 'link', url: 'https://gogo.iframe.cloud/lite/veoveo?s=2', name: '2 сезон' },
+      ] }) };
+    };
+    const first = await resolveVeoStream({ kinopoiskId: '5', type: 'tv' }, fetcher);
+    assert.equal(first.url, 'https://cdn.example/e1.m3u8');
+    assert.equal(first.series.season, 1);
+    assert.equal(first.series.episode, 1);
+    assert.equal(first.series.episodes.length, 2);
+    const second = await resolveVeoStream({ kinopoiskId: '5', type: 'tv', season: 1, episode: 2 }, fetcher);
+    assert.equal(second.url, 'https://cdn.example/e2.m3u8');
+    assert.equal(second.series.episode, 2);
+    assert.equal(second.options.some((item) => item.url.endsWith('e1.m3u8')), false);
+  });
 });

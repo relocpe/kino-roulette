@@ -82,6 +82,18 @@ async function attachStream(result, body, fetcher) {
       if (Array.isArray(stream.options) && stream.options.length) {
         result.streams = stream.options.map((item) => ({ url: item.url, label: item.label || '', source: item.source || '' }));
       }
+      if (stream.series?.season) {
+        const clean = (rows, word) => (Array.isArray(rows) ? rows : []).slice(0, 80).map((item) => ({
+          n: item?.n | 0,
+          name: String(item?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40) || `${item?.n | 0} ${word}`,
+        })).filter((item) => item.n > 0);
+        result.series = {
+          season: stream.series.season | 0,
+          episode: stream.series.episode | 0,
+          seasons: clean(stream.series.seasons, 'сезон'),
+          episodes: clean(stream.series.episodes, 'серия'),
+        };
+      }
     } else if (stream?.status) result.streamStatus = stream.status;
   } catch {
     /* страница плеера всё равно остаётся */

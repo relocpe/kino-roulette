@@ -297,6 +297,20 @@ export async function genreTape(P, f) {
   return list;
 }
 
+export async function searchTitles(q) {
+  const needle = String(q || '').trim();
+  if (needle.length < 2) return [];
+  const dedup = new Map();
+  const add = (arr) => { for (const t of arr || []) if (t?.id && t.i && !dedup.has(t.id)) dedup.set(t.id, t); };
+  await Promise.all([
+    getJSON(`${B}/search/titles?query=${encodeURIComponent(needle)}&limit=20`).then((d) => add(
+      (d.titles || []).filter((x) => /movie|tvSeries|tvMiniSeries/.test(x.type)).map(norm).filter((t) => !isIndianTitle(t)),
+    )).catch(() => {}),
+    searchSnapTitles(needle, 'all').then(add),
+  ]);
+  return [...dedup.values()].sort((a, b) => (b.v || 0) - (a.v || 0)).slice(0, 8);
+}
+
 /** Поиск по встроенному каталогу (~15k постеров) — дополняет live IMDb search */
 export async function searchSnapTitles(q, mode = 'all') {
   const needle = String(q || '').trim().toLowerCase();

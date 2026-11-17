@@ -31,6 +31,21 @@ export function clearProgress(id) {
   save();
 }
 
+export function markProgress(id, seconds, duration, spot = {}) {
+  if (!id || !Number.isFinite(seconds) || seconds < 8) return null;
+  const dur = Number.isFinite(duration) && duration > 60 ? duration : (data[id]?.dur || 0);
+  const cur = data[id] || { seconds: 0, dur, updated: 0 };
+  cur.seconds = Math.max(0, seconds);
+  if (dur) cur.dur = dur;
+  if (spot.season > 0) cur.season = spot.season | 0;
+  if (spot.episode > 0) cur.episode = spot.episode | 0;
+  cur.updated = Date.now();
+  cur.complete = !!(cur.dur && cur.seconds >= cur.dur * DONE);
+  data[id] = cur;
+  save();
+  return cur;
+}
+
 export function touchProgress(id, deltaSec, t) {
   if (!id || deltaSec <= 0) return null;
   const dur = runtimeSec(t);
@@ -66,11 +81,10 @@ export function formatClock(sec) {
 }
 
 export function watchButtonText(t) {
-  const p = getProgress(t.id);
+  const p = getProgress(t?.id);
   if (p && !p.complete && p.seconds >= MIN_SHOW) {
-    const dur = p.dur || runtimeSec(t);
-    const pct = Math.min(99, Math.round((100 * p.seconds) / dur));
-    return { label: `Продолжить · ${pct}%`, hint: `Остановились на ${formatClock(p.seconds)}` };
+    if (p.season && p.episode) return { label: `Продолжить · ${p.season} сезон, ${p.episode} серия`, hint: `Остановились на ${formatClock(p.seconds)}` };
+    return { label: `Продолжить с ${formatClock(p.seconds)}`, hint: `Остановились на ${formatClock(p.seconds)}` };
   }
   return { label: 'Смотреть', hint: '' };
 }

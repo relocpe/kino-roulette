@@ -1,11 +1,9 @@
-import { sanitizeChat, sanitizeNick, syncNow, publicRoom } from './codec.mjs';
+import { sanitizeChat, sanitizeFilm, sanitizeNick, syncNow, publicRoom } from './codec.mjs';
 
 const MAX_CHAT = 120;
 const MAX_MEMBERS = 24;
 const MAX_FRAME = 8192;
 const CHAT_GAP_MS = 350;
-const httpsUrl = (v) => { try { const u = new URL(String(v)); return u.protocol === 'https:' ? u.href.slice(0, 500) : undefined; } catch { return undefined; } };
-
 export class WatchPartyRoom {
   constructor(state, env) {
     this.state = state;
@@ -137,20 +135,15 @@ export class WatchPartyRoom {
 
     const isHost = !!me.host;
     if (m.type === 'film' && isHost) {
-      room.film = {
-        id: String(m.film?.id || '').slice(0, 32),
-        title: String(m.film?.title || '').slice(0, 200),
-        year: m.film?.year | 0 || undefined,
-        embedUrl: httpsUrl(m.film?.embedUrl),
-        pageUrl: httpsUrl(m.film?.pageUrl),
-        streamUrl: httpsUrl(m.film?.streamUrl),
-        voice: String(m.film?.voice || '').replace(/\s+/g, ' ').trim().slice(0, 80) || undefined,
-        kinopoiskId: String(m.film?.kinopoiskId || '').replace(/\D/g, '').slice(0, 12) || undefined,
-        mode: m.film?.mode === 'trailer' ? 'trailer' : 'stream',
-        ytId: m.film?.ytId ? String(m.film.ytId).slice(0, 20) : undefined,
-      };
+      room.film = sanitizeFilm(m.film);
       await this.saveRoom(room);
       this.broadcast({ type: 'film', film: room.film, from: me.nick });
+      return;
+    }
+
+    if (m.type === 'go' && isHost) {
+      const at = Math.max(0, Number(m.at) || 0);
+      this.broadcast({ type: 'go', at });
       return;
     }
 
@@ -171,6 +164,7 @@ export class WatchPartyRoom {
         for (const v of this.live.values()) v.host = v === me;
         this.broadcast({ type: 'host', hostId: room.hostId, nick: me.nick });
         this.broadcast({ type: 'presence', members: await this.membersListAsync(room) });
+        this.broadcast({ type: 'sync', sync: room.sync, now: syncNow(room.sync), snap: true });
       }
       return;
     }

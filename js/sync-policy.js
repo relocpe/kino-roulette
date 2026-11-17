@@ -88,8 +88,8 @@ export function guestCommand({ roomPlaying = false, roomAt = 0, localPlaying = n
     if (local === null || snap || sinceSeekMs >= 1500) return { playing: room, at: roomAt };
     return null;
   }
-  if (room && Number.isFinite(localAt) && Math.abs(localAt - roomAt) > GUEST_DRIFT && sinceSeekMs >= GUEST_COOLDOWN_MS) {
-    return { playing: true, at: roomAt };
+  if (Number.isFinite(localAt) && Math.abs(localAt - roomAt) > GUEST_DRIFT && sinceSeekMs >= GUEST_COOLDOWN_MS) {
+    return { playing: room, at: roomAt };
   }
   if (snap && sinceSeekMs >= 1500) return { playing: room, at: roomAt };
   return null;

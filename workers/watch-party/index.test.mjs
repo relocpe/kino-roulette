@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeChat, sanitizeNick, syncNow, newRoomId } from './codec.mjs';
+import { sanitizeChat, sanitizeFilm, sanitizeNick, syncNow, newRoomId } from './codec.mjs';
 
 describe('watch-party codec', () => {
   it('sanitizes nick and chat', () => {
@@ -16,6 +16,14 @@ describe('watch-party codec', () => {
 
   it('newRoomId length', () => {
     assert.match(newRoomId(), /^[A-Z2-9]{8}$/);
+  });
+
+  it('keeps season and episode on the room film', () => {
+    const film = sanitizeFilm({ id: 'tt1', title: 'Шерлок', type: 'tv', season: 2, episode: 4, streamUrl: 'https://cdn.example/a.m3u8', kinopoiskId: '12' });
+    assert.equal(film.season, 2);
+    assert.equal(film.episode, 4);
+    assert.equal(film.type, 'tv');
+    assert.equal(sanitizeFilm({ season: 0, episode: 900 }).episode, undefined);
   });
 });
 describe('watch-party publicRoom', () => {

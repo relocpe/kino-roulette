@@ -92,6 +92,72 @@ export function pickSeasonUrl(json) {
   return link ? itemHref(link.url) : '';
 }
 
+function numbered(label, word) {
+  const text = String(label || '');
+  const ahead = text.match(new RegExp(`(\\d+)\\s*${word}`, 'i'));
+  if (ahead) return Number(ahead[1]);
+  const behind = text.match(new RegExp(`${word}\\s*(\\d+)`, 'i'));
+  if (behind) return Number(behind[1]);
+  const bare = text.trim().match(/^(\d+)$/);
+  return bare ? Number(bare[1]) : 0;
+}
+
+export function seasonLinks(json) {
+  const list = Array.isArray(json?.data) ? json.data : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (!item || item.method !== 'link') continue;
+    const url = itemHref(item.url);
+    if (!url || seen.has(url)) continue;
+    const name = labelOf(item);
+    if (name && !/сезон|season/i.test(name) && !numbered(name, 'сезон')) continue;
+    seen.add(url);
+    const n = numbered(name, 'сезон') || numbered(name, 'season') || out.length + 1;
+    out.push({ n, name: name || `${n} сезон`, url });
+  }
+  return out;
+}
+
+function episodeLinks(json) {
+  const list = Array.isArray(json?.data) ? json.data : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (!item || item.method !== 'link') continue;
+    const url = itemHref(item.url);
+    const name = labelOf(item);
+    if (!url || seen.has(url) || !/сери|episode/i.test(name)) continue;
+    seen.add(url);
+    const n = numbered(name, 'сери') || numbered(name, 'episode') || out.length + 1;
+    out.push({ n, name: name || `${n} серия`, url });
+  }
+  return out;
+}
+
+function episodeOf(item) {
+  return numbered(labelOf(item), 'сери') || numbered(item?.name, 'сери') || numbered(item?.title, 'сери');
+}
+
+function episodesFromRows(rows) {
+  const map = new Map();
+  for (const item of rows || []) {
+    const n = episodeOf(item);
+    if (!n || map.has(n)) continue;
+    map.set(n, { n, name: `${n} серия` });
+  }
+  return [...map.values()].sort((a, b) => a.n - b.n);
+}
+
+function rowsForEpisode(rows, episode) {
+  const list = Array.isArray(rows) ? rows : [];
+  const tagged = list.filter((item) => episodeOf(item) > 0);
+  if (!tagged.length) return list;
+  const want = Number(episode) || episodeOf(tagged[0]);
+  const hit = list.filter((item) => episodeOf(item) === want);
+  return hit.length ? hit : list;
+}
+
 function itemHref(value) {
   try {
     const u = new URL(value);
@@ -165,31 +231,72 @@ async function sourceNames(q, fetcher) {
   return names.length ? names.slice(0, 4) : SOURCES;
 }
 
+async function pullCalls(source, json, fetcher) {
+  const groups = [];
+  if (pickPlayable(json)) groups.push({ source, data: json.data });
+  for (const call of callUrls(json)) {
+    const next = await readJson(call, fetcher);
+    if (pickPlayable(next?.json)) groups.push({ source, data: next.json.data });
+  }
+  return groups;
+}
+
+async function streamsForSeason(source, seasons, meta, fetcher) {
+  const wantS = Number(meta?.season) || seasons[0].n || 1;
+  const season = seasons.find((item) => item.n === wantS) || seasons[0];
+  const page = await readJson(season.url, fetcher);
+  const json = page?.json;
+  if (!json) return null;
+  const links = episodeLinks(json);
+  const catalog = {
+    season: season.n,
+    episode: Number(meta?.episode) || 0,
+    seasons: seasons.map((item) => ({ n: item.n, name: item.name })),
+    episodes: [],
+  };
+  if (links.length) {
+    catalog.episodes = links.map((item) => ({ n: item.n, name: item.name }));
+    const wantE = Number(meta?.episode) || links[0].n || 1;
+    const episode = links.find((item) => item.n === wantE) || links[0];
+    catalog.episode = episode.n;
+    const got = await readJson(episode.url, fetcher);
+    const groups = got?.json ? await pullCalls(source, got.json, fetcher) : [];
+    return { groups, series: catalog };
+  }
+  const rows = Array.isArray(json.data) ? json.data : [];
+  const known = episodesFromRows(rows);
+  const wantE = Number(meta?.episode) || known[0]?.n || 1;
+  catalog.episode = known.length ? (known.find((item) => item.n === wantE)?.n || known[0].n) : 1;
+  catalog.episodes = known.length ? known : [{ n: catalog.episode, name: `${catalog.episode} серия` }];
+  const sliced = { ...json, data: rowsForEpisode(rows, catalog.episode) };
+  return { groups: await pullCalls(source, sliced, fetcher), series: known.length > 1 || seasons.length > 1 ? catalog : null };
+}
+
 async function resolveOnce(meta, fetcher) {
   const q = streamQuery(meta);
   if (!q) return null;
   let status = 0;
   const groups = [];
+  let series = null;
   for (const source of await sourceNames(q, fetcher)) {
     const got = await readJson(`${GOGO}/lite/${source}?${q}`, fetcher);
     status = got?.status || status;
     const json = got?.json;
     if (!json) continue;
-    if (pickPlayable(json)) groups.push({ source, data: json.data });
-    for (const call of callUrls(json)) {
-      const next = await readJson(call, fetcher);
-      status = next?.status || status;
-      if (pickPlayable(next?.json)) groups.push({ source, data: next.json.data });
+    const seasons = seasonLinks(json);
+    if (seasons.length) {
+      const picked = await streamsForSeason(source, seasons, meta, fetcher);
+      if (picked?.groups?.length) {
+        groups.push(...picked.groups);
+        if (picked.series && !series) series = picked.series;
+        continue;
+      }
     }
-    const season = pickSeasonUrl(json);
-    if (!season) continue;
-    const episodes = await readJson(season, fetcher);
-    status = episodes?.status || status;
-    if (episodes?.json) groups.push({ source, data: episodes.json.data });
+    groups.push(...await pullCalls(source, json, fetcher));
   }
   const options = collectStreams(groups);
   if (!options.length) return status ? { status } : null;
-  return { ...options[0], options };
+  return series ? { ...options[0], options, series } : { ...options[0], options };
 }
 
 export async function resolveVeoStream(meta, fetcher = fetch) {

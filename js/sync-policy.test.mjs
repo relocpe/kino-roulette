@@ -103,6 +103,10 @@ describe('guest starts when the host is playing', () => {
   it('leaves a guest who is already in sync', () => {
     assert.equal(guestCommand({ roomPlaying: true, roomAt: 30, localPlaying: true, localAt: 29 }), null);
   });
+  it('catches up when the host rewound while everyone was paused', () => {
+    assert.deepEqual(guestCommand({ roomPlaying: false, roomAt: 134, localPlaying: false, localAt: 60, sinceSeekMs: 9000 }), { playing: false, at: 134 });
+    assert.equal(guestCommand({ roomPlaying: false, roomAt: 134, localPlaying: false, localAt: 60, sinceSeekMs: 2000 }), null);
+  });
   it('retries play after a missed command, not on every tick', () => {
     assert.equal(guestCommand({ roomPlaying: true, roomAt: 8, localPlaying: false, sinceSeekMs: 200 }), null);
     assert.deepEqual(guestCommand({ roomPlaying: true, roomAt: 9, localPlaying: false, sinceSeekMs: 1600 }), { playing: true, at: 9 });
