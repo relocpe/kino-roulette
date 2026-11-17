@@ -13,7 +13,8 @@ export class WatchPartyRoom {
 
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === '/init' && request.method === 'POST') {
+    if (request.headers.get('Upgrade') === 'websocket') return this.onWs(request);
+    if ((url.pathname === '/init' || url.pathname.endsWith('/init')) && request.method === 'POST') {
       let room = await this.state.storage.get('room');
       if (!room) {
         const body = await request.json().catch(() => ({}));
@@ -29,7 +30,6 @@ export class WatchPartyRoom {
       }
       return new Response('ok');
     }
-    if (request.headers.get('Upgrade') === 'websocket') return this.onWs(request);
     if (request.method === 'GET') {
       const room = await this.state.storage.get('room');
       if (!room) return this.json({ error: 'room_not_found' }, 404, request);

@@ -9,4 +9,4 @@ class_name = "WatchPartyRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["WatchPartyRoom"]
+new_sqlite_classes = ["WatchPartyRoom"]
