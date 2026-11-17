@@ -82,6 +82,31 @@ export function norm(t) {
 const TYPES = { movie: ['MOVIE'], series: ['TV_SERIES', 'TV_MINI_SERIES'], all: ['MOVIE', 'TV_SERIES', 'TV_MINI_SERIES'] };
 const KIND = { movie: ['movie', 'tvMovie'], series: ['tvSeries', 'tvMiniSeries'], all: ['movie', 'tvMovie', 'tvSeries', 'tvMiniSeries'] };
 const SERIES = ['tvSeries', 'tvMiniSeries'];
+export const COUNTRY_RU = {
+  US: 'США', GB: 'Великобритания', RU: 'Россия', DE: 'Германия', FR: 'Франция',
+  JP: 'Япония', KR: 'Корея', CN: 'Китай', IN: 'Индия', CA: 'Канада', AU: 'Австралия',
+  IT: 'Италия', ES: 'Испания', MX: 'Мексика', BR: 'Бразилия', UA: 'Украина',
+  PL: 'Польша', SE: 'Швеция', NO: 'Норвегия', FI: 'Финляндия', DK: 'Дания',
+  NL: 'Нидерланды', BE: 'Бельгия', AT: 'Австрия', CH: 'Швейцария', CZ: 'Чехия',
+  HU: 'Венгрия', RO: 'Румыния', TR: 'Турция', IL: 'Израиль', TH: 'Таиланд',
+  HK: 'Гонконг', TW: 'Тайвань', NZ: 'Новая Зеландия', AR: 'Аргентина', CL: 'Чили',
+  CO: 'Колумбия', IE: 'Ирландия', PT: 'Португалия', GR: 'Греция', IS: 'Исландия',
+};
+/** Год или диапазон для сериала. */
+export function yearLabel(t) {
+  if (SERIES.includes(t?.k) && t?.y) return `${t.y}${t.e && t.e !== t.y ? `–${t.e}` : t.e ? '' : '–…'}`;
+  return t?.y ? String(t.y) : '';
+}
+/** До трёх стран по ISO; для аниме без данных — Япония. */
+export function countriesLabel(t) {
+  let cc = t?.countries;
+  if ((!cc || !cc.length) && t?.src === 'al') cc = ['JP'];
+  if (!cc?.length) return '';
+  return cc.slice(0, 3).map((c) => COUNTRY_RU[c] || c).join(', ');
+}
+export function tileMetaLine(t) {
+  return [yearLabel(t), countriesLabel(t), t?.r ? `${Number(t.r).toFixed(1)}★` : ''].filter(Boolean).join(' · ');
+}
 const gNames = (g) => [].concat(g.q?.genres || g.alt?.flatMap((x) => [].concat(x.genres)) || []);
 const meet = (arr, want) => !want || want.some((x) => arr.includes(x));
 

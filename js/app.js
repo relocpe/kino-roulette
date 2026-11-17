@@ -1,8 +1,8 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle } from './api.js?v=21';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, yearLabel, countriesLabel } from './api.js?v=22';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=45';
+import * as V from './views.js?v=46';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=21';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
@@ -747,7 +747,8 @@ function render(t, full) {
   const diff = (a, b) => !!a && !!b && a.trim().toLowerCase() !== b.trim().toLowerCase();
   const orig = [diff(t.t, title) ? t.t : null, diff(t.o, title) ? t.o : null].filter(Boolean)[0];
   const isSeries = /tvSeries|tvMiniSeries/.test(t.k);
-  const years = isSeries && t.y ? `${t.y}${t.e && t.e !== t.y ? '–' + t.e : t.e ? '' : '–…'}` : t.y || '';
+  const years = yearLabel(t);
+  const country = countriesLabel(t);
   const dur = isSeries ? (t.seasons ? `${t.seasons}\u00a0${plural(t.seasons, 'сезон', 'сезона', 'сезонов')}` : t.ep ? `${t.ep}\u00a0${plural(t.ep, 'серия', 'серии', 'серий')}` : '') : runtime(t.s);
   // выбранные жанры — первыми (в «Аниме» — их соответствия на AniList)
   const wantG = [].concat(byId[curG]?.q?.genres || [], t.src === 'al' ? prefs.sel.flatMap((id) => byId[id]?.al?.g || []) : []);
@@ -767,6 +768,8 @@ function render(t, full) {
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
   const facts = [
     t.r ? fact(t.src === 'al' ? 'AniList' : 'IMDb', `${STAR}${t.r.toFixed(1)}`, ' score') : '',
+    years ? fact(isSeries ? 'Годы' : 'Год', esc(years)) : '',
+    country ? fact('Страна', esc(country)) : '',
     dur ? fact(isSeries ? (t.seasons ? 'Сезоны' : 'Серии') : 'Длительность', esc(dur)) : '',
     dirs.length ? fact(dirs.length > 1 ? 'Режиссёры' : 'Режиссёр', esc(dirs.join(', ')), ' dir') : '',
     cast.length ? fact('В ролях', esc(cast.join(', ')), ' cast') : '',

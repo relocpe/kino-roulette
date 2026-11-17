@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap } from './api.js?v=21';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap, tileMetaLine } from './api.js?v=22';
 import { buildShelves, shelfById, MIN_SHELF } from './curated.js?v=1';
 import * as S from './store.js?v=14';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
@@ -141,11 +141,10 @@ export async function getTitle(id) {
 }
 
 // ---------- плитки и сетка ----------
-const yr = (t) => (t.y ? String(t.y) : '');
 function tile(t) {
   remember(t);
   const title = t.ru || ruCached(t.id) || t.t || t.title || '';
-  const meta = [yr(t), t.r ? `${Number(t.r).toFixed(1)}★` : ''].filter(Boolean).join(' · ');
+  const meta = tileMetaLine(t);
   const src = t.i ? poster(t.i, 300) : t.poster || '';
   return `<a class="tile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}<span class="tph">${esc(title)}</span><div class="tacts">${iconBtns(t.id, 'tb')}</div></div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
 }
@@ -212,7 +211,7 @@ function loadCurated() {
 function shelfCard(t) {
   remember(t);
   const title = t.ru || ruCached(t.id) || t.t || '';
-  const meta = [yr(t), t.r ? `${Number(t.r).toFixed(1)}★` : ''].filter(Boolean).join(' · ');
+  const meta = tileMetaLine(t);
   const src = t.i ? poster(t.i, 300) : '';
   return `<a class="stile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}</div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
 }
