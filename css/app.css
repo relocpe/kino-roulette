@@ -372,6 +372,10 @@ dialog::backdrop { background: rgb(4 3 2 / .6); }
 .tm-x { border: 1px solid var(--line); background: rgb(255 255 255 / .05); color: var(--ink); width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
 .tm-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; box-shadow: 0 40px 120px -20px #000, 0 0 0 1px rgb(255 255 255 / .06), 0 0 120px -30px var(--accent); }
 .tm-frame.lord-browse { aspect-ratio: auto; min-height: min(72vh, 720px); }
+.lm-head-txt { min-width: 0; flex: 1; }
+.lm-prog { margin: 4px 0 0; font-size: 13px; line-height: 18px; color: var(--ink-3); font-weight: 400; }
+.lm-prog[hidden] { display: none; }
+.tm-head .lm-head-txt h3 { margin: 0; }
 .lm-pick { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; }
 .lm-pick button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgb(255 255 255 / .2); background: rgb(0 0 0 / .65); color: inherit; cursor: pointer; }
 .lm-pick button.active { border-color: var(--accent); background: rgb(0 0 0 / .85); }

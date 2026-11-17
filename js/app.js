@@ -2,10 +2,11 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady } from './api.js?v=11';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease } from './fx.js?v=1';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=16';
+import * as V from './views.js?v=17';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=11';
+import { watchButtonText, progressNote, touchProgress, clearProgress } from './watch-progress.js?v=1';
 import { mountYearRange } from './year-range.js?v=1';
 
 const $ = (s) => document.querySelector(s);
@@ -661,6 +662,7 @@ function render(t, full) {
     cast.length ? fact('В ролях', esc(cast.join(', ')), ' cast') : '',
   ].join('');
   const tr = trState.get(t.id);
+  const watchLbl = watchButtonText(t).label;
   const infoHTML = `
     <div class="info">
       <p class="kick">${kick.map((x) => `<span>${esc(x)}</span>`).join('')}</p>
@@ -669,7 +671,7 @@ function render(t, full) {
       ${facts ? `<div class="facts">${facts}</div>` : ''}
       ${desc}
       <div class="actions">
-        <button class="btn primary watch-main" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">${ico.play}Смотреть</button>
+        <button class="btn primary watch-main" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">${ico.play}${esc(watchLbl)}</button>
         <button class="btn" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
         <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
@@ -770,10 +772,8 @@ result.addEventListener('click', (e) => {
     if (op) { w.querySelector('a')?.focus({ preventScroll: true }); w.scrollIntoView({ block: 'nearest', behavior: reduce.matches ? 'auto' : 'smooth' }); }
   }
   if (act === 'lord') {
-    const t = curT;
-    if (!t) return;
-    const markWatched = watchedIds().has(t.id) ? Promise.resolve() : V.act('watched', t.id);
-    markWatched.then(() => openLordWatch(t, b), () => openLordWatch(t, b));
+    if (!curT) return;
+    openLordWatch(curT, b);
   }
 });
 // ---------- Поделиться ----------
@@ -852,9 +852,70 @@ const lm = $('#lmodal');
 const zombiPageRe = /^https:\/\/filmy-pro-zombi\.com\/\d+-.*\.html$/i;
 const lordPageRe = /^https:\/\/(?:www\.)?2026-lord\.pics\/\d+\/?$/;
 const lordSearchRe = /^https:\/\/(?:1\.2026-lord\.pics|www\.2026-lord\.pics)\/search\b/;
+let watchTick = 0;
+let watchTitle = null;
+
+function stopWatchProgress(saveUi = true) {
+  clearInterval(watchTick);
+  watchTick = 0;
+  const t = watchTitle;
+  watchTitle = null;
+  if (saveUi && t) patchWatchBtn(t);
+}
+
+function patchWatchBtn(t) {
+  if (!t || curT?.id !== t.id) return;
+  const btn = result.querySelector('[data-act="lord"]');
+  if (!btn) return;
+  const { label } = watchButtonText(t);
+  btn.innerHTML = `${ico.play}${esc(label)}`;
+}
+
+function setLordProgressHint(t) {
+  const el = $('#lmProg');
+  if (!el) return;
+  const hint = progressNote(t);
+  const series = /tvSeries|tvMiniSeries/.test(t?.k || '');
+  const extra = series && hint ? ' · для сериала считаем ~45 мин за серию' : '';
+  if (hint) {
+    el.textContent = `${hint}${extra}. Просмотрено — после ~90% длительности. Перемотку в плеере сайт не запоминает.`;
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
+async function completeIfWatched(t, p) {
+  if (!t || !p?.complete || watchedIds().has(t.id)) return;
+  try {
+    await V.act('watched', t.id);
+    clearProgress(t.id);
+    patchWatchBtn(t);
+    V.toast('Досмотрели — отметили в «Просмотренном»', null, 2800);
+  } catch { /* глазом можно отметить позже */ }
+}
+
+function startWatchProgress(t) {
+  stopWatchProgress(false);
+  if (!t || watchedIds().has(t.id)) return;
+  watchTitle = t;
+  watchTick = setInterval(() => {
+    if (!lm?.open || document.hidden || !watchTitle) return;
+    const p = touchProgress(t.id, 10, t);
+    if (p?.complete) {
+      completeIfWatched(t, p);
+      stopWatchProgress(true);
+    }
+  }, 10000);
+}
+
 function closeLordModal() {
   if (!lm?.open) return;
+  stopWatchProgress(true);
   $('#lmFrame').innerHTML = '';
+  const prog = $('#lmProg');
+  if (prog) { prog.textContent = ''; prog.hidden = true; }
   lm.close();
   if (!tm.open) document.documentElement.classList.remove('locked');
 }
@@ -962,7 +1023,9 @@ async function openLordWatch(t, btn) {
     return;
   }
   $('#lmTitle').textContent = title;
+  setLordProgressHint(t);
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
+  stopWatchProgress(false);
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
   const kpId = kpCached(t.id);
@@ -980,14 +1043,17 @@ async function openLordWatch(t, btn) {
     const { data, pageUrl, embedUrls, source } = hit;
     if (data.matched === true && (embedUrls.length || pageUrl)) {
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
+      startWatchProgress(t);
       if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
       return;
     }
     const leadUrl = pageUrl || (zombiPageRe.test(data.url || '') ? data.url : '');
     if (data.lead && leadUrl) {
       mountLordFrame(embedUrls[0], leadUrl, title, embedUrls);
+      startWatchProgress(t);
       return;
     }
+    stopWatchProgress(false);
     mountLordSearchPanel(searchUrl, title);
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
       V.toast('Источники не ответили — открой поиск кнопкой внизу', null, 3000);
@@ -996,6 +1062,7 @@ async function openLordWatch(t, btn) {
     V.toast('Точного плеера нет — поиск LordFilm в модалке', null, 2400);
   } catch (error) {
     console.warn('Watch resolver failed.', error);
+    stopWatchProgress(false);
     mountLordSearchPanel(searchUrl, title);
     V.toast('Не вышло найти автоматически — кнопка поиска в модалке', null, 2800);
   } finally {

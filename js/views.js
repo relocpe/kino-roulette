@@ -4,6 +4,7 @@ import { getJSON, norm, normAnime, poster, animeReady, isAnime } from './api.js?
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';
+import { clearProgress } from './watch-progress.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -47,6 +48,7 @@ export async function act(list, id, btn) {
   if (btn && on && list === 'favorites' && !reduce.matches) btn.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 280, easing: 'cubic-bezier(.16,1,.3,1)' });
   const undo = ['Отменить', () => act(list, id)];
   if (!on) return toast(list === 'favorites' ? 'Убрали из любимых' : 'Убрали из просмотренного', null);
+  if (list === 'watched' && on) clearProgress(id);
   if (!S.loggedIn()) {
     if (list === 'favorites') likes++;
     if (!nudged || likes % 5 === 0) { nudged = true; return toast('Без входа не сохранится, только до закрытия вкладки. Войди, чтобы сохранить', ['Войти', () => openAuth('login')], 5000); }
@@ -368,7 +370,7 @@ function renderMe(tab, keep) {
   const data = tab === 'recent' ? rec : L[tab].map((x) => ({ id: x.titleId, t: x.title, ru: x.title, y: x.year, r: x.rating, poster: x.poster }));
   const nOf = (k) => (k === 'recent' ? rec.length : L[k].length);
   const plaque = !S.loggedIn() && tab !== 'recent' ? `<div class="plaque"><p><b>Без входа списки не сохраняются.</b> Они живут, пока открыта эта вкладка.</p><button class="tlink" type="button" data-auth="login">Войти</button></div>` : '';
-  const emptyTxt = { favorites: 'Здесь будут фильмы, которые ты отметишь ♡.', watched: 'Отмечай просмотренное глазом, и рулетка перестанет их предлагать.', recent: 'Здесь появятся фильмы, которые выпадали в рулетке.' }[tab];
+  const emptyTxt = { favorites: 'Здесь будут фильмы, которые ты отметишь ♡.', watched: 'Попадёт сюда после досмотра (~90%) в плеере или если отметишь глазом.', recent: 'Здесь появятся фильмы, которые выпадали в рулетке.' }[tab];
   view.innerHTML = `<div class="wrap me"><h1 class="vh">Мои списки</h1>
     <div class="tabs" role="tablist">${TABS.map(([k, l]) => `<a role="tab" href="me/${k}" data-nav aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}">${l}<span>${nOf(k) || ''}</span></a>`).join('')}</div>
     ${plaque}
