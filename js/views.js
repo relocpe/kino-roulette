@@ -216,7 +216,7 @@ function shelfCard(t) {
   const src = t.i ? poster(t.i, 300) : '';
   return `<a class="stile" href="title/${esc(t.id)}" data-nav data-id="${esc(t.id)}"><div class="tp">${src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ''}</div><b>${esc(title)}</b><small>${esc(meta)}</small></a>`;
 }
-const shelfSkel = () => `<section class="shelf skel" aria-hidden="true"><div class="srow">${Array.from({ length: 6 }, () => '<div class="stile sk"><div class="tp"></div><b></b></div>').join('')}</div></section>`;
+const shelfSkel = () => `<section class="shelf skel" aria-hidden="true"><div class="srow shelf-row">${Array.from({ length: 6 }, () => '<div class="stile sk"><div class="tp"></div><b></b></div>').join('')}</div></section>`;
 let shelfGen = 0;
 function mountShelves(box) {
   const gen = ++shelfGen;
@@ -227,7 +227,7 @@ function mountShelves(box) {
     const shelves = buildShelves(titles).filter((s) => s.items.length >= MIN_SHELF);
     box.innerHTML = shelves.length ? `<h2 class="hcap">Подборки</h2><div class="shelves">${shelves.map((s) => {
       const items = s.items.slice(0, SHELF_PREVIEW);
-      return `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow">${items.map(shelfCard).join('')}</div></section>`;
+      return `<section class="shelf" aria-labelledby="sh-${esc(s.id)}"><div class="shd"><div><h2 id="sh-${esc(s.id)}">${esc(s.title)}</h2><p>${esc(s.text)}</p></div><a class="tlink" href="catalog/list/${esc(s.id)}" data-nav>Ещё</a></div><div class="srow shelf-row">${items.map(shelfCard).join('')}</div></section>`;
     }).join('')}</div>` : '';
     localize(box);
   }).catch(() => {

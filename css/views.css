@@ -70,34 +70,43 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
 .shelf h2 { font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.02em; }
 .shelf p { margin-top: 4px; max-width: 62ch; color: var(--ink-3); font-size: 14px; line-height: 20px; }
 .shelf .tlink { flex: none; white-space: nowrap; }
-.shelf .srow {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 16px;
+.cat .shelf-row {
+  --shelf-tile: 184px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--shelf-tile);
+  gap: 18px;
+  align-items: start;
   width: 100%;
   max-width: 100%;
-  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   margin-inline: calc(-1 * var(--gut));
-  padding: 12px var(--gut) 8px;
-  scroll-padding-inline-start: var(--gut);
+  padding: 12px var(--gut) 10px;
+  scroll-padding-inline: var(--gut);
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
-.shelf .srow::-webkit-scrollbar { display: none; }
-.shelf .stile small { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-3); }
-.cat .shelf .stile {
-  flex: none;
-  width: 176px;
-  min-width: 176px;
-  max-width: 176px;
+.cat .shelf-row::-webkit-scrollbar { display: none; }
+.cat .shelf-row .stile {
+  width: var(--shelf-tile);
   scroll-snap-align: start;
+  color: var(--ink);
+  text-decoration: none;
 }
-.cat .shelf .stile b { margin-top: 10px; font-size: 15px; line-height: 20px; font-weight: 600; }
-.cat .shelf .stile small { font-size: 13px; line-height: 18px; }
+.cat .shelf-row .stile small { display: block; margin-top: 2px; font-size: 13px; line-height: 18px; color: var(--ink-3); }
+.cat .shelf-row .stile b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
 
 /* строка фильтров */
 .crow { display: flex; align-items: center; gap: 12px; margin: 28px 0 20px; flex-wrap: wrap; }
@@ -309,7 +318,7 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
   .mood b { font-size: 15px; left: 12px; bottom: 10px; }
   .shelf h2 { font-size: 18px; line-height: 24px; }
   .shelf .shd { align-items: flex-start; }
-  .cat .shelf .stile { flex: 0 0 148px; }
+  .cat .shelf-row { --shelf-tile: 152px; gap: 14px; }
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 8px; }
   .tile b { font-size: 12px; line-height: 16px; margin-top: 6px; }
   .tile small { font-size: 11px; }
@@ -327,7 +336,7 @@ body.inroom .view { min-height: 100dvh; padding-bottom: 0; }
   .mspin { height: 44px; padding: 0 18px; font-size: 14px; }
   .vh { font-size: 26px; line-height: 32px; }
   .plaque { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .stile { flex-basis: 120px; }
+  .sim .srow .stile { flex: 0 0 120px; }
   .sarr { display: none; }
   .sim { margin-top: 44px; }
   .adlg { position: fixed; inset: auto 0 0; width: 100%; max-width: none; margin: 0; border-radius: 20px 20px 0 0; max-height: 92dvh; }
