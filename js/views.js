@@ -1,6 +1,6 @@
 // Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
-import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=14';
+import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles } from './api.js?v=15';
 import * as S from './store.js?v=11';
 import { ruCached, localize, ruTitles } from './ru.js?v=2';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=1';

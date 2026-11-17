@@ -13,7 +13,7 @@ let old = { titles: {}, chips: {}, seed: [] };
 try { const c = JSON.parse(readFileSync('data/catalog.json')); old.chips = c.chips; old.seed = JSON.parse(readFileSync('data/seed.json')).filter((x) => x.id.startsWith('tt')).map((x) => x.id); for (const r of c.titles) if (r[0].startsWith('tt')) old.titles[r[0]] = { id: r[0], t: r[1], o: r[2] || undefined, k: c.kinds[r[3]], y: r[4], e: r[5] || undefined, r: r[6] / 10, v: r[7], g: r[8] ? r[8].split(',').map((x) => c.genres[x]) : [], i: r[9], s: r[10] || undefined }; } catch {}
 for (const t of Object.values(old.titles)) if (t.i) T.set(t.id, t);
 const SER = ['tvSeries', 'tvMiniSeries'];
-const okVotes = (t) => (t.v || 0) >= (SER.includes(t.k) ? 500 : 1000);
+const okVotes = (t) => (t.v || 0) >= (SER.includes(t.k) ? 180 : 300);
 const addI = (arr) => { let n = 0; for (const t of arr || []) { if (!t.primaryImage) continue; const c = { id: t.id, t: t.primaryTitle, o: t.originalTitle !== t.primaryTitle ? t.originalTitle : undefined, k: t.type, y: t.startYear, e: t.endYear, r: t.rating?.aggregateRating, v: t.rating?.voteCount, g: t.genres, i: img(t.primaryImage.url), s: t.runtimeSeconds }; if (!okVotes(c) || !rejectIndian(c)) continue; if (!T.has(c.id)) n++; T.set(c.id, c); } return n; };
 async function walk(p, pages) {
   let tok = null, n = 0;
@@ -33,10 +33,14 @@ const rejectIndian = (c) => {
 const tasks = [];
 // широкие срезы без жанра — больше «мирового» каталога
 for (const [sortBy, sortOrder, pages, extra] of [
-  ['SORT_BY_USER_RATING_COUNT', 'DESC', 10, { minVoteCount: 2000 }],
-  ['SORT_BY_USER_RATING', 'DESC', 8, { minVoteCount: 5000, minAggregateRating: 6 }],
-  ['SORT_BY_POPULARITY', 'DESC', 6, { minVoteCount: 15000 }],
-  ['SORT_BY_RELEASE_DATE', 'DESC', 6, { minVoteCount: 800 }],
+  ['SORT_BY_USER_RATING_COUNT', 'DESC', 14, { minVoteCount: 1500 }],
+  ['SORT_BY_USER_RATING', 'DESC', 10, { minVoteCount: 3500, minAggregateRating: 5.5 }],
+  ['SORT_BY_POPULARITY', 'DESC', 8, { minVoteCount: 12000 }],
+  ['SORT_BY_RELEASE_DATE', 'DESC', 8, { minVoteCount: 500 }],
+  ['SORT_BY_USER_RATING_COUNT', 'DESC', 6, { minVoteCount: 400, maxVoteCount: 15000 }],
+  ['SORT_BY_POPULARITY', 'ASC', 5, { minVoteCount: 300, maxVoteCount: 8000 }],
+  ['SORT_BY_USER_RATING_COUNT', 'DESC', 4, { types: ['MOVIE'], minVoteCount: 350 }],
+  ['SORT_BY_USER_RATING_COUNT', 'DESC', 5, { types: ['TV_SERIES', 'TV_MINI_SERIES'], minVoteCount: 200 }],
 ]) {
   tasks.push([{ types, ...NO_INDIA, sortBy, sortOrder, ...extra }, pages]);
 }
@@ -44,13 +48,13 @@ for (const g of GENRES) {
   if (g.src) continue;
   const gv = g.alt ? g.alt : [g.q];
   for (const v of gv) {
-    const base = { types, minVoteCount: 500, ...NO_INDIA, ...v };
-    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC' }, 5]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING', sortOrder: 'DESC', minVoteCount: 2500 }, 4]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'DESC' }, 3]);
-    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', maxVoteCount: 40000 }, 2]);
+    const base = { types, minVoteCount: 280, ...NO_INDIA, ...v };
+    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC' }, 6]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING', sortOrder: 'DESC', minVoteCount: 1800 }, 5]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'DESC' }, 4]);
+    tasks.push([{ ...base, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', maxVoteCount: 35000 }, 3]);
     for (const [a, b] of [[1930, 1959], [1960, 1979], [1980, 1989], [1990, 1999], [2000, 2009], [2010, 2016], [2017, 2021], [2022, 2026]])
-      tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC', startYear: a, endYear: b }, 2]);
+      tasks.push([{ ...base, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC', startYear: a, endYear: b }, 3]);
   }
 }
 console.log('imdb tasks', tasks.length);
@@ -59,12 +63,26 @@ for (let i = 0; i < tasks.length; i += 4) {
   if (i % 40 === 0) console.log(i, T.size);
 }
 console.log('imdb titles', T.size);
+// хвост каталога: годовые полосы с низким порогом голосов (меньше пересечений с жанровыми срезами)
+const tail = [];
+for (const minV of [220, 140, 90]) {
+  for (const [a, b] of [[1985, 1994], [1995, 2004], [2005, 2012], [2013, 2017], [2018, 2020], [2021, 2026]]) {
+    tail.push([{ types, ...NO_INDIA, sortBy: 'SORT_BY_USER_RATING_COUNT', sortOrder: 'DESC', minVoteCount: minV, maxVoteCount: Math.min(25000, minV * 140), startYear: a, endYear: b }, 4]);
+    tail.push([{ types: ['MOVIE'], ...NO_INDIA, sortBy: 'SORT_BY_POPULARITY', sortOrder: 'ASC', minVoteCount: minV, maxVoteCount: minV * 90, startYear: a, endYear: b }, 2]);
+  }
+}
+console.log('tail tasks', tail.length);
+for (let i = 0; i < tail.length; i += 3) {
+  await Promise.all(tail.slice(i, i + 3).map(([p, n]) => walk(p, n).catch((e) => console.log('TERR', e.message))));
+  if (i % 15 === 0) console.log('tail', i, T.size);
+}
+console.log('imdb after tail', T.size);
 // аниме из AniList
-const ALQ = `query($page:Int,$sort:[MediaSort]){Page(page:$page,perPage:50){media(type:ANIME,isAdult:false,sort:$sort,popularity_greater:1500,format_in:[TV,TV_SHORT,MOVIE,ONA,OVA]){id idMal title{romaji english native} format episodes startDate{year} endDate{year} averageScore popularity genres tags{name rank} coverImage{extraLarge} duration}}}`;
+const ALQ = `query($page:Int,$sort:[MediaSort],$pop:Int){Page(page:$page,perPage:50){media(type:ANIME,isAdult:false,sort:$sort,popularity_greater:$pop,format_in:[TV,TV_SHORT,MOVIE,ONA,OVA]){id idMal title{romaji english native} format episodes startDate{year} endDate{year} averageScore popularity genres tags{name rank} coverImage{extraLarge} duration}}}`;
 const A = new Map();
-for (const [sort, pages] of [['POPULARITY_DESC', 50], ['SCORE_DESC', 12], ['START_DATE_DESC', 8]]) {
+for (const [sort, pages, pop] of [['POPULARITY_DESC', 95, 600], ['SCORE_DESC', 22, 800], ['START_DATE_DESC', 14, 600], ['FAVOURITES_DESC', 10, 1200]]) {
   for (let p = 1; p <= pages; p++) {
-    const d = await j('https://graphql.anilist.co', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query: ALQ, variables: { page: p, sort: [sort] } }) });
+    const d = await j('https://graphql.anilist.co', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query: ALQ, variables: { page: p, sort: [sort], pop } }) });
     for (const m of d.data?.Page?.media || []) if (m.coverImage?.extraLarge) A.set(m.id, m);
     await sleep(2200);
   }

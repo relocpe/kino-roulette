@@ -22,7 +22,7 @@ const qs = (o) => Object.entries(o).filter(([, v]) => v !== undefined && v !== n
 // офлайн-каталог грузится лениво — только если API не ответил
 let snapshot = null;
 async function snap() {
-  if (!snapshot) snapshot = fetch('data/catalog.json?v=10').then((r) => r.json()).then((d) => {
+  if (!snapshot) snapshot = fetch('data/catalog.json?v=11').then((r) => r.json()).then((d) => {
     const T = {};
     for (const row of d.titles) {
       const [id, t, o, k, y, e, r10, v, g, i, sec, tg, ep] = row;
@@ -35,7 +35,7 @@ async function snap() {
 }
 let seeds = null;
 export async function seedPosters() {
-  if (!seeds) seeds = fetch('data/seed.json?v=10').then((r) => r.json());
+  if (!seeds) seeds = fetch('data/seed.json?v=11').then((r) => r.json());
   return seeds;
 }
 
@@ -297,7 +297,7 @@ export async function searchSnapTitles(q, mode = 'all') {
   return Object.values(sn.titles)
     .filter((t) => t.i && kindOk(t) && !isIndianTitle(t) && score(t) > 0)
     .sort((a, b) => score(b) - score(a) || (b.v || 0) - (a.v || 0))
-    .slice(0, 80);
+    .slice(0, 150);
 }
 
 // Банк: всё, что пришло по этой комбинации за сессию, копится — пул растёт с каждым спином.

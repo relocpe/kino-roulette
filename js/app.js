@@ -1,8 +1,8 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=14';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fitsMode, animeReady, isIndianTitle } from './api.js?v=15';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=20';
+import * as V from './views.js?v=21';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=2';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=11';
@@ -323,7 +323,7 @@ function filters() {
   if (from && to && from > to) [from, to] = [to, from];
   // порог голосов отсекает пустые заглушки: фильмы от 1000, сериалы от 500; «Только известные» — от 25k/10k
   const known = !!prefs.known;
-  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 2500, vs: known ? 10000 : 1200, known, skipMassIN: true };
+  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 1800, vs: known ? 10000 : 800, known, skipMassIN: true };
 }
 
 // ---------- барабан ----------
