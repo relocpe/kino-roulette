@@ -457,6 +457,8 @@ input.wp-nick { width: 112px; height: 28px; border: 0; border-bottom: 1px solid 
 input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-bottom-color: var(--ink-2); }
 .wp-sync { padding: 0; border: 0; background: none; border-radius: 0; }
 .wp-remote { display: flex; align-items: center; gap: 10px; min-height: 36px; flex-wrap: wrap; }
+.wp-seek { flex: 1 0 100%; display: flex; align-items: center; height: 28px; margin: 0; }
+.wp-seek input { width: 100%; accent-color: var(--amber); }
 .wp-remote b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 15px; }
 .wp-led { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
 .wp-led.on { background: #9dcfb2; }
@@ -467,7 +469,7 @@ input.wp-nick:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px
 .wp-actions button:hover, .wp-syncbtn:hover { border-color: rgb(241 235 226 / .3); color: var(--ink); background: transparent; }
 .wp-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
 .wp-msgs { flex: 1; overflow: auto; min-height: 160px; display: flex; flex-direction: column; gap: 0; scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
-.wp-msgs:empty::before { content: 'Сообщения комнаты появятся здесь.'; color: var(--ink-3); font-size: 13px; }
+.wp-msgs:empty::before { content: 'Чат пуст.'; color: var(--ink-3); font-size: 13px; }
 .wp-msg { display: flex; gap: 8px; align-items: baseline; margin: 0; padding: 5px 0; background: none; border: 0; border-radius: 0; font-size: 14px; line-height: 1.35; }
 .wp-who { flex: none; max-width: 96px; font-size: 13px; font-weight: 600; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-text { min-width: 0; color: var(--ink); word-break: break-word; }

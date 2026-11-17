@@ -10,18 +10,21 @@ export const GUEST_COOLDOWN_MS = 8000;
 // Ведущий двигает плеер сам (клик по полосе, пауза, play) — комната должна это увидеть.
 // expected — где ведущий должен быть по последней отправленной синхронизации.
 export function hostChange({ at, playing, explicit = false, expected = 0, sentPlaying = false, sinceSentMs = Infinity } = {}) {
-  if (!Number.isFinite(at) || sinceSentMs < HOST_QUIET_MS) return null;
+  if (!Number.isFinite(at)) return null;
   const now = playing == null ? sentPlaying : !!playing;
+  const limit = now ? HOST_SEEK_PLAYING : HOST_SEEK_PAUSED;
+  const jumped = Math.abs(at - expected) > limit;
+  // тишина после своей команды глушит эхо плеера, но не новую перемотку
+  if (sinceSentMs < HOST_QUIET_MS && !jumped) return null;
   if (explicit && now !== sentPlaying) return { at, playing: now };
   if (!explicit && playing === true && !sentPlaying) return { at, playing: true };
-  const limit = now ? HOST_SEEK_PLAYING : HOST_SEEK_PAUSED;
-  if (Math.abs(at - expected) > limit) return { at, playing: now };
+  if (jumped) return { at, playing: now };
   return null;
 }
 
 // Гость сам себя подтягивает только при заметном уходе от комнаты и не чаще раза в 8 секунд.
 export function guestNeedsSeek({ expected, local, roomPlaying = false, sinceSeekMs = Infinity } = {}) {
-  if (!roomPlaying || !Number.isFinite(expected) || !Number.isFinite(local)) return false;
+  if (!Number.isFinite(expected) || !Number.isFinite(local)) return false;
   if (sinceSeekMs < GUEST_COOLDOWN_MS) return false;
   return Math.abs(expected - local) > GUEST_DRIFT;
 }

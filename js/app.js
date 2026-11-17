@@ -3,10 +3,10 @@ import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, gen
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=33';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=12';
-import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=6';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=13';
+import { bindEmbed, preferEmbeds, shouldSnapGuest } from './player-bridge.js?v=7';
 import { decideWatchOpen } from './watch-open.js?v=1';
-import { hostChange, guestNeedsSeek, localPosition } from './sync-policy.js?v=1';
+import { hostChange, guestNeedsSeek, localPosition, HOST_SEEK_PLAYING } from './sync-policy.js?v=2';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
@@ -1090,6 +1090,13 @@ function watchRoom(id, panel, frame, titleEl) {
     onSync(s, meta) { pendingSync = s; pendingSnap = !!meta?.snap; applyGuest(s, { snap: pendingSnap }); },
     onTransport(kind) { hostTransport(kind === 'play'); },
     onSnap() { synchronize(); },
+    onSeek(at) {
+      if (!ctl.isHost() || !Number.isFinite(at)) return;
+      const playing = bridge?.heard() && localTick ? !!localTick.playing : ctl.playing();
+      hostPush(at, playing, true);
+      if (bridge) bridge.command(playing, at);
+      else pendingCmd = { playing, at };
+    },
     onStatus(state) {
       if (state === 'missing') {
         setTitle('Комната не найдена');
@@ -1222,11 +1229,18 @@ function watchRoom(id, panel, frame, titleEl) {
   });
 
   ctl.join(id);
+  frame.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-lsrc]')) return;
+    bridgeIframe = null;
+    setTimeout(attachBridge, 0);
+  });
   const beat = setInterval(() => {
     if (!ctl.isHost() || !ctl.playing()) return;
     if (bridge?.heard() && localTick) {
       if (!localTick.playing) return;
-      ctl.pushSync(hostAt(), true, false);
+      const at = hostAt();
+      if (Math.abs(at - ctl.clock()) > HOST_SEEK_PLAYING) hostPush(at, true, true);
+      else ctl.pushSync(at, true, false);
       return;
     }
     ctl.pushSync(ctl.clock(), true, false);
@@ -1237,7 +1251,7 @@ function watchRoom(id, panel, frame, titleEl) {
     const expected = sharedNow(s);
     const local = localPosition(localTick);
     if (!guestNeedsSeek({ expected, local, roomPlaying: !!s.playing, sinceSeekMs: Date.now() - lastGuestSeek })) return;
-    bridge.command(true, expected);
+    bridge.command(!!s.playing, expected);
     lastGuestSeek = Date.now();
   }, 2000);
   return () => { alive = false; gen += 1; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
@@ -1325,7 +1339,7 @@ function lordSearchUrl(title, year) {
 
 function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lmFrame')) {
   if (!frame) return;
-  const list = [...new Set([...(embedUrls || []), embedUrl].filter(Boolean))];
+  const list = preferEmbeds([...(embedUrls || []), embedUrl]);
   if (list.length > 1) {
     frame.classList.remove('lord-browse');
     const pick = list.map((u, i) => `<button type="button" class="${i ? '' : 'active'}" data-lsrc="${esc(u)}" role="tab">Плеер ${i + 1}</button>`).join('');
@@ -1379,7 +1393,7 @@ async function resolveWatchPayload(payload, signal) {
         ? data.embedUrls
         : (data.embedUrl ? [data.embedUrl] : []);
       if (data.matched === true && (embedUrls.length || pageUrl)) {
-        return { data, pageUrl, embedUrls, source: data.source || item.source };
+        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), source: data.source || item.source };
       }
     } catch (error) {
       if (error?.name === 'AbortError') throw error;

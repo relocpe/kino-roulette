@@ -3,11 +3,21 @@
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+// Прямой iframe балансера отвечает на postMessage. Страница киносайта прячет плеер внутри себя, и время до нас не доходит.
+const DIRECT = /kodik|alloha|collaps|hdvb|videocdn|bazon|iframe\.cloud|playerjs|cdnmovies|voidboost|ustore|lumex|vibix|kinobox/i;
+export function preferEmbeds(urls) {
+  const list = [...new Set((urls || []).filter(Boolean))];
+  return list.sort((a, b) => Number(DIRECT.test(b)) - Number(DIRECT.test(a)));
+}
+
 export function parsePlayerMessage(raw) {
   const d = typeof raw === 'string' ? tryJson(raw) : raw;
   if (!d || typeof d !== 'object') return null;
 
-  if (d.event === 'time' && num(d.time) != null) return { at: d.time, duration: num(d.duration), playing: true };
+  if (d.event === 'time' && num(d.time) != null) {
+    const playing = d.paused === true ? false : d.paused === false ? true : d.playing === false ? false : true;
+    return { at: d.time, duration: num(d.duration), playing };
+  }
   if (d.event === 'play' || d.event === 'playing') return { playing: true, at: num(d.time), explicit: true };
   if (d.event === 'pause' || d.event === 'paused') return { playing: false, at: num(d.time), explicit: true };
   if ((d.event === 'seek' || d.event === 'seeked') && num(d.time) != null) return { at: d.time };
@@ -19,10 +29,10 @@ export function parsePlayerMessage(raw) {
     if (v.method === 'pause') return { playing: false, explicit: true };
   }
 
-  if (d.event === 'timeupdate') {
-    const seconds = num(d.value?.seconds) ?? num(d.data?.seconds) ?? num(d.value);
-    const duration = num(d.value?.duration) ?? num(d.data?.duration);
-    if (seconds != null) return { at: seconds, duration, playing: true };
+  if (d.event === 'timeupdate' || d.type === 'timeupdate' || d.type === 'timeUpdate') {
+    const seconds = num(d.value?.seconds) ?? num(d.data?.seconds) ?? num(d.data?.currentTime) ?? num(d.currentTime) ?? num(d.value) ?? num(d.time);
+    const duration = num(d.value?.duration) ?? num(d.data?.duration) ?? num(d.duration);
+    if (seconds != null) return { at: seconds, duration, playing: d.paused === true ? false : true };
   }
   if (d.method === 'getCurrentTime' && num(d.value) != null) return { at: d.value };
   if (d.event === 'infoDelivery' && d.info && num(d.info.currentTime) != null) {
@@ -74,6 +84,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     post({ api: 'seek', set: t });
     post({ api: 'seek', value: t });
     post({ method: 'seek', time: t });
+    post({ method: 'seek', value: t });
     post({ method: 'setCurrentTime', time: t });
     post({ key: 'kodik_player_api', value: { method: 'seek', seconds: t } });
     post({ context: 'player.js', version: '0.0.11', method: 'setCurrentTime', value: t });
@@ -100,24 +111,29 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     sendCommand(nextPlaying, seconds);
   };
 
-  const fromThisPlayer = (source) => {
+  const frameOrigin = () => {
+    try { return new URL(iframe.src, location.href).origin; } catch { return ''; }
+  };
+  const fromThisPlayer = (source, origin) => {
     const top = iframe.contentWindow;
-    if (!source || !top) return false;
-    if (source === top) return true;
-    try {
-      let w = source;
-      for (let i = 0; i < 4 && w; i += 1) {
-        if (w === top) return true;
-        const parent = w.parent;
-        if (!parent || parent === w) break;
-        w = parent;
-      }
-    } catch { /* чужой origin */ }
-    return false;
+    if (source && top) {
+      if (source === top) return true;
+      try {
+        let w = source;
+        for (let i = 0; i < 4 && w; i += 1) {
+          if (w === top) return true;
+          const parent = w.parent;
+          if (!parent || parent === w) break;
+          w = parent;
+        }
+      } catch { /* чужой origin */ }
+    }
+    const mine = frameOrigin();
+    return !!mine && mine !== 'null' && origin === mine;
   };
 
   const onMessage = (ev) => {
-    if (!fromThisPlayer(ev.source)) return;
+    if (!fromThisPlayer(ev.source, ev.origin)) return;
     const tick = parsePlayerMessage(ev.data);
     if (!tick) return;
     heard = true;
@@ -143,7 +159,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     post({ key: 'kodik_player_api', value: { method: 'get_time' } });
     post({ context: 'player.js', version: '0.0.11', method: 'getCurrentTime' });
     post({ api: 'getCurrentTime' });
-  }, 2500);
+  }, 1000);
 
   return {
     command,

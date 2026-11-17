@@ -56,7 +56,7 @@ function fmtClock(sec) {
   return `${m}:${String(x).padStart(2, '0')}`;
 }
 
-export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap } = {}) {
+export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus, onSync, onTransport, onSnap, onSeek } = {}) {
   if (!root) return () => {};
   const id = (sel) => root.querySelector(sel);
 
@@ -80,6 +80,12 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     if (!el) return;
     const now = clockNow();
     el.textContent = fmtClock(now);
+    const seek = id('[data-wp-seek]');
+    if (seek && document.activeElement !== seek) {
+      const max = Math.max(dur || 0, now, 1);
+      seek.max = String(Math.ceil(max));
+      seek.value = String(Math.min(Math.floor(now), Math.ceil(max)));
+    }
     const state = id('[data-wp-state]');
     if (state) state.textContent = sync.playing ? 'Идёт' : 'Пауза';
     const led = id('.wp-led');
@@ -106,6 +112,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       <span class="wp-led${sync.playing ? ' on' : ''}" aria-hidden="true"></span>
       <b data-wp-clock>${fmtClock(now)}</b>
       <span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span>
+      <label class="wp-seek"><input type="range" data-wp-seek min="0" max="${Math.max(1, Math.ceil(dur || now))}" step="1" value="${Math.floor(now)}" ${host ? '' : 'disabled'} aria-label="Перемотка"></label>
       ${host ? `<span class="wp-actions" role="group" aria-label="Воспроизведение"><button type="button" data-wp-play>Воспроизвести</button><button type="button" data-wp-pause>Пауза</button></span>` : ''}
       <button type="button" class="wp-syncbtn" data-wp-sync title="${host ? 'Все подтянутся к твоей позиции' : 'Подтянуть мой плеер к ведущему'}">${icon}<span>${host ? 'Синхронизировать всех' : 'К ведущему'}</span></button>
     </div>`;
@@ -113,6 +120,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
     id('[data-wp-play]')?.addEventListener('click', () => onTransport?.('play'));
     id('[data-wp-pause]')?.addEventListener('click', () => onTransport?.('pause'));
     id('[data-wp-sync]')?.addEventListener('click', () => onSnap?.());
+    id('[data-wp-seek]')?.addEventListener('change', (e) => { if (host) onSeek?.(Number(e.target.value)); });
   };
 
   const pushChat = (entry) => {

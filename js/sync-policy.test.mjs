@@ -21,8 +21,9 @@ describe('host change', () => {
     assert.deepEqual(hostChange({ at: 200, playing: undefined, expected: 80, sentPlaying: false }), { at: 200, playing: false });
     assert.equal(hostChange({ at: 80.4, playing: undefined, expected: 80, sentPlaying: false }), null);
   });
-  it('stays quiet right after our own command', () => {
-    assert.equal(hostChange({ at: 500, playing: true, expected: 10, sentPlaying: true, sinceSentMs: 500 }), null);
+  it('stays quiet right after our own command, but a new seek still goes out', () => {
+    assert.equal(hostChange({ at: 11, playing: true, expected: 10, sentPlaying: true, sinceSentMs: 500 }), null);
+    assert.deepEqual(hostChange({ at: 134, playing: true, expected: 10, sentPlaying: true, sinceSentMs: 500 }), { at: 134, playing: true });
   });
   it('ignores a tick without time', () => {
     assert.equal(hostChange({ at: null, playing: true }), null);
@@ -36,8 +37,9 @@ describe('guest drift', () => {
   it('leaves a small drift alone', () => {
     assert.equal(guestNeedsSeek({ expected: 100, local: 98.5, roomPlaying: true }), false);
   });
-  it('does not fight a paused room or repeat within the cooldown', () => {
-    assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: false }), false);
+  it('follows a paused seek and does not repeat within the cooldown', () => {
+    assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: false }), true);
+    assert.equal(guestNeedsSeek({ expected: 80.5, local: 80, roomPlaying: false }), false);
     assert.equal(guestNeedsSeek({ expected: 134, local: 60, roomPlaying: true, sinceSeekMs: 3000 }), false);
   });
 });

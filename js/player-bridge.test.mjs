@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parsePlayerMessage, shouldSnapGuest } from './player-bridge.js';
+import { parsePlayerMessage, preferEmbeds, shouldSnapGuest } from './player-bridge.js';
 
 describe('player bridge', () => {
   it('reads playerjs time', () => {
@@ -15,6 +15,20 @@ describe('player bridge', () => {
     const tick = parsePlayerMessage(JSON.stringify({ event: 'timeupdate', value: { seconds: 4, duration: 20 } }));
     assert.equal(tick.at, 4);
     assert.equal(tick.duration, 20);
+  });
+  it('reads a timeUpdate with currentTime', () => {
+    const tick = parsePlayerMessage({ type: 'timeUpdate', currentTime: 16.25, duration: 120 });
+    assert.equal(tick.at, 16.25);
+    assert.equal(tick.duration, 120);
+  });
+  it('puts a direct player iframe ahead of a site page', () => {
+    const ranked = preferEmbeds([
+      'https://2026-lord.pics/123',
+      'https://kodik.info/serial/1/abc',
+      'https://abalone.thealloha.club/?token_movie=a',
+    ]);
+    assert.match(ranked[0], /kodik|alloha/);
+    assert.match(ranked[2], /lord/);
   });
   it('ignores chat noise', () => {
     assert.equal(parsePlayerMessage({ type: 'chat', text: 'привет' }), null);
