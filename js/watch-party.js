@@ -1,5 +1,6 @@
 // Комната совместного просмотра (как Watch2Gether): чат + синхро по таймлайну ведущего.
 import { me, loggedIn } from './store.js?v=13';
+import { BASE } from './views.js?v=24';
 
 export const WATCH_PARTY_API = 'https://kino-roulette-watch-party.samevamp.workers.dev';
 
@@ -30,9 +31,8 @@ export async function createWatchRoom() {
   return d;
 }
 
-export function watchRoomLink(roomId, basePath) {
-  const base = (basePath || '/').replace(/\/?$/, '/');
-  return `${location.origin}${base}watch/${roomId}`;
+export function watchRoomLink(roomId) {
+  return `${location.origin}${BASE}watch/${roomId}`;
 }
 
 function fmtClock(sec) {
@@ -166,7 +166,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast } = {}) {
   };
 
   id('#wpCopy')?.addEventListener('click', async (e) => {
-    const link = watchRoomLink(roomId, root.dataset.base || '/');
+    const link = watchRoomLink(roomId);
     try { await navigator.clipboard.writeText(link); e.target.textContent = 'Скопировано'; setTimeout(() => (e.target.textContent = 'Ссылка'), 1500); } catch { prompt('Ссылка', link); }
   });
 
