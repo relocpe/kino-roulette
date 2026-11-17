@@ -2048,7 +2048,10 @@ V.initViews({
     } catch (err) { if (my === titleReq && (navigator.onLine === false || err?.name === 'TypeError' || err?.name === 'AbortError')) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Нет связи</h2><p class="desc">Не получилось загрузить страницу. Проверь интернет.</p><div class="actions"><button class="btn primary" type="button" id="tRetry">Повторить</button></div></div>'; $('#tRetry').onclick = () => V.navigate('title/' + id, { replace: true }); return; }
       if (my === titleReq) { stage.classList.add('show'); result.hidden = false; result.innerHTML = '<div class="info"><h2>Такой страницы нет</h2><p class="desc">Возможно, ссылка битая. <a href="catalog" data-nav>В каталог</a></p></div>'; } }
   },
-  leave() {},
+  leave() {
+    if (document.body.classList.contains('has-result')) resetResult();
+    setSpin('Крутить');
+  },
   watchRoom,
   spinWith(m) {
     prefs.sel = [...(m.sel || [])]; prefs.sub = {}; prefs.dec = []; prefs.from = prefs.to = '';
