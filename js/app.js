@@ -897,18 +897,20 @@ async function openLordWatch(t, btn) {
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу фильм на LordFilm…</div>';
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12000);
-  try {
-    const response = await fetch(LORD_RESOLVER, {
+  const resolverPromise = fetch(LORD_RESOLVER, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title,
         originalTitle: t.t || '',
+        imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
         year: t.y,
         type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
       }),
       signal: controller.signal,
     });
+  try {
+    const response = await resolverPromise;
     if (!response.ok) throw new Error(`LordFilm resolver returned ${response.status}`);
     const data = await response.json();
     const pageUrl = lordPageRe.test(data.url || '') ? data.url : '';
@@ -919,9 +921,18 @@ async function openLordWatch(t, btn) {
     }
     const browseUrl = lordPageRe.test(data.url || '') ? data.url : searchUrl;
     $('#lmExt').href = browseUrl;
-  mountLordFrame(null, browseUrl, title);
+    mountLordFrame(null, browseUrl, title);
+    resolverPromise.then(async (late) => {
+      if (!late.ok || !lm?.open) return;
+      const lateData = await late.json();
+      const latePage = lordPageRe.test(lateData.url || '') ? lateData.url : '';
+      if (lateData.matched === true && latePage) {
+        $('#lmExt').href = latePage;
+        mountLordFrame(lateData.embedUrl, latePage, title);
+      }
+    }).catch(() => {});
     if (data.reason === 'search-unavailable' || data.reason === 'upstream-unavailable') {
-      V.toast('Открыли LordFilm в плеере — поиск с твоего браузера', null, 3200);
+      V.toast('LordFilm в плеере — нажми на нужный постер в выдаче', null, 3200);
       return;
     }
     V.toast('Выбери точное совпадение в выдаче LordFilm', null, 2800);

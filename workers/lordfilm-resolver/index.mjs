@@ -85,8 +85,12 @@ function lordFilmRequestHeaders(url, cookie = '', swReferer = '') {
     Accept: LORD_ACCEPT,
     'Accept-Language': LORD_ACCEPT_LANGUAGE,
     'Cache-Control': 'max-age=0',
+    Priority: 'u=0, i',
     'Upgrade-Insecure-Requests': '1',
     'User-Agent': LORD_USER_AGENT,
+    'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
     ...(cookie ? { Cookie: cookie } : {}),
   };
   const viaServiceWorker = Boolean(swReferer)
@@ -121,7 +125,7 @@ async function warmLordFilmHost(host, fetcher) {
   const origin = `https://${host}`;
   let jar = mergeCookies('__sw=1');
   const { response: homeRes } = await fetchLordFilm(`${origin}/`, fetcher, jar);
-  jar = mergeCookies(jar, cookieHeaderFromResponse(homeRes));
+  if (homeRes.ok) jar = mergeCookies(jar, cookieHeaderFromResponse(homeRes));
   try {
     const swUrl = `${origin}/pr.sw.js`;
     const swResponse = await fetcher(swUrl, {
@@ -355,6 +359,7 @@ function setNegativeCache(key, result, now = Date.now()) {
 export async function resolveLordFilm(input, fetcher = fetch) {
   const title = String(input.title || '').trim();
   const originalTitle = String(input.originalTitle || '').trim();
+  const imdbId = /^tt\d+$/.test(String(input.imdbId || '').trim()) ? String(input.imdbId).trim() : '';
   const year = Number(input.year);
   const type = input.type;
   const search = new URL('/search', LORD_FILM_ORIGIN);
@@ -365,7 +370,7 @@ export async function resolveLordFilm(input, fetcher = fetch) {
   }
 
   try {
-    const queryTitles = [...new Set([title, originalTitle].filter(Boolean))];
+    const queryTitles = [...new Set([title, originalTitle, imdbId].filter(Boolean))];
     const wantedTitles = new Set(queryTitles.map(normalizedTitle).filter(Boolean));
     const cardsById = new Map();
     let pageBase;
@@ -478,7 +483,6 @@ export default {
     if (cached) return json(cached, 200, request);
 
     const result = await resolveLordFilm(input);
-    if (result.reason === 'search-unavailable') setNegativeCache(cacheKey, result);
     return json(result, 200, request);
   },
 };
