@@ -202,7 +202,7 @@ html[data-beta="1"] .opts button {
 
 /* ---------- карточка фильма ---------- */
 html[data-beta="1"] .rmeta { color: var(--ink-3); letter-spacing: .01em; }
-html[data-beta="1"] .rgenres { padding-top: 20px; color: rgb(241 235 226 / .55); line-height: 20px; }
+html[data-beta="1"] .rgenres { padding-top: 20px; color: var(--ink-3); line-height: 20px; }
 html[data-beta="1"] .facts { border-top: 1px solid rgb(241 235 226 / .16); }
 html[data-beta="1"] .fact:not(.score) b { font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -.01em; }
 html[data-beta="1"] .tile small,
@@ -272,6 +272,16 @@ html[data-beta="1"] .mood b {
   text-shadow: 0 1px 10px rgb(0 0 0 / .55);
 }
 html[data-beta="1"] .mood .mcol img { transition: transform .55s var(--ease); }
+html[data-beta="1"] .shelves { gap: 40px; }
+html[data-beta="1"] .shelf h2 {
+  font-weight: 650;
+  letter-spacing: -.03em;
+}
+html[data-beta="1"] .shelf .srow { padding-top: 16px; }
+html[data-beta="1"] .shelf .tlink {
+  text-decoration-color: rgb(241 235 226 / .28);
+  transition: color var(--t) var(--ease);
+}
 html[data-beta="1"] .mhead {
   border-radius: var(--r-22);
   box-shadow: inset 0 0 0 1px rgb(241 235 226 / .1), 0 24px 48px -28px rgb(0 0 0 / .7);
