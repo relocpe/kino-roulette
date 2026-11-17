@@ -10,6 +10,7 @@ import { mountYearRange } from './year-range.js?v=1';
 
 const $ = (s) => document.querySelector(s);
 const ZOMBI_RESOLVER = 'https://kino-roulette-zombi-resolver.samevamp.workers.dev/resolve';
+const KP_MIRROR_RESOLVER = 'https://kino-roulette-kp-mirror-resolver.samevamp.workers.dev/resolve';
 const LORD_RESOLVER = 'https://kino-roulette-lordfilm-resolver.samevamp.workers.dev/resolve';
 const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -898,29 +899,37 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = []) {
   frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
 }
 
+const watchSourceLabel = (source) => (
+  source === 'zombi' ? 'Zombi ↗' : source === 'kp-mirror' ? 'Зеркало КП ↗' : 'LordFilm ↗'
+);
+
 async function resolveWatchPayload(payload, signal) {
   const chain = [
-    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe },
-    { url: LORD_RESOLVER, pageRe: lordPageRe },
+    { url: ZOMBI_RESOLVER, pageRe: zombiPageRe, source: 'zombi' },
+    ...(payload.kinopoiskId ? [{ url: KP_MIRROR_RESOLVER, pageRe: /^https:\/\//, source: 'kp-mirror' }] : []),
+    { url: LORD_RESOLVER, pageRe: lordPageRe, source: 'lordfilm' },
   ];
   let last = null;
   for (const item of chain) {
     try {
+      const body = item.source === 'kp-mirror'
+        ? { kinopoiskId: payload.kinopoiskId, type: payload.type }
+        : payload;
       const response = await fetch(item.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
         signal,
       });
       if (!response.ok) continue;
       const data = await response.json();
       last = data;
-      const pageUrl = item.pageRe.test(data.url || '') ? data.url : '';
+      const pageUrl = data.url && (item.pageRe.test(data.url) || item.source === 'kp-mirror') ? data.url : '';
       const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
         ? data.embedUrls
         : (data.embedUrl ? [data.embedUrl] : []);
       if (data.matched === true && (embedUrls.length || pageUrl)) {
-        return { data, pageUrl, embedUrls, source: data.source || (item.url === ZOMBI_RESOLVER ? 'zombi' : 'lordfilm') };
+        return { data, pageUrl, embedUrls, source: data.source || item.source };
       }
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
@@ -963,10 +972,12 @@ async function openLordWatch(t, btn) {
   $('#lmFrame').innerHTML = '<div class="tm-load" aria-live="polite">Ищу плеер…</div>';
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
+  const kpId = kpCached(t.id);
   const payload = {
     title,
     originalTitle: t.t || '',
     imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
+    kinopoiskId: kpId || '',
     year: t.y,
     type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
   };
@@ -977,7 +988,7 @@ async function openLordWatch(t, btn) {
     if (data.matched === true && (embedUrls.length || pageUrl)) {
       const extUrl = pageUrl || (source === 'zombi' ? data.url : searchUrl);
       $('#lmExt').href = extUrl;
-      $('#lmExt').textContent = source === 'zombi' ? 'Zombi ↗' : 'LordFilm ↗';
+      $('#lmExt').textContent = watchSourceLabel(source);
       mountLordFrame(embedUrls[0], pageUrl, title, embedUrls);
       if (embedUrls.length > 1) V.toast('Несколько плееров — переключай вкладками выше', null, 2600);
       return;
