@@ -5,7 +5,7 @@ import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=35';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
 import { bindEmbed, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=10';
-import { bindLocalVideo, kpFromFilm, mountRoomVideo } from './room-player.js?v=1';
+import { bindLocalVideo, chooseStream, isSitePlayer, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=2';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { guestCommand, localPosition, noteHostTick, HOST_SEEK_PLAYING } from './sync-policy.js?v=4';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -905,7 +905,8 @@ async function startWatchTogether(t) {
 async function resolveOwnStream(film) {
   const kp = kpFromFilm(film);
   const fallback = /^https:\/\//i.test(film?.streamUrl || '') ? film.streamUrl : '';
-  if (!kp) return fallback;
+  const empty = { url: fallback, voice: film?.voice || '', streams: [] };
+  if (!kp) return empty;
   try {
     const response = await fetch(KP_MIRROR_RESOLVER, {
       method: 'POST',
@@ -920,11 +921,16 @@ async function resolveOwnStream(film) {
         stream: true,
       }),
     });
-    if (!response.ok) return fallback;
+    if (!response.ok) return empty;
     const data = await response.json();
-    return /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : fallback;
+    const streams = (Array.isArray(data.streams) ? data.streams : [])
+      .filter((item) => /^https:\/\//i.test(item?.url || ''))
+      .slice(0, 6);
+    const picked = chooseStream(streams, film?.voice) || (/^https:\/\//i.test(data.stream?.url || '') ? data.stream : null);
+    const url = (film?.voice && picked?.url) || fallback || picked?.url || '';
+    return { url, voice: film?.voice || picked?.label || '', streams };
   } catch {
-    return fallback;
+    return empty;
   }
 }
 
@@ -1020,21 +1026,45 @@ function watchRoom(id, panel, frame, titleEl) {
     frame.classList.remove('lord-browse');
     frame.innerHTML = '<div class="tm-load" aria-live="polite">Открываю фильм…</div>';
     const run = async () => {
-      let stream = hinted;
-      if (kpFromFilm(film)) {
-        const own = await resolveOwnStream(film);
-        if (my !== gen) return;
-        if (own) stream = own;
-      }
+      const own = kpFromFilm(film) ? await resolveOwnStream(film) : { url: hinted, voice: film.voice || '', streams: [] };
       if (my !== gen) return;
-      if (stream) {
-        frame.dataset.watchSrc = stream;
-        try {
-          await mountRoomVideo(frame, stream, title);
-          if (my !== gen) return;
+      const streams = own.streams?.length ? own.streams : [];
+      const site = embedUrl ? { url: embedUrl, label: 'Сайт' } : null;
+      const choices = site && !streams.some((item) => item.url === site.url) ? [...streams, site] : streams;
+      const stream = own.url || hinted;
+      const play = async (item, hops, announce) => {
+        if (!item?.url || my !== gen) return;
+        frame.__stopWatch?.();
+        frame.dataset.watchSrc = item.url;
+        frame.dataset.voice = item.label || '';
+        if (announce && ctl.isHost() && lastFilm) {
+          lastFilm = { ...lastFilm, streamUrl: item.url, voice: isSitePlayer(item.url) ? '' : (item.label || '') };
+          ctl.publishFilm(lastFilm);
+        }
+        const hop = () => {
+          const next = choices.find((other) => other.url !== item.url);
+          if (hops > 0 && next) play(next, hops - 1, ctl.isHost());
+        };
+        if (isSitePlayer(item.url)) {
+          mountLordFrame(item.url, pageUrl, title, [item.url], frame);
+          renderPicks(frame, choices, item.url, (next) => play(next, 0, true));
           attachBridge();
           return;
-        } catch { /* чужой плеер ниже, если поток не открылся */ }
+        }
+        try {
+          const video = await mountRoomVideo(frame, item.url, title);
+          if (my !== gen) return;
+          renderPicks(frame, choices, item.url, (next) => play(next, 0, true));
+          attachBridge();
+          frame.__stopWatch = watchPicture(video, video.__hls, hop);
+        } catch {
+          hop();
+        }
+      };
+      const initial = choices.find((item) => item.url === stream) || choices[0];
+      if (initial) {
+        await play(initial, 1, false);
+        return;
       }
       const src = embedUrl || pageUrl;
       if (!src || my !== gen) return;
@@ -1076,32 +1106,26 @@ function watchRoom(id, panel, frame, titleEl) {
         return;
       }
       const page = data.matched ? (pageUrl || lead) : lead;
-      frame.dataset.watchSrc = streamUrl || embed || page || '';
-      if (streamUrl) {
-        try { await mountRoomVideo(frame, streamUrl, title); }
-        catch { mountLordFrame(embed, page, title, embedUrls, frame); }
-      } else {
-        mountLordFrame(embed, page, title, embedUrls, frame);
-      }
-      attachBridge();
+      const next = {
+        id: t.id,
+        title,
+        year: t.y,
+        embedUrl: embed || undefined,
+        pageUrl: page || undefined,
+        streamUrl: streamUrl || undefined,
+        voice: hit.streams?.find((item) => item.url === streamUrl)?.label || hit.streams?.[0]?.label || undefined,
+        kinopoiskId: payload.kinopoiskId || undefined,
+        type: payload.type,
+        mode: 'stream',
+      };
+      const changed = !lastFilm || lastFilm.id !== next.id;
+      lastFilm = next;
       if (ctl.isHost()) {
-        const next = {
-          id: t.id,
-          title,
-          year: t.y,
-          embedUrl: embed || undefined,
-          pageUrl: page || undefined,
-          streamUrl: streamUrl || undefined,
-          kinopoiskId: payload.kinopoiskId || undefined,
-          type: payload.type,
-          mode: 'stream',
-        };
-        const changed = !lastFilm || lastFilm.id !== next.id;
-        lastFilm = next;
         ctl.publishFilm(lastFilm);
         if (changed) ctl.pushSync(0, false, false);
         if (pickedId && t.id === pickedId) V.clearWatchBoot();
       }
+      showEmbed(next);
     } catch {
       if (my !== gen) return;
       mountLordSearchPanel(lordSearchUrl(title, t.y), title, frame);
@@ -1148,7 +1172,10 @@ function watchRoom(id, panel, frame, titleEl) {
       showWait(info.host);
     },
     onOpenPlayer(film) {
-      if (ctl.isHost() && frame.querySelector('video, iframe')) return;
+      if (ctl.isHost() && frame.querySelector('video, iframe')) {
+        const voice = film?.voice || '';
+        if (!voice || frame.dataset.voice === voice) return;
+      }
       if (pickedId && film?.id && film.id !== pickedId) return;
       if (film && showEmbed(film)) return;
       if (film?.id) playTitle({ id: film.id, t: film.title, ru: film.title, y: film.year }, ctl);
@@ -1480,9 +1507,12 @@ async function resolveWatchPayload(payload, signal) {
       const embedUrls = Array.isArray(data.embedUrls) && data.embedUrls.length
         ? data.embedUrls
         : (data.embedUrl ? [data.embedUrl] : []);
-      const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : '';
+      const streams = (Array.isArray(data.streams) ? data.streams : [])
+        .filter((item) => /^https:\/\//i.test(item?.url || ''))
+        .slice(0, 6);
+      const streamUrl = /^https:\/\//i.test(data.stream?.url || '') ? data.stream.url : (streams[0]?.url || '');
       if (data.matched === true && (embedUrls.length || pageUrl || streamUrl)) {
-        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), streamUrl, source: data.source || item.source };
+        return { data, pageUrl, embedUrls: preferEmbeds(embedUrls), streamUrl, streams, source: data.source || item.source };
       }
     } catch (error) {
       if (error?.name === 'AbortError') throw error;

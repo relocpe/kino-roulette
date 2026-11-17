@@ -77,8 +77,12 @@ async function attachStream(result, body, fetcher) {
   if (!body?.stream || !result?.matched) return result;
   try {
     const stream = await resolveVeoStream(body, fetcher);
-    if (stream?.url) result.stream = { url: stream.url, label: stream.label || '', source: stream.source || '' };
-    else if (stream?.status) result.streamStatus = stream.status;
+    if (stream?.url) {
+      result.stream = { url: stream.url, label: stream.label || '', source: stream.source || '' };
+      if (Array.isArray(stream.options) && stream.options.length) {
+        result.streams = stream.options.map((item) => ({ url: item.url, label: item.label || '', source: item.source || '' }));
+      }
+    } else if (stream?.status) result.streamStatus = stream.status;
   } catch {
     /* страница плеера всё равно остаётся */
   }

@@ -1,11 +1,22 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { kpFromFilm } from './room-player.js';
+import { chooseStream, kpFromFilm } from './room-player.js';
 
 describe('kpFromFilm', () => {
   it('reads a kinopoisk id from the film or from the iframe.cloud address', () => {
     assert.equal(kpFromFilm({ kinopoiskId: '326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://iframe.cloud/iframe/326' }), '326');
     assert.equal(kpFromFilm({ embedUrl: 'https://kodik.info/video/1' }), '');
+  });
+});
+
+describe('chooseStream', () => {
+  it('keeps the dub the host picked', () => {
+    const streams = [
+      { url: 'https://cdn.example/dub.m3u8', label: 'Movie Dubbing' },
+      { url: 'https://cdn.example/orig.m3u8', label: 'Оригинал' },
+    ];
+    assert.equal(chooseStream(streams, 'Оригинал').url, 'https://cdn.example/orig.m3u8');
+    assert.equal(chooseStream(streams, '').label, 'Movie Dubbing');
   });
 });

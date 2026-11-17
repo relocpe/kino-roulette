@@ -24,6 +24,49 @@ function loadHls() {
   return hlsPromise;
 }
 
+export function isSitePlayer(url) {
+  return /iframe\.cloud|kodik|alloha|youtube|youtu\.be/i.test(String(url || ''));
+}
+
+export function chooseStream(streams, voice) {
+  const list = Array.isArray(streams) ? streams.filter((item) => item?.url) : [];
+  if (voice) {
+    const same = list.find((item) => item.label === voice);
+    if (same) return same;
+  }
+  return list[0] || null;
+}
+
+export function renderPicks(frame, items, activeUrl, onPick) {
+  frame.querySelector('.lm-pick')?.remove();
+  if (!items || items.length < 2) return;
+  const bar = document.createElement('div');
+  bar.className = 'lm-pick';
+  bar.setAttribute('role', 'tablist');
+  for (const item of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = item.label || 'Плеер';
+    btn.className = item.url === activeUrl ? 'active' : '';
+    btn.addEventListener('click', () => onPick(item));
+    bar.append(btn);
+  }
+  frame.prepend(bar);
+}
+
+export function watchPicture(video, hls, onFail) {
+  let done = false;
+  const stop = () => { done = true; clearTimeout(timer); };
+  const fail = () => { if (done) return; stop(); onFail?.(); };
+  const timer = setTimeout(() => {
+    if (video.videoWidth > 0 && video.readyState >= 2) { stop(); return; }
+    fail();
+  }, 8000);
+  video.addEventListener('loadeddata', () => { if (video.videoWidth > 0) stop(); });
+  hls?.on?.('hlsError', (_, data) => { if (data?.fatal) fail(); });
+  return stop;
+}
+
 export async function mountRoomVideo(frame, streamUrl, title) {
   frame.classList.remove('lord-browse');
   frame.replaceChildren();

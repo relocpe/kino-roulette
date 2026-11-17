@@ -42,7 +42,27 @@ function labelOf(item) {
 }
 
 function rank(item) {
-  return RU.test(labelOf(item)) ? 0 : 1;
+  const label = item?.label || labelOf(item);
+  if (RU.test(label)) return 0;
+  if (/оригинал|original/i.test(label)) return 2;
+  return 1;
+}
+
+export function collectStreams(groups) {
+  const seen = new Set();
+  const items = [];
+  for (const group of groups || []) {
+    const list = Array.isArray(group?.data) ? group.data : [];
+    for (const item of list) {
+      if (!item || item.method !== 'play') continue;
+      const url = httpsPlayUrl(item.url);
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      items.push({ url, label: labelOf(item) || group.source || 'Плеер', source: group.source || '' });
+    }
+  }
+  items.sort((a, b) => rank(a) - rank(b));
+  return items.slice(0, 6);
 }
 
 export function pickPlayable(json) {
@@ -94,21 +114,22 @@ async function resolveOnce(meta, fetcher) {
   const q = streamQuery(meta);
   if (!q) return null;
   let status = 0;
+  const groups = [];
   for (const source of SOURCES) {
     const got = await readJson(`${GOGO}/lite/${source}?${q}`, fetcher);
     status = got?.status || status;
     const json = got?.json;
     if (!json) continue;
-    const direct = pickPlayable(json);
-    if (direct) return { ...direct, source };
+    if (pickPlayable(json)) groups.push({ source, data: json.data });
     const season = pickSeasonUrl(json);
     if (!season) continue;
     const episodes = await readJson(season, fetcher);
     status = episodes?.status || status;
-    const episode = pickPlayable(episodes?.json);
-    if (episode) return { ...episode, source };
+    if (episodes?.json) groups.push({ source, data: episodes.json.data });
   }
-  return status ? { status } : null;
+  const options = collectStreams(groups);
+  if (!options.length) return status ? { status } : null;
+  return { ...options[0], options };
 }
 
 export async function resolveVeoStream(meta, fetcher = fetch) {

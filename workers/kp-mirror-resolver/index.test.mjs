@@ -6,7 +6,7 @@ import {
   mirrorPageUrls,
   resolveKinopoiskMirror,
 } from './index.mjs';
-import { pickPlayable, pickSeasonUrl, resolveVeoStream } from './stream.mjs';
+import { collectStreams, pickPlayable, pickSeasonUrl, resolveVeoStream } from './stream.mjs';
 
 describe('embedFromKinopoiskId', () => {
   it('builds iframe.cloud URL', () => {
@@ -75,6 +75,18 @@ describe('resolveKinopoiskMirror', () => {
     assert.equal(r.matched, true);
     assert.equal(r.embedUrl, 'https://iframe.cloud/iframe/42');
     assert.equal(r.mirror, 'direct');
+  });
+});
+
+describe('collectStreams', () => {
+  it('puts a dub ahead of the original and keeps both', () => {
+    const items = collectStreams([
+      { source: 'veoveo', data: [{ method: 'play', url: 'https://cdn.example/orig.m3u8', translate: 'Оригинал' }] },
+      { source: 'collaps', data: [{ method: 'play', url: 'https://cdn.example/dub.m3u8', translate: 'Movie Dubbing' }] },
+    ]);
+    assert.equal(items[0].url, 'https://cdn.example/dub.m3u8');
+    assert.equal(items[1].label, 'Оригинал');
+    assert.equal(items.length, 2);
   });
 });
 

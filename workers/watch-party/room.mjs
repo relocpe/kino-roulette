@@ -144,6 +144,7 @@ export class WatchPartyRoom {
         embedUrl: httpsUrl(m.film?.embedUrl),
         pageUrl: httpsUrl(m.film?.pageUrl),
         streamUrl: httpsUrl(m.film?.streamUrl),
+        voice: String(m.film?.voice || '').replace(/\s+/g, ' ').trim().slice(0, 80) || undefined,
         kinopoiskId: String(m.film?.kinopoiskId || '').replace(/\D/g, '').slice(0, 12) || undefined,
         mode: m.film?.mode === 'trailer' ? 'trailer' : 'stream',
         ytId: m.film?.ytId ? String(m.film.ytId).slice(0, 20) : undefined,
