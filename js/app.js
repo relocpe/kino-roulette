@@ -4,7 +4,7 @@ import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, 
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=34';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=14';
-import { bindEmbed, preferEmbeds, shouldSnapGuest } from './player-bridge.js?v=8';
+import { bindEmbed, preferEmbeds, prepareEmbedUrl, shouldSnapGuest } from './player-bridge.js?v=9';
 import { decideWatchOpen } from './watch-open.js?v=1';
 import { hostChange, guestNeedsSeek, localPosition, HOST_SEEK_PLAYING } from './sync-policy.js?v=3';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -1315,11 +1315,11 @@ function lordSearchUrl(title, year) {
 
 function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lmFrame')) {
   if (!frame) return;
-  const list = preferEmbeds([...(embedUrls || []), embedUrl]);
+  const list = preferEmbeds([...(embedUrls || []), embedUrl]).map(prepareEmbedUrl);
   if (list.length > 1) {
     frame.classList.remove('lord-browse');
     const pick = list.map((u, i) => `<button type="button" class="${i ? '' : 'active'}" data-lsrc="${esc(u)}" role="tab">Плеер ${i + 1}</button>`).join('');
-    frame.innerHTML = `<div class="lm-pick" role="tablist">${pick}</div><iframe src="${esc(list[0])}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+    frame.innerHTML = `<div class="lm-pick" role="tablist">${pick}</div><iframe src="${esc(list[0])}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
     const iframe = frame.querySelector('iframe');
     frame.querySelectorAll('[data-lsrc]').forEach((btn) => btn.addEventListener('click', () => {
       if (btn.classList.contains('active')) return;
@@ -1340,7 +1340,7 @@ function mountLordFrame(embedUrl, pageUrl, title, embedUrls = [], frame = $('#lm
     return;
   }
   const note = list[0] ? '' : '<p class="tm-load" style="position:absolute;inset:auto 0 0;padding:8px;font-size:12px;opacity:.75">Плеер на странице источника</p>';
-  frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+  frame.innerHTML = `${note}<iframe src="${esc(src)}" title="Плеер: ${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 }
 
 async function resolveWatchPayload(payload, signal) {
