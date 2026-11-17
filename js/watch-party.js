@@ -100,7 +100,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
       <b data-wp-clock>${fmtClock(now)}</b>
       <span data-wp-state>${sync.playing ? 'Идёт' : 'Пауза'}</span>
       ${host ? `<span class="wp-actions" role="group" aria-label="Воспроизведение"><button type="button" data-wp-play>Воспроизвести</button><button type="button" data-wp-pause>Пауза</button></span>` : ''}
-      <button type="button" class="wp-syncbtn" data-wp-sync>${icon}<span>Синхронизировать</span></button>
+      <button type="button" class="wp-syncbtn" data-wp-sync title="${host ? 'Все подтянутся к твоей позиции' : 'Подтянуть мой плеер к ведущему'}">${icon}<span>${host ? 'Синхронизировать всех' : 'К ведущему'}</span></button>
     </div>`;
     ensureTick();
     id('[data-wp-play]')?.addEventListener('click', () => onTransport?.('play'));
@@ -153,7 +153,7 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         onSync?.(sync, { snap: false });
         return;
       }
-      if (m.type === 'presence') { paintMembers(m.members); return; }
+      if (m.type === 'presence') { paintMembers(m.members?.map((x) => ({ ...x, host: x.host ?? (!!hostId && x.uid === hostId) }))); return; }
       if (m.type === 'chat') { pushChat(m); return; }
       if (m.type === 'sync') {
         sync = m.sync || sync;
@@ -167,7 +167,13 @@ export function openWatchPanel(root, { onOpenPlayer, onToast, onHello, onStatus,
         onToast?.(`Ведущий выбрал: ${film?.title || 'фильм'}`, null, 2600);
         return;
       }
-      if (m.type === 'host') onToast?.(`Ведущий: ${m.nick}`, null, 2000);
+      if (m.type === 'host') {
+        hostId = m.hostId || hostId;
+        host = !!hostId && hostId === watchIdentity().uid;
+        syncBuilt = '';
+        paintSync();
+        onToast?.(`Ведущий: ${m.nick}`, null, 2000);
+      }
     };
     ws.onclose = (ev) => {
       if (gone) return;

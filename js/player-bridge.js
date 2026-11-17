@@ -8,15 +8,15 @@ export function parsePlayerMessage(raw) {
   if (!d || typeof d !== 'object') return null;
 
   if (d.event === 'time' && num(d.time) != null) return { at: d.time, duration: num(d.duration), playing: true };
-  if (d.event === 'play' || d.event === 'playing') return { playing: true, at: num(d.time) };
-  if (d.event === 'pause' || d.event === 'paused') return { playing: false, at: num(d.time) };
+  if (d.event === 'play' || d.event === 'playing') return { playing: true, at: num(d.time), explicit: true };
+  if (d.event === 'pause' || d.event === 'paused') return { playing: false, at: num(d.time), explicit: true };
   if ((d.event === 'seek' || d.event === 'seeked') && num(d.time) != null) return { at: d.time };
 
   const v = d.value;
   if (d.key === 'kodik_player_api' && v && typeof v === 'object') {
     if (v.method === 'time_update' || v.method === 'time' || v.method === 'get_time') return { at: num(v.time) ?? num(v.seconds), duration: num(v.duration), playing: v.playing };
-    if (v.method === 'play') return { playing: true };
-    if (v.method === 'pause') return { playing: false };
+    if (v.method === 'play') return { playing: true, explicit: true };
+    if (v.method === 'pause') return { playing: false, explicit: true };
   }
 
   if (d.event === 'timeupdate') {
@@ -125,7 +125,7 @@ export function bindEmbed(iframe, { onTick, onReady } = {}) {
     if (tick.at != null) { at = tick.at; reported = tick.at; }
     if (tick.playing != null) playing = tick.playing;
     if (Date.now() < ignoreUntil) return;
-    onTick?.({ at, duration, playing, heard: true });
+    onTick?.({ at, duration, playing: tick.playing != null ? tick.playing : undefined, explicit: !!tick.explicit, heard: true });
   };
 
   let readySent = false;

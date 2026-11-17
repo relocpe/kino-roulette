@@ -57,14 +57,11 @@ export class WatchPartyRoom {
     return room;
   }
 
-  drop(ws) {
+  async drop(ws) {
     if (!this.live.has(ws)) return;
     this.live.delete(ws);
-    this.broadcast({ type: 'presence', members: this.membersList() });
-  }
-
-  membersList() {
-    return [...this.live.values()].map((m) => ({ uid: m.uid, nick: m.nick, auth: m.auth }));
+    const room = await this.loadRoom();
+    this.broadcast({ type: 'presence', members: await this.membersListAsync(room) });
   }
 
   async membersListAsync(room) {

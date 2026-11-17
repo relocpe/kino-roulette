@@ -3,9 +3,10 @@ import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, fit
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=2';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
 import * as V from './views.js?v=29';
-import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=9';
-import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=4';
+import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=10';
+import { bindEmbed, shouldSnapGuest } from './player-bridge.js?v=5';
 import { decideWatchOpen } from './watch-open.js?v=1';
+import { hostChange, guestNeedsSeek, localPosition } from './sync-policy.js?v=1';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
 import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=13';
@@ -931,8 +932,9 @@ function watchRoom(id, panel, frame, titleEl) {
   let pendingCmd = null;
   let lastFilm = null;
   let lastHostSent = 0;
+  let lastGuestSeek = 0;
+  let localTick = null;
   let readyTimer = 0;
-  let lastHostAt = 0;
   let attachBridge = () => {};
 
   const setReady = (ok) => {
@@ -1089,15 +1091,21 @@ function watchRoom(id, panel, frame, titleEl) {
     appliedOnce = true;
     if (!shouldSnapGuest({ snap, force, playEdge, first, playing })) return;
     bridge.command(playing, now);
+    lastGuestSeek = Date.now();
     guestAnchor = { at: now, wall: Date.now(), playing };
   };
 
-  const hostAt = () => (bridge?.heard() ? (window.__wpLocalAt || 0) : ctl.clock());
+  const hostAt = () => (bridge?.heard() && localTick ? localPosition(localTick) : ctl.clock());
+
+  const hostPush = (at, playing, snap) => {
+    lastHostSent = Date.now();
+    ctl.pushSync(at, playing, snap);
+  };
 
   const hostTransport = (playing) => {
     if (!ctl.isHost()) return;
     const at = bridge?.heard() ? hostAt() : ctl.clock();
-    ctl.pushSync(at, playing, true);
+    hostPush(at, playing, true);
     if (!bridge) {
       pendingCmd = { playing, at };
       return;
@@ -1119,16 +1127,16 @@ function watchRoom(id, panel, frame, titleEl) {
       V.toast('Плеер ещё не открыт', null, 1800);
       return;
     }
-    if (ctl.isHost() && bridge.heard()) {
-      const playing = window.__wpLocalPlaying != null ? !!window.__wpLocalPlaying : ctl.playing();
-      ctl.pushSync(window.__wpLocalAt || 0, playing, true);
+    if (ctl.isHost() && bridge.heard() && localTick) {
+      hostPush(hostAt(), localTick.playing, true);
       markSynced();
       return;
     }
     const at = ctl.clock();
     const playing = ctl.playing();
     bridge.command(playing, at);
-    if (ctl.isHost()) ctl.pushSync(at, playing, true);
+    lastGuestSeek = Date.now();
+    if (ctl.isHost()) hostPush(at, playing, true);
     markSynced();
   };
 
@@ -1140,6 +1148,7 @@ function watchRoom(id, panel, frame, titleEl) {
     appliedOnce = false;
     guestAnchor = null;
     guestPlaying = null;
+    localTick = null;
     setReady(false);
     bridge = bindEmbed(iframe, {
       onReady() {
@@ -1153,10 +1162,21 @@ function watchRoom(id, panel, frame, titleEl) {
         }
       },
       onTick(t) {
+        const playing = t.playing != null ? t.playing : (localTick?.playing ?? false);
+        localTick = { at: t.at, wall: Date.now(), playing };
         window.__wpLocalAt = t.at;
-        if (t.playing != null) window.__wpLocalPlaying = t.playing;
+        window.__wpLocalPlaying = playing;
         if (t.duration) ctl.setDuration(t.duration);
-        lastHostAt = t.at;
+        if (!ctl.isHost() || !playerReady) return;
+        const change = hostChange({
+          at: t.at,
+          playing: t.playing,
+          explicit: t.explicit,
+          expected: ctl.clock(),
+          sentPlaying: ctl.playing(),
+          sinceSentMs: Date.now() - lastHostSent,
+        });
+        if (change) hostPush(change.at, change.playing, true);
       },
     });
   };
@@ -1178,11 +1198,23 @@ function watchRoom(id, panel, frame, titleEl) {
   ctl.join(id);
   const beat = setInterval(() => {
     if (!ctl.isHost() || !ctl.playing()) return;
-    const heardAt = bridge?.heard() ? (window.__wpLocalAt || 0) : null;
-    if (heardAt != null && lastHostAt > 30 && heardAt < lastHostAt - 8) return;
-    ctl.pushSync(heardAt != null ? heardAt : ctl.clock(), true, false);
+    if (bridge?.heard() && localTick) {
+      if (!localTick.playing) return;
+      ctl.pushSync(hostAt(), true, false);
+      return;
+    }
+    ctl.pushSync(ctl.clock(), true, false);
   }, 5000);
-  return () => { alive = false; clearInterval(beat); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
+  const follow = setInterval(() => {
+    if (ctl.isHost() || !bridge?.heard() || !localTick || !playerReady) return;
+    const s = ctl.syncState();
+    const expected = sharedNow(s);
+    const local = localPosition(localTick);
+    if (!guestNeedsSeek({ expected, local, roomPlaying: !!s.playing, sinceSeekMs: Date.now() - lastGuestSeek })) return;
+    bridge.command(true, expected);
+    lastGuestSeek = Date.now();
+  }, 2000);
+  return () => { alive = false; clearInterval(beat); clearInterval(follow); clearTimeout(readyTimer); bridge?.destroy(); ctl.leave(); };
 }
 
 // ---------- Онлайн-плеер (Zombi / LordFilm) ----------
