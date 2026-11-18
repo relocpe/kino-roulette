@@ -368,7 +368,6 @@ function parse(path) {
     return { name: 'catalog' };
   }
   if (p[0] === 'title' && p[1]) return { name: 'title', id: p[1] };
-  if (p[0] === 'watch' && p[1]) return { name: 'watch', id: p[1].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) };
   if (p[0] === 'together') return { name: 'list', slug: 'dvoe' };
   if (p[0] === 'about') return { name: 'about' };
   if (p[0] === 'me') return { name: 'me', tab: ['favorites', 'watched', 'recent'].includes(p[1]) ? p[1] : 'favorites' };
@@ -402,11 +401,10 @@ function show(r, keepScroll) {
   else if (r.name === 'mood') renderMood(r.slug);
   else if (r.name === 'list') renderList(r.slug);
   else if (r.name === 'me') renderMe(r.tab);
-  else if (r.name === 'watch') renderWatch(r.id);
   else if (r.name === 'about') renderAbout();
   else if (r.name === 'beta') renderBeta();
 }
-const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', list: 'catalog', watch: 'catalog', me: 'me' })[n];
+const secOf = (n) => ({ roulette: 'roulette', title: 'roulette', catalog: 'catalog', mood: 'catalog', list: 'catalog', me: 'me' })[n];
 function moveDot() {
   const a = document.querySelector('.nav a.on'), dot = $('#navDot');
   if (!dot) return;
@@ -479,41 +477,9 @@ addEventListener('kr:beta', () => {
 export function openSearch() { focusSearch = true; if (route.name === 'catalog') { $('#q')?.focus(); focusSearch = false; } else navigate('catalog'); }
 addEventListener('keydown', (e) => {
   if (e.key !== '/' || e.target.closest('input,textarea,select,[contenteditable]') || document.querySelector('dialog[open]')) return;
-  const pick = document.querySelector('#wjPick');
-  if (document.body.classList.contains('inroom')) {
-    if (pick && !pick.hidden) { e.preventDefault(); pick.querySelector('input[type="search"]')?.focus(); }
-    return;
-  }
   e.preventDefault();
   openSearch();
 });
-/** Каталог внутри комнаты: тот же поиск, фильтры и сетка. Клик по плитке выбирает фильм и не уходит со страницы. */
-export function mountRoomCatalog(host, onPick) {
-  const f = { q: '', mode: 'all', genres: [], from: undefined, to: undefined, rating: 0, sort: 'rating' };
-  host.innerHTML = `<div class="wpick-head"><h2>Выбрать фильм</h2><button type="button" class="wroom-text" data-x="close">Закрыть</button></div>
-    <label class="search">${IC.search}<input type="search" placeholder="Название фильма, сериала или аниме" autocomplete="off" enterkeyhint="search" aria-label="Название"></label>
-    <div data-frow></div><div class="grid" data-grid></div>`;
-  let stop = null;
-  const gridEl = host.querySelector('[data-grid]');
-  const run = () => { stop?.(); stop = grid(gridEl, { ...f }); };
-  const row = filterRow(f, { onChange: run });
-  host.querySelector('[data-frow]').replaceWith(row);
-  const q = host.querySelector('input[type="search"]');
-  let deb = 0;
-  q.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { f.q = q.value.trim(); row.classList.toggle('dim', !!f.q); run(); }, 250); };
-  host.addEventListener('click', (e) => {
-    if (e.target.closest('[data-x="close"]')) { onPick(null); return; }
-    const a = e.target.closest('a.tile');
-    if (!a || !host.contains(a)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const t = titles.get(a.dataset.id);
-    if (t) onPick(t);
-  });
-  run();
-  requestAnimationFrame(() => q.focus());
-  return () => { clearTimeout(deb); stop?.(); };
-}
 const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
 
 function renderMood(slug) {
@@ -725,117 +691,6 @@ export function fillSim(sec, list, onPick) {
   sec.querySelectorAll('.sa').forEach((b) => (b.onclick = () => row.scrollBy({ left: +b.dataset.d * row.clientWidth * 0.8, behavior: reduce.matches ? 'auto' : 'smooth' })));
 }
 
-// ---------- Смотреть вместе ----------
-const WATCH_JOIN_KEY = 'kr:watchJoin';
-const WATCH_BOOT_KEY = 'kr:watchBoot';
-const WATCH_CREATED_KEY = 'kr:watchCreated';
-export function pendingWatchRoom() {
-  try { return sessionStorage.getItem(WATCH_JOIN_KEY) || ''; } catch { return ''; }
-}
-export function setPendingWatchRoom(id) {
-  try { if (id) sessionStorage.setItem(WATCH_JOIN_KEY, id); else sessionStorage.removeItem(WATCH_JOIN_KEY); } catch {}
-}
-const keep = (store, key, value) => {
-  try {
-    if (value) store.setItem(key, value);
-    else store.removeItem(key);
-  } catch {}
-};
-export function markWatchCreated(id) {
-  const value = id || '';
-  keep(sessionStorage, WATCH_CREATED_KEY, value);
-  keep(localStorage, WATCH_CREATED_KEY, value);
-}
-export function watchCreatedHere(id) {
-  try {
-    return !!id && (sessionStorage.getItem(WATCH_CREATED_KEY) === id || localStorage.getItem(WATCH_CREATED_KEY) === id);
-  } catch { return false; }
-}
-export function setWatchBoot(t, roomId) {
-  const raw = t ? JSON.stringify({ roomId: roomId || '', id: t.id, t: t.t, ru: t.ru, o: t.o, y: t.y, k: t.k }) : '';
-  keep(sessionStorage, WATCH_BOOT_KEY, raw);
-  keep(localStorage, WATCH_BOOT_KEY, raw);
-}
-export function peekWatchBoot(roomId) {
-  try {
-    const raw = sessionStorage.getItem(WATCH_BOOT_KEY) || localStorage.getItem(WATCH_BOOT_KEY);
-    const boot = JSON.parse(raw || 'null');
-    if (!boot?.id) return null;
-    if (roomId && boot.roomId !== roomId) return null;
-    return boot;
-  } catch { return null; }
-}
-export function clearWatchBoot() {
-  keep(sessionStorage, WATCH_BOOT_KEY, '');
-  keep(localStorage, WATCH_BOOT_KEY, '');
-}
-export function watchPageUrl(roomId) {
-  return new URL(`${BASE}watch/${roomId}`, location.origin).href;
-}
-export function openTheater() {
-  try {
-    return window.open('', 'kr-theater');
-  } catch {
-    return null;
-  }
-}
-function partyPanel(id) {
-    return `<aside class="wp-rail wroom-side" id="wjPanel" aria-label="Чат комнаты">
-      <header class="wp-head">
-        <input class="wp-nick" id="wpNick" type="text" maxlength="24" autocomplete="nickname" placeholder="Ваше имя" aria-label="Ваше имя">
-        <span class="wp-code" id="wpCode">${esc(id)}</span>
-        <button type="button" class="wp-invite" id="wpCopy">Ссылка</button>
-        <label class="wp-vol">Звук <input id="wpVol" type="range" min="0" max="100" step="5" value="40" aria-label="Громкость сообщений"></label>
-      </header>
-      <div class="wp-people" id="wpMembers" aria-live="polite"><p class="wp-wait">Подключаемся…</p></div>
-      <section class="wp-chat" id="wpChat" aria-label="Чат">
-        <div class="wp-msgs" id="wpMsgs"></div>
-        <form class="wp-form" id="wpForm" autocomplete="off"><input id="wpInput" type="text" maxlength="400" placeholder="Написать сообщение" aria-label="Сообщение"><button type="submit" class="wp-send" aria-label="Отправить">➤</button></form>
-      </section>
-    </aside>`;
-}
-function renderWatch(id) {
-  document.title = `Смотрим вместе · ${id}`;
-  document.body.classList.add('inroom');
-  setPendingWatchRoom(id);
-  if (!id || id.length < 6) {
-    document.body.classList.remove('inroom');
-    view.innerHTML = `<div class="wrap"><h1 class="vh">Комнаты нет</h1><p class="tsub">Ссылка битая. Попроси новую или открой фильм и нажми «Смотреть вместе».</p><a class="btn primary" href="catalog" data-nav>В каталог</a></div>`;
-    return;
-  }
-  const hasOpener = !!(window.opener && !window.opener.closed);
-  view.innerHTML = `<div class="wroom">
-      <div class="wroom-stage">
-        <header class="wroom-bar">
-          <a class="rexit" href="catalog" data-nav id="wjExit">${hasOpener ? `${IC.x}Закрыть` : `${IC.l}Каталог`}</a>
-          <h1 id="wjTitle">Подключаемся…</h1>
-          <button type="button" class="wroom-text" id="wjHide">Скрыть чат</button>
-          <button type="button" class="wroom-text" id="wjFull">Во весь экран</button>
-        </header>
-        <div class="wroom-tools" id="wjTools" hidden>
-          <label class="wroom-pick"><span class="sr">Сезон</span><select id="wjSeason"></select></label>
-          <label class="wroom-pick"><span class="sr">Серия</span><select id="wjEpisode"></select></label>
-          <button type="button" class="wroom-text" id="wjNext">Каталог</button>
-          <button type="button" class="wroom-text" id="wjRand">Случайный</button>
-          <button type="button" class="wroom-text" id="wjGo">Начинаем</button>
-        </div>
-        <div class="wroom-screen">
-          <div class="tm-frame wroom-frame" id="wjFrame"><div class="tm-load wj-wait" aria-live="polite">Подключаемся к комнате…</div></div>
-          <div class="wroom-count" id="wjCount" hidden></div>
-        </div>
-        <section class="wp-sync" id="wpSync" hidden></section>
-        <div class="wpick" id="wjPick" hidden></div>
-      </div>
-      <div class="wroom-hot" aria-hidden="true"></div>
-      <button type="button" class="wp-peek" id="wjPeek">Чат</button>
-      ${partyPanel(id)}
-    </div>`;
-  if (hasOpener) {
-    $('#wjExit')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); window.close(); });
-  }
-  const stop = H.watchRoom?.(id, $('#wjPanel'), $('#wjFrame'), $('#wjTitle'));
-  cleanup = () => { document.body.classList.remove('inroom'); stop?.(); };
-}
 $('#cpop').addEventListener('click', (e) => { if (e.target.id === 'cpop') e.target.close(); });
 
 // ---------- старт ----------
@@ -846,11 +701,6 @@ export function initViews(hooks) {
   // ссылки «Поделиться» вида ?t=tt123 открываются с кодом 200 (у глубоких путей на Pages статус 404, и Telegram может не показать превью)
   const sp = new URLSearchParams(location.search), tq = sp.get('t');
   if (tq && /^(tt\d+|al\d+)$/.test(tq)) history.replaceState({}, '', BASE + 'title/' + tq);
-  const wr = sp.get('room') || sp.get('watch');
-  if (wr && /^[A-Z0-9]{6,10}$/i.test(wr)) {
-    setPendingWatchRoom(wr.toUpperCase());
-    history.replaceState({}, '', BASE + 'watch/' + wr.toUpperCase());
-  }
   show(parse(rel()));
   requestAnimationFrame(moveDot);
 }
