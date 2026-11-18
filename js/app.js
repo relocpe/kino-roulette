@@ -1209,6 +1209,16 @@ function openLordInNewTab(url) {
   a.remove();
 }
 
+function kpIdFor(t) {
+  const have = kpCached(t?.id);
+  if (have) return Promise.resolve(have);
+  if (!t?.id) return Promise.resolve('');
+  return Promise.race([
+    ruTitles([t.id]).then(() => kpCached(t.id) || '').catch(() => kpCached(t.id) || ''),
+    new Promise((resolve) => setTimeout(() => resolve(kpCached(t.id) || ''), 1600)),
+  ]);
+}
+
 async function openLordWatch(t, btn) {
   const title = t.ru || ruCached(t.id) || t.t || '';
   const searchUrl = lordSearchUrl(title, t.y);
@@ -1226,16 +1236,16 @@ async function openLordWatch(t, btn) {
   stopWatchProgress(false);
   if (!lm.open) { lm.showModal(); document.documentElement.classList.add('locked'); }
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 14000);
-  const kpId = await kpIdFor(t);
-  const payload = {
-    title,
-    originalTitle: t.t || '',
-    imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
-    kinopoiskId: kpId || '',
-    year: t.y,
-    type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
-  };
   try {
+    const kpId = await kpIdFor(t);
+    const payload = {
+      title,
+      originalTitle: t.t || '',
+      imdbId: /^tt\d+$/.test(t.id || '') ? t.id : '',
+      kinopoiskId: kpId || '',
+      year: t.y,
+      type: /tvSeries|tvMiniSeries/.test(t.k || '') ? 'tv' : 'movie',
+    };
     const hit = await resolveWatchPayload(payload, controller.signal);
     if (!lm.open) return;
     if (!hit) throw new Error('No resolver response');
