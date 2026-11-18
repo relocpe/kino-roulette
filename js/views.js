@@ -5,7 +5,7 @@ import { buildShelves, shelfById, MIN_SHELF } from './curated.js?v=1';
 import * as S from './store.js?v=14';
 import { ruCached, localize, ruTitles } from './ru.js?v=3';
 import { mountYearRange, YEAR_RANGE_MAX } from './year-range.js?v=2';
-import { mountBetaWorld } from './beta-world.js?v=1';
+import { mountBetaWorld } from './beta-world.js?v=2';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -445,7 +445,7 @@ function renderAbout() {
 
 // ---------- Каталог ----------
 function renderBeta() {
-  document.title = 'Орбита · Кинорулетка';
+  document.title = 'Бета · Кинорулетка';
   view.innerHTML = '';
   const host = document.createElement('div');
   host.className = 'bw';
@@ -682,7 +682,7 @@ function drawAvatar() {
       <div class="amenu" role="menu" hidden><p class="anick">${esc(u.nickname)}</p><button type="button" role="menuitemcheckbox" data-x="fx"></button><button type="button" role="menuitemcheckbox" data-x="beta"></button><a role="menuitem" href="me/favorites" data-nav>Мои списки</a><button type="button" role="menuitem" data-x="acct">Аккаунт</button><a role="menuitem" href="about" data-nav>О сайте</a><button type="button" role="menuitem" data-x="out">Выйти</button></div>`;
     const b = box.querySelector('.ava'), m = box.querySelector('.amenu');
     const fxLbl = () => { const on = $('#fxBtn').getAttribute('aria-checked') === 'true'; const x = m.querySelector('[data-x="fx"]'); x.textContent = on ? 'Эффекты: вкл' : 'Эффекты: выкл'; x.setAttribute('aria-checked', String(on)); };
-    const betaLbl = () => { const x = m.querySelector('[data-x="beta"]'); x.textContent = 'Бета: Орбита'; x.setAttribute('aria-checked', 'false'); };
+    const betaLbl = () => { const x = m.querySelector('[data-x="beta"]'); x.textContent = 'Бета'; x.setAttribute('aria-checked', 'false'); };
     const syncMenu = () => { fxLbl(); betaLbl(); };
     b.onclick = (e) => { e.stopPropagation(); syncMenu(); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); };
     m.onclick = async (e) => { const x = e.target.closest('[data-x]'); if (!x) { m.hidden = true; return; } if (x.dataset.x === 'fx') { $('#fxBtn').click(); fxLbl(); } else if (x.dataset.x === 'beta') { m.hidden = true; navigate('beta'); } else if (x.dataset.x === 'acct') { m.hidden = true; openAccount(); } else { m.hidden = true; await S.logout(); toast('Вышли из аккаунта'); } };
@@ -695,7 +695,7 @@ addEventListener('kr:auth', () => { drawAvatar(); syncButtons(); if (route.name 
 addEventListener('kr:beta', () => {
   const x = document.querySelector('#avatar [data-x="beta"]');
   if (!x) return;
-  x.textContent = 'Бета: Орбита';
+  x.textContent = 'Бета';
   x.setAttribute('aria-checked', 'false');
 });
 
