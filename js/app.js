@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, yearLabel, countriesLabel } from './api.js?v=22';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=52';
+import * as V from './views.js?v=53';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=21';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
@@ -13,7 +13,7 @@ import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
 import { watchButtonText, progressNote, touchProgress, clearProgress, markProgress, formatClock, getProgress } from './watch-progress.js?v=2';
 import { mountYearRange } from './year-range.js?v=2';
-import { isBeta, betaFromQuery, betaAttr, playGenreGesture } from './beta.js?v=2';
+import { isBeta, betaFromQuery, playGenreGesture } from './beta.js?v=2';
 import { apiConfig } from './api-config.js?v=2';
 
 const $ = (s) => document.querySelector(s);
@@ -69,12 +69,11 @@ addEventListener('kr:lowfps', () => { if (fxAuto) motion(false); });
 // ---------- бета-оформление ----------
 const betaSw = $('#beta');
 function applyBeta() {
-  document.documentElement.dataset.beta = betaAttr(prefs.beta);
-  betaSw?.setAttribute('aria-checked', String(!!prefs.beta));
-  dispatchEvent(new CustomEvent('kr:beta'));
+  delete document.documentElement.dataset.beta;
+  betaSw?.setAttribute('aria-checked', 'false');
 }
 applyBeta();
-betaSw?.addEventListener('click', () => { prefs.beta = !prefs.beta; savePrefs(); applyBeta(); });
+betaSw?.addEventListener('click', () => { V.navigate('beta'); });
 
 // ---------- фильтры ----------
 const picker = $('#picker');
