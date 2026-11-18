@@ -2,7 +2,7 @@ import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips
 import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, yearLabel, countriesLabel } from './api.js?v=22';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=51';
+import * as V from './views.js?v=52';
 import { createWatchRoom, openWatchPanel, watchIdentity } from './watch-party.js?v=21';
 import { bindEmbed, isLordSite, playbackUrl, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { bindLocalVideo, canSyncEmbed, chooseStream, isSitePlayer, kpEmbed, kpFromFilm, mountRoomVideo, renderPicks, watchPicture } from './room-player.js?v=6';
@@ -13,7 +13,7 @@ import { storyBlob, shareLink, shareImage } from './share.js?v=3';
 import { watchedIds, getLists } from './store.js?v=14';
 import { watchButtonText, progressNote, touchProgress, clearProgress, markProgress, formatClock, getProgress } from './watch-progress.js?v=2';
 import { mountYearRange } from './year-range.js?v=2';
-import { isBeta, betaFromQuery, betaAttr } from './beta.js?v=1';
+import { isBeta, betaFromQuery, betaAttr, playGenreGesture } from './beta.js?v=2';
 import { apiConfig } from './api-config.js?v=2';
 
 const $ = (s) => document.querySelector(s);
@@ -312,7 +312,14 @@ const IMDB2G = {}; for (const g of GENRES) for (const n of [].concat(g.q?.genres
 function titleG(t) { const ids = (t.g || []).map((n) => IMDB2G[n]).filter(Boolean); if (t.src === 'al') ids.push('anime'); return ids; }
 // главный — первый выбранный жанр (в режиме «Аниме» — всегда пресет аниме, жанры добавляют тинт и атмосферу)
 const fxList = (sel) => (prefs.mode === 'anime' ? ['anime', ...sel] : sel);
-function applyFx() { setGenre(fxList(selG())); }
+let fxSeen = false;
+function applyFx() {
+  const ids = fxList(selG());
+  const before = document.body.dataset.fx;
+  setGenre(ids);
+  if (fxSeen && document.body.dataset.fx !== before) playGenreGesture(ids);
+  fxSeen = true;
+}
 function landFx(t) { const sel = selG(), tg = titleG(t); const both = sel.filter((x) => tg.includes(x)); setGenre(fxList(both.length ? both : sel)); }
 showRating(); syncUI(); applyFx();
 
@@ -486,12 +493,16 @@ function paint(force) {
     }
     const x = v * P - pos + CX;
     const d = Math.min(1, Math.abs(x - CX) / (P * 2.4));
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * 0.12).toFixed(3)})`;
-    el.style.opacity = (1 - d * 0.5).toFixed(3);
+    const focus = document.documentElement.dataset.beta === '1';
+    const fall = focus ? 0.34 : 0.12;
+    const dim = focus ? 0.78 : 0.5;
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,0) scale(${(1 - d * fall).toFixed(3)})`;
+    el.style.opacity = (1 - d * dim).toFixed(3);
     const c = Math.abs(x - CX) < P / 2; if (el.classList.contains('c') !== c) el.classList.toggle('c', c);
   }
 }
 addEventListener('resize', () => measure(), { passive: true });
+addEventListener('kr:beta', () => { if (document.body.dataset.route === 'roulette') measure(); });
 // лента-заполнитель — только из тайтлов текущего режима «Что» (аниме не мелькает в «Фильмах», и наоборот)
 const TAPE_N = innerWidth < 700 ? 72 : 112;
 async function seedsFor() {
@@ -568,7 +579,7 @@ async function spinRun(mine) {
   clearTimeout(retapeTimer); if (tapeKeyNow() !== tapeKey) retape();
   await Promise.race([tapeReady, new Promise((r) => setTimeout(r, 1500))]);
   reel.classList.remove('landed');
-  applyFx(); phase('spin');
+  applyFx(); playGenreGesture(fxList(selG())); phase('spin');
   const P0 = plan(); let lastQ = -1;
   // ступенчатая печать барабана (военный 24 к/с, мелодрама 12 к/с)
   const draw = (now) => { if (P0.fps) { const q = Math.floor(now / (1000 / P0.fps)); if (q === lastQ) return; lastQ = q; } paint(); };

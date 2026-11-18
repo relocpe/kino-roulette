@@ -214,6 +214,41 @@ function fillShelfMoods(root, shelves) {
   });
 }
 
+const betaOn = () => document.documentElement.dataset.beta === '1';
+const moodShelfCache = new Map();
+function moodTitles(m) {
+  if (moodShelfCache.has(m.slug)) return moodShelfCache.get(m.slug);
+  const p = fetchPage({ ...m.f, sort: m.f.sort }).then((r) => r.list.filter((t) => t.i).slice(0, 14)).catch(() => []);
+  moodShelfCache.set(m.slug, p);
+  return p;
+}
+function betaShelfHTML(title, href, inner) {
+  return `<section class="bshelf"><div class="bshelf-h"><h2>${esc(title)}</h2><a href="${href}" data-nav>Все</a></div><div class="brow">${inner}</div></section>`;
+}
+const betaSkel = () => `<div class="bshelves">${Array.from({ length: 2 }, () => `<section class="bshelf"><div class="bshelf-h"><h2></h2></div><div class="brow">${Array.from({ length: 6 }, () => '<div class="tile sk"><div class="tp"></div><b></b><small></small></div>').join('')}</div></section>`).join('')}</div>`;
+function mountBetaShelves(box) {
+  const gen = ++shelfGen;
+  box.hidden = !!cat.q;
+  box.innerHTML = `<h2 class="hcap">Подборки</h2>${betaSkel()}`;
+  const moodsP = Promise.all(MOODS.map(async (m) => ({ m, items: await moodTitles(m) })));
+  const shelvesP = loadCurated().then((titles) => buildShelves(titles).filter((s) => s.items.length >= MIN_SHELF)).catch(() => null);
+  Promise.all([moodsP, shelvesP]).then(([moods, shelves]) => {
+    if (gen !== shelfGen || !box.isConnected) return;
+    const blocks = [];
+    for (const { m, items } of moods) {
+      if (!items.length) continue;
+      blocks.push(betaShelfHTML(m.title, `catalog/mood/${m.slug}`, items.map(tile).join('')));
+    }
+    if (shelves) {
+      for (const s of shelves) blocks.push(betaShelfHTML(s.title, `catalog/list/${s.id}`, s.items.slice(0, 18).map(tile).join('')));
+    }
+    const fail = shelves == null ? `<p class="empty">Подборки не загрузились. <button class="tlink" type="button" data-cur-retry>Повторить</button></p>` : '';
+    box.innerHTML = `<h2 class="hcap">Подборки</h2><div class="bshelves">${blocks.join('')}</div>${fail}`;
+    const retry = box.querySelector('[data-cur-retry]');
+    if (retry) retry.onclick = () => { curatedTitles = null; mountShelves(box); };
+  });
+}
+
 let curatedTitles = null;
 function loadCurated() {
   if (!curatedTitles) curatedTitles = fetch('data/curated.json?v=1').then((r) => { if (!r.ok) throw new Error('curated'); return r.json(); }).then((d) => d.titles || []);
@@ -222,6 +257,7 @@ function loadCurated() {
 const shelfSkel = () => `<div class="moods">${Array.from({ length: 6 }, () => '<a class="mood sk" aria-hidden="true" tabindex="-1"><div class="mcol"></div><b></b></a>').join('')}</div>`;
 let shelfGen = 0;
 function mountShelves(box) {
+  if (betaOn()) { mountBetaShelves(box); return; }
   const gen = ++shelfGen;
   box.hidden = !!cat.q;
   box.innerHTML = `<h2 class="hcap">Подборки</h2>${shelfSkel()}`;
@@ -424,6 +460,11 @@ function renderCatalog() {
   cleanup = () => stop?.();
 }
 let focusSearch = false;
+addEventListener('kr:beta', () => {
+  if (route.name !== 'catalog') return;
+  cleanup?.();
+  renderCatalog();
+});
 export function openSearch() { focusSearch = true; if (route.name === 'catalog') { $('#q')?.focus(); focusSearch = false; } else navigate('catalog'); }
 addEventListener('keydown', (e) => {
   if (e.key !== '/' || e.target.closest('input,textarea,select,[contenteditable]') || document.querySelector('dialog[open]')) return;
