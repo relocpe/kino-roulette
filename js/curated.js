@@ -66,21 +66,6 @@ export const SHELF_SPECS = [
     sort: byVotes,
   },
   {
-    id: 'dvoe',
-    title: 'На двоих',
-    text: 'Мелодрамы последних лет, которые нормально включить вдвоём.',
-    limit: SHELF_LIMIT,
-    match: (t) => {
-      if (!isMovie(t) || t.y < 2019 || t.y > 2026 || (t.r || 0) < 6.8 || (t.v || 0) < 40000) return false;
-      const g = t.g || [];
-      if (!g.includes('Romance') || g.includes('Horror') || g.includes('War') || g.includes('Family') || g.includes('Animation')) return false;
-      const romanceAt = g.indexOf('Romance');
-      const actionAt = g.indexOf('Action');
-      return actionAt < 0 || romanceAt < actionAt;
-    },
-    sort: byVotes,
-  },
-  {
     id: 'anime',
     title: 'Аниме сейчас',
     text: 'Сезоны и фильмы 2024–2026 с самой большой аудиторией на AniList.',

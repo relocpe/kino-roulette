@@ -1,5 +1,6 @@
 import { LISTS, ANIME, byId } from './chips.js?v=10';
 import { noteMal, shikiAnime } from './ru.js?v=3';
+import { passesRegion, passesRuntime } from './pick-filters.js?v=1';
 
 // Аниме — отдельный режим «Что». Тайтлы IMDb, которые на самом деле аниме (по Wikidata: аниме-сериал/фильм/OVA),
 // в «Фильмах» и «Сериалах» не показываем. Плюс страховка по карточке: Animation + страна Япония.
@@ -132,6 +133,8 @@ export function matchLocal(t, g, s, f) {
     if (s.maxY && (!t.y || t.y > s.maxY)) return false;
     if (s.list && !LISTS[s.list].includes(t.id)) return false;
   }
+  if (!passesRuntime(t, f.dur)) return false;
+  if (f.region && (t.countries?.length || t.src === 'al') && !passesRegion(t, f.region)) return false;
   return true;
 }
 // Полная проверка по карточке тайтла (с интересами IMDb и страной).
@@ -139,6 +142,7 @@ export function matchFull(d, g, s, f) {
   if (!matchLocal(d, g, s, f)) return false;
   if (f.mode !== 'anime' && isAnime(d)) return false;
   if (f.skipMassIN !== false && isIndianTitle(d, d)) return false;
+  if (f.region && !passesRegion(d, f.region)) return false;
   if (!s || !d.interests) return true;
   const ids = d.interests;
   if (s.noI && s.noI.some((x) => ids.includes(x))) return false;

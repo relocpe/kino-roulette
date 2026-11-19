@@ -67,16 +67,6 @@ test('short evening is under 100 minutes and not a series', () => {
   assert.deepEqual(ids, ['ttshort']);
 });
 
-test('date shelf wants romance ahead of action', () => {
-  const titles = [
-    movie({ id: 'ttrom', y: 2024, g: ['Comedy', 'Drama', 'Romance'], v: 180000, r: 7.4 }),
-    movie({ id: 'ttact', y: 2024, g: ['Action', 'Comedy', 'Romance'], v: 500000, r: 7.4 }),
-    movie({ id: 'ttfam', y: 2023, g: ['Family', 'Romance'], v: 200000, r: 7.2 }),
-  ];
-  const ids = buildShelves(titles).find((s) => s.id === 'dvoe').items.map((t) => t.id);
-  assert.deepEqual(ids, ['ttrom']);
-});
-
 test('anime shelf is only recent anilist ids', () => {
   const titles = [
     movie({ id: 'al10', k: 'anime', y: 2025, r: 8.4, v: 200000 }),

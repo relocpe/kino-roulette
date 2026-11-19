@@ -1,8 +1,9 @@
 import { GENRES, SUBS, byId, GENRE_RU, isGenre, genreOk, A_SUB2G } from './chips.js?v=10';
-import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, yearLabel, countriesLabel } from './api.js?v=22';
+import { getPool, details, core, matchFull, matchLocal, poster, seedPosters, genreTape, reelPage, fitsMode, animeReady, isIndianTitle, yearLabel, countriesLabel } from './api.js?v=23';
+import { DURS, REGIONS, passesRegion } from './pick-filters.js?v=1';
 import { setGenre, phase, wow, plan, onReel, setMotion, glInfo, genreNow, ease, onRoute } from './fx.js?v=3';
 import { findTrailer, ytSearch } from './trailer.js?v=12';
-import * as V from './views.js?v=55';
+import * as V from './views.js?v=56';
 import { isLordSite, preferEmbeds, prepareEmbedUrl } from './player-bridge.js?v=13';
 import { canSyncEmbed, kpEmbed } from './room-player.js?v=6';
 import { ruTitles, ruCached, kpCached } from './ru.js?v=3';
@@ -25,12 +26,15 @@ const MAX = 3;
 let spinning = false;
 const MAIN = ['horror', 'thriller', 'scifi', 'comedy', 'drama', 'action', 'crime'];
 
-const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, fx: null, beta: false }, load(LS.prefs, {}));
+const prefs = Object.assign({ mode: 'all', sel: [], sub: {}, from: '', to: '', dec: [], rating: 0, known: false, noRepeat: true, region: '', dur: '', ruOnly: false, fx: null, beta: false }, load(LS.prefs, {}));
 // v6: весь каталог по умолчанию — рейтинг «любой», «Всё подряд»
 if (!prefs.v6) { prefs.rating = 0; prefs.known = false; prefs.v6 = true; }
 // v7: «Аниме» — режим «Что», а не жанр: старый выбор жанра «Аниме» и его уточнений переносим в режим
 if ((prefs.sel || []).includes('anime')) { prefs.mode = 'anime'; prefs.sel = [...prefs.sel.filter((x) => x !== 'anime'), A_SUB2G[prefs.sub?.anime]].filter(Boolean); }
 if (!['all', 'movie', 'series', 'anime'].includes(prefs.mode)) prefs.mode = 'all';
+if (!REGIONS[prefs.region]) prefs.region = '';
+if (!DURS[prefs.dur]) prefs.dur = '';
+prefs.ruOnly = !!prefs.ruOnly;
 prefs.sel = (prefs.sel || []).filter((id) => isGenre.has(id) && genreOk(byId[id], prefs.mode)).slice(0, MAX);
 prefs.sub = Object.fromEntries(Object.entries(prefs.sub || {}).filter(([g, x]) => prefs.sel.includes(g) && SUBS[g]?.includes(x)));
 prefs.beta = isBeta(prefs.beta);
@@ -240,9 +244,12 @@ const noWatched = () => prefs.noWatched ?? watchedIds().size > 0;
 $('#noWatched').addEventListener('click', () => { prefs.noWatched = !noWatched(); changed(); });
 addEventListener('kr:lists', () => syncUI());
 document.querySelectorAll('#known button').forEach((b) => b.addEventListener('click', () => { prefs.known = b.dataset.known === '1'; changed(); }));
+document.querySelectorAll('#region button').forEach((b) => b.addEventListener('click', () => { prefs.region = b.dataset.region || ''; changed(); }));
+document.querySelectorAll('#dur button').forEach((b) => b.addEventListener('click', () => { prefs.dur = b.dataset.dur || ''; changed(); }));
+$('#ruOnly')?.addEventListener('click', () => { prefs.ruOnly = !prefs.ruOnly; changed(); });
 
 const resetYears = () => Object.assign(prefs, { dec: [], from: '', to: '' });
-const resetRate = () => { Object.assign(prefs, { rating: 0, known: false, noRepeat: true, noWatched: null }); rating.value = 0; showRating(); };
+const resetRate = () => { Object.assign(prefs, { rating: 0, known: false, noRepeat: true, noWatched: null, region: '', dur: '', ruOnly: false }); rating.value = 0; showRating(); };
 const resetGenres = () => { prefs.sel = []; prefs.sub = {}; $('#hint').textContent = ''; };
 $('#pReset').addEventListener('click', () => {
   const s = picker.dataset.sec;
@@ -273,7 +280,9 @@ function yearsVal() {
 function rateVal() {
   const r = Number(prefs.rating);
   const rs = r ? `от ${r.toFixed(r % 1 ? 1 : 0)}★` : '';
-  return prefs.known ? (rs ? `${rs} · известные` : 'Только известные') : rs || 'Всё подряд';
+  const extra = [REGIONS[prefs.region]?.label, DURS[prefs.dur], prefs.ruOnly ? 'русское название' : ''].filter(Boolean);
+  const base = prefs.known ? (rs ? `${rs} · известные` : 'Только известные') : rs || (extra.length ? '' : 'Всё подряд');
+  return [base, ...extra].filter(Boolean).join(' · ') || 'Всё подряд';
 }
 function sumVal() {
   const parts = [prefs.mode === 'all' ? '' : TYPE_V[prefs.mode], prefs.sel.length ? genreVal() : '', yearsVal() === 'Любые' ? '' : yearsVal(), rateVal() === 'Всё подряд' ? '' : rateVal()].filter(Boolean);
@@ -289,6 +298,9 @@ function syncUI() {
   document.querySelectorAll('#types button[data-mode]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.mode === prefs.mode)));
   nr.setAttribute('aria-checked', String(!!prefs.noRepeat));
   $('#noWatched').setAttribute('aria-checked', String(noWatched()));
+  $('#ruOnly')?.setAttribute('aria-checked', String(!!prefs.ruOnly));
+  document.querySelectorAll('#region button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.region || '') === (prefs.region || ''))));
+  document.querySelectorAll('#dur button').forEach((x) => x.setAttribute('aria-checked', String((x.dataset.dur || '') === (prefs.dur || ''))));
   const bad = pairs().filter(([, s]) => (prefs.mode === 'movie' && s?.series) || (prefs.mode === 'series' && s?.movie));
   const warn = bad.length ? bad.map(([, s]) => s.label).join(' и ') + (prefs.mode === 'movie' ? ' бывают только среди сериалов.' : ' бывают только среди фильмов.') : '';
   if (warn) $('#hint').textContent = warn;
@@ -384,7 +396,7 @@ function filters() {
   if (from && to && from > to) [from, to] = [to, from];
   // порог голосов отсекает пустые заглушки: фильмы от 1000, сериалы от 500; «Только известные» — от 25k/10k
   const known = !!prefs.known;
-  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 1800, vs: known ? 10000 : 800, known, skipMassIN: true };
+  return { mode: prefs.mode, from, to, minRating: Number(prefs.rating) || 0, vm: known ? 25000 : 1800, vs: known ? 10000 : 800, known, skipMassIN: true, region: prefs.region || '', dur: prefs.dur || '', ruOnly: !!prefs.ruOnly };
 }
 
 // ---------- барабан ----------
@@ -509,7 +521,7 @@ async function seedsFor() {
 }
 let catalogWanted = false;
 var tapeKey = '';
-const tapeKeyNow = () => JSON.stringify([prefs.mode, prefs.sel, prefs.sub, prefs.from, prefs.to, prefs.rating, prefs.known]);
+const tapeKeyNow = () => JSON.stringify([prefs.mode, prefs.sel, prefs.sub, prefs.from, prefs.to, prefs.rating, prefs.known, prefs.region, prefs.dur, prefs.ruOnly]);
 function retape() { tapeKey = tapeKeyNow(); tapeReady = seedsFor().then((s) => { display = s; return buildTape(s, TAPE_N, true); }).catch(() => { tapeKey = ''; }); }
 var retapeTimer = 0;
 function scheduleRetape() { if (tapeKeyNow() === tapeKey) return; clearTimeout(retapeTimer); retapeTimer = setTimeout(() => { if (!spinning && tapeKeyNow() !== tapeKey) retape(); }, 250); }
@@ -532,6 +544,16 @@ const driftOn = () => !spinning && result.hidden && V.route.name === 'roulette' 
 function drift(now) {
   driftRaf = 0;
   if (!driftOn()) { endMove(); if (!spinning && P > 0) { pos = Math.round(pos / P) * P; paint(); } return; }
+  // без эффектов лента просто едет, а не стоит по 2.6 секунды
+  if (document.body.classList.contains('fx-still')) {
+    dMove = null; dHold = 0; $('#gate')?.classList.remove('mv');
+    const dt = Math.min(0.05, (now - driftLast) / 1000);
+    driftLast = now;
+    pos += P * 0.22 * dt;
+    paint();
+    driftRaf = requestAnimationFrame(drift);
+    return;
+  }
   if (dMove) {
     const u = Math.min(1, (now - dMove.t0) / MOVE); pos = dMove.from + P * eMove(u); paint();
     if (u < 1) { driftRaf = requestAnimationFrame(drift); return; }
@@ -597,8 +619,8 @@ async function spinRun(mine) {
     phase('idle'); finish();
     if (ch.empty) {
       // что сильнее режет выборку: годы/рейтинг или жанры
-      const narrow = prefs.from || prefs.to || Number(prefs.rating) || prefs.known;
-      say('Под такие фильтры ничего не нашлось', narrow ? ['Сбросить годы и рейтинг', () => { resetYears(); resetRate(); changed(); }] : ['Убрать жанры', () => { resetGenres(); changed(); }]);
+      const narrow = prefs.from || prefs.to || Number(prefs.rating) || prefs.known || prefs.region || prefs.dur || prefs.ruOnly;
+      say('Под такие фильтры ничего не нашлось', narrow ? ['Сбросить фильтры', () => { resetYears(); resetRate(); changed(); }] : ['Убрать жанры', () => { resetGenres(); changed(); }]);
     } else say(ch.error);
     return;
   }
@@ -668,16 +690,26 @@ async function choose() {
   let reset = false;
   if (!fresh.length && pool.length) { fresh = pool.slice(); reset = true; }
   fresh.sort(() => Math.random() - 0.5);
+  const russianTitle = async (t) => {
+    if (!f.ruOnly) return true;
+    if (t.ru || ruCached(t.id) || /[а-яё]/i.test(t.t || '')) return true;
+    await Promise.race([ruTitles([t.id]).catch(() => {}), new Promise((resolve) => setTimeout(resolve, 900))]);
+    return !!(ruCached(t.id) || /[а-яё]/i.test(t.t || ''));
+  };
   for (const c of fresh.slice(0, 10)) {
     const g = byId[c.g], s = byId[c.s];
-    if (c.t.src === 'al') { if (matchLocal(c.t, g, s, f)) return { win: c, pool, offline: res.offline, reset }; continue; }
+    if (c.t.src === 'al') { if (matchLocal(c.t, g, s, f) && await russianTitle(c.t)) return { win: c, pool, offline: res.offline, reset }; continue; }
     let d = null;
     // офлайн-записи уже проверены при сборке каталога — не ждём таймаутов API
     if (!c.snap) for (let k = 0; k < (res.offline ? 1 : 2) && !d; k++) { try { d = await core(c.t.id); } catch {} }
-    if (!d) { if (matchLocal(c.t, g, s, f) && (c.snap || !s || !(s.anyI || s.noI))) return { win: c, pool, offline: res.offline, reset }; continue; }
+    if (!d) {
+      const countryKnown = !f.region || passesRegion(c.t, f.region);
+      if (matchLocal(c.t, g, s, f) && countryKnown && (c.snap || !s || !(s.anyI || s.noI)) && await russianTitle(c.t)) return { win: c, pool, offline: res.offline, reset };
+      continue;
+    }
     d.i = d.i || c.t.i;
     if (isIndianTitle(c.t, d)) { bad.add(c.t.id); continue; }
-    if (matchFull(d, g, s, f)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
+    if (matchFull(d, g, s, f) && await russianTitle(d)) return { win: { ...c, t: d }, pool, offline: res.offline, reset };
     bad.add(c.t.id);
   }
   const want = P.map(([g, s]) => (s ? `${g.label}, ${s.label}` : g.label).toLowerCase()).join(' или ');
@@ -766,10 +798,9 @@ function render(t, full) {
   const dirs = t.src === 'al' ? [] : ruN((t.directors || []).slice(0, 2), t.dirIds), cast = t.src === 'al' ? [] : ruN((t.stars || []).slice(0, 3), t.starIds);
   // описание: сюжет из ру-вики → вводная ру-вики без фраз о происхождении → английский сюжет (lang=en)
   const ruPlot = (t.plotRu ? cleanWiki(t.plotRu) : '') || plotFromLead(cleanWiki(t.wiki || '')), lead = t.wiki ? stripOrigin(cleanWiki(t.wiki)) : '';
-  // английский — только когда точно известно, что русского нет (после загрузки деталей), без мелькания
-  const txt = ruPlot || lead || (full ? t.p : ''), isEn = !ruPlot && !lead && !!txt;
-  const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>`
-    : full ? '' : '<p class="desc muted">Загружаю описание…</p>';
+  const imdbPlot = cleanWiki(t.p || '');
+  const txt = ruPlot || lead || imdbPlot, isEn = !ruPlot && !lead && !!imdbPlot;
+  const desc = txt ? `<p class="desc${isEn ? ' en' : ''}" id="desc"${isEn ? ' lang="en"' : ''}>${esc(txt)}</p><button class="moreDesc" type="button" data-act="more" hidden>Ещё</button>` : '';
   const keepPoster = result.querySelector('.poster img')?.dataset.id === t.id;
   const posterHTML = `<div class="pcol"><div class="poster${t.i ? '' : ' miss'}" id="rposter" data-t="${esc(title)}">${t.i ? `<img src="${poster(t.i, 600)}" data-id="${t.id}" alt="Постер: ${esc(title)}" onerror="this.parentNode.classList.add('miss')">` : ''}</div>${genresRu ? `<p class="rgenres">${esc(genresRu)}</p>` : ''}</div>`;
   const fact = (k, v, cls = '') => `<div class="fact${cls}"><small>${k}</small><b>${v}</b></div>`;
@@ -792,7 +823,7 @@ function render(t, full) {
         <button class="btn primary watch-main" type="button" data-act="lord" aria-label="Смотреть в плеере на сайте">${ico.play}${esc(watchLbl)}</button>
         <button class="btn" type="button" data-act="trailer"${tr === false ? ' disabled' : ''}>${tr === false ? 'Трейлера нет' : 'Трейлер'}</button>
         <button class="btn" type="button" data-act="where" aria-expanded="false" aria-controls="where">Где посмотреть ${ico.ext}</button>
-        <button class="btn sq" type="button" data-act="share" aria-label="Поделиться" title="Поделиться">${ico.share}</button>
+        <button class="btn" type="button" data-act="share">Поделиться</button>
         <span class="lacts">${V.iconBtns(t.id)}</span>
         <div class="where" id="where" hidden>${whereLinks(t, title)}</div>
       </div>
@@ -1292,7 +1323,32 @@ function remember(t, chip, g) {
   save(LS.hist, hist); drawHistory();
 }
 function patchHistory(d) { const h = hist.find((x) => x.id === d.id); if (h && d.ru) { h.ru = d.ru; save(LS.hist, hist); drawHistory(); } }
-function drawHistory() { dispatchEvent(new CustomEvent('kr:hist')); }
+function drawHistory() {
+  const box = $('#recents'), row = $('#recentsRow');
+  if (!box || !row) { dispatchEvent(new CustomEvent('kr:hist')); return; }
+  const onHome = document.body.dataset.route === 'roulette' || document.body.dataset.route === 'title' || !document.body.dataset.route;
+  const list = hist.slice(0, 8);
+  box.hidden = !onHome || !list.length;
+  row.innerHTML = list.map((h) => {
+    const title = h.ru || ruCached(h.id) || h.t || 'Фильм';
+    const img = h.i ? `<img src="${poster(h.i, 200)}" alt="">` : '';
+    return `<button type="button" class="rmini" data-id="${esc(h.id)}">${img}<span>${esc(title)}</span></button>`;
+  }).join('');
+  dispatchEvent(new CustomEvent('kr:hist'));
+}
+$('#recents')?.addEventListener('click', (e) => {
+  const mini = e.target.closest('.rmini');
+  if (!mini || spinning) return;
+  const h = hist.find((x) => x.id === mini.dataset.id);
+  if (!h) return;
+  landFx(h);
+  result.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+  result.innerHTML = '';
+  result.hidden = true;
+  showResult(h, h.chip, h.gc, mini.getBoundingClientRect());
+});
+addEventListener('kr:route', () => drawHistory());
+drawHistory();
 
 // ---------- разделы ----------
 function resetResult() {

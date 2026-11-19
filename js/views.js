@@ -1,4 +1,4 @@
-// Разделы: Каталог, подборки, /title/:id, На двоих, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
+// Разделы: Каталог, подборки, /title/:id, Мои списки, вход. Роутинг по путям (на GitHub Pages — через 404.html).
 import { GENRES, GENRE_RU, genreOk } from './chips.js?v=10';
 import { getJSON, norm, normAnime, poster, animeReady, isAnime, isIndianTitle, searchSnapTitles, browseSnap, tileMetaLine } from './api.js?v=22';
 import { buildShelves, shelfById, MIN_SHELF } from './curated.js?v=1';
@@ -368,7 +368,6 @@ function parse(path) {
     return { name: 'catalog' };
   }
   if (p[0] === 'title' && p[1]) return { name: 'title', id: p[1] };
-  if (p[0] === 'together') return { name: 'list', slug: 'dvoe' };
   if (p[0] === 'about') return { name: 'about' };
   if (p[0] === 'me') return { name: 'me', tab: ['favorites', 'watched', 'recent'].includes(p[1]) ? p[1] : 'favorites' };
   if (p[0] === 'beta') return { name: 'beta' };
@@ -387,6 +386,7 @@ function show(r, keepScroll) {
   cleanup?.(); cleanup = null;
   const prev = route; route = r;
   document.body.dataset.route = r.name;
+  dispatchEvent(new CustomEvent('kr:route'));
   H.fxRoute?.();
   $('#cpop')?.open && $('#cpop').close();
   document.querySelectorAll('[data-sec-link]').forEach((a) => { const on = a.dataset.secLink === secOf(r.name); a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
