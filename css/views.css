@@ -215,7 +215,7 @@ body.inroom .toast:not(:has(.tbtn:not([hidden]))) { pointer-events: none; }
   body[data-route="title"] .info { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
   /* результат: контент не уходит под пульт и таб-бар; под пультом — подложка в цвет фона */
   body[data-route="roulette"] .info { padding-bottom: calc(56px + 8px + 64px + 32px + env(safe-area-inset-bottom)); }
-  body[data-route="roulette"].has-result::after { content: ''; position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; height: calc(56px + 8px + 64px + 28px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #0C0B0A 55%, rgb(12 11 10 / 0)); pointer-events: none; }
+  body[data-route="roulette"].has-result::after { content: ''; position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; height: calc(56px + 8px + 64px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #0C0B0A 55%, rgb(12 11 10 / 0)); pointer-events: none; }
   body.inroom .toast { bottom: calc(68px + env(safe-area-inset-bottom)); }
   .view { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
   .wrap { padding: 4px 16px 0; }

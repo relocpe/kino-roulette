@@ -380,15 +380,21 @@ body.authed .panel .sec[data-sec="beta"] { display: none !important; }
   @keyframes tin { from { opacity: 0; transform: translateY(8px); } }
   /* результат: постер во всю ширину сверху, ниже текст */
   .result { top: -52px; display: block; }
+  body.has-result .result { position: relative; top: -52px; margin-bottom: -52px; display: block; }
   body.has-result .fxwrap { -webkit-mask-image: linear-gradient(#000 40dvh, rgb(0 0 0 / .1) 70dvh); mask-image: linear-gradient(#000 40dvh, rgb(0 0 0 / .1) 70dvh); }
   .pcol { width: 100%; }
   .rgenres { padding: 14px 20px 4px; font-size: 13px; line-height: 19px; }
-  .poster { position: relative; width: 100%; height: min(62dvh, 148vw); }
+  .poster { position: relative; width: 100%; height: calc(100dvh - 486px - env(safe-area-inset-bottom)); }
+  body[data-route="roulette"].has-result .poster { height: calc(100dvh - 558px - env(safe-area-inset-bottom)); }
+  body[data-route="title"].has-result:has(#recents:not([hidden])) .poster { height: calc(100dvh - 574px - env(safe-area-inset-bottom)); }
+  body[data-route="roulette"].has-result:has(#recents:not([hidden])) .poster { height: calc(100dvh - 650px - env(safe-area-inset-bottom)); }
   .poster img { object-position: 50% 22%; }
   .poster::before { z-index: 1; }
   /* низ постера уходит в чистый фон, без грязного перехода к тексту */
   .poster:not(.miss)::before { content: ''; position: absolute; inset: auto 0 0; height: 45%; background: linear-gradient(transparent, #0C0B0A); pointer-events: none; }
-  .info { padding: 22px 20px calc(168px + env(safe-area-inset-bottom)); max-width: none; }
+  .info { display: flex; flex-direction: column; max-width: none; padding: 22px 20px calc(56px + 12px + env(safe-area-inset-bottom)); }
+  .info .actions { order: 1; }
+  .info .facts, .info .desc, .info .moreDesc, .info .sim { order: 2; }
   .rmeta { margin-top: 10px; font-size: 14px; line-height: 20px; }
   .result h2 { margin-top: 0; font-size: clamp(40px, 13vw, 56px); line-height: .95; letter-spacing: -.045em; }
   .result h2.l { font-size: clamp(34px, 10vw, 44px); line-height: 1; }
@@ -402,7 +408,9 @@ body.authed .panel .sec[data-sec="beta"] { display: none !important; }
   .actions { margin-top: 20px; gap: 8px; flex-wrap: wrap; }
   .actions .btn.watch-main { flex: 1 1 100%; order: -1; height: 52px; font-size: 16px; }
   .actions .btn:not(.watch-main):not(.sq) { flex: 1 1 calc(50% - 4px); min-height: 48px; height: auto; padding: 12px 14px; font-size: 15px; }
-  .recents, body.has-result .recents { left: 12px; right: 12px; transform: none; max-width: none; bottom: calc(56px + 128px + env(safe-area-inset-bottom)); }
+  .recents { left: 12px; right: 12px; transform: none; max-width: none; bottom: calc(56px + 8px + 118px + 12px + env(safe-area-inset-bottom)); }
+  body[data-route="roulette"].has-result .recents { left: 12px; right: 12px; transform: none; max-width: none; bottom: calc(56px + 8px + 64px + 12px + env(safe-area-inset-bottom)); }
+  body[data-route="title"].has-result .recents { left: 12px; right: 12px; transform: none; max-width: none; bottom: calc(56px + 8px + env(safe-area-inset-bottom)); }
   .where { bottom: auto; top: calc(100% + 8px); left: 0; right: 0; min-width: 0; }
   /* шторка снизу: все разделы */
   .panel { position: fixed; inset: auto 0 0; margin: 0; width: 100%; max-height: 86dvh; border-radius: 20px 20px 0 0; display: none; flex-direction: column; }
